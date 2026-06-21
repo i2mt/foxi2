@@ -6,6 +6,8 @@
    chips, history, the text-input fallback, and the environment banner
    that explains iOS/browser limitations instead of silently failing.
 
+   Now also supports a download progress bar for the Vosk model.
+
    Talks to:
      - window.VoiceEngine    (start/stop listening, audio levels, errors)
      - window.VoiceCommands  (process a transcript into an action)
@@ -45,7 +47,11 @@
             historyList: qs('voiceHistoryList'),
             clearHistoryBtn: qs('voiceClearHistoryBtn'),
             ttsToggle: qs('voiceTtsToggle'),
-            examples: qs('voiceExamples')
+            examples: qs('voiceExamples'),
+            // New progress elements
+            modelProgress: qs('voiceModelProgress'),
+            modelProgressBar: qs('voiceModelProgressBar'),
+            modelProgressPercent: qs('voiceModelProgressPercent')
         };
     }
 
@@ -259,6 +265,28 @@
     }
 
     // ============================================
+    // MODEL PROGRESS UI
+    // ============================================
+    function showModelProgress(percent) {
+        if (els.modelProgress) els.modelProgress.style.display = 'flex';
+        if (els.modelProgressBar) els.modelProgressBar.style.width = percent + '%';
+        if (els.modelProgressPercent) {
+            // Use PersianNumbers if available, else fallback to plain digits
+            let text = percent + '%';
+            if (typeof PersianNumbers !== 'undefined' && PersianNumbers.toPersian) {
+                text = PersianNumbers.toPersian(String(percent)) + '%';
+            }
+            els.modelProgressPercent.textContent = text;
+        }
+    }
+
+    function hideModelProgress() {
+        if (els.modelProgress) els.modelProgress.style.display = 'none';
+        if (els.modelProgressBar) els.modelProgressBar.style.width = '0%';
+        if (els.modelProgressPercent) els.modelProgressPercent.textContent = '۰%';
+    }
+
+    // ============================================
     // MIC FLOW
     // ============================================
     function onMicClick() {
@@ -292,9 +320,14 @@
         });
         window.VoiceEngine.on('model-loading', function () {
             setOrbState('loading-model');
-            setStatus('آماده‌سازی موتور آفلاین... (فقط بار اول، حدود ۵۳ مگابایت)', 'processing');
+            setStatus('آماده‌سازی موتور آفلاین... (دانلود مدل ۵۳ مگابایت)', 'processing');
+            showModelProgress(0);
+        });
+        window.VoiceEngine.on('model-progress', function (percent) {
+            showModelProgress(percent);
         });
         window.VoiceEngine.on('model-ready', function () {
+            hideModelProgress();
             if (els.orbContainer && els.orbContainer.classList.contains('is-loading-model')) {
                 setOrbState('idle');
                 setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
@@ -318,6 +351,7 @@
             }
         });
         window.VoiceEngine.on('error', function (info) {
+            hideModelProgress(); // Hide progress on error
             setOrbState('error');
             setStatus(info.title || 'خطا', 'error');
             showResult((info.title ? '<strong>' + info.title + '</strong><br>' : '') + (info.message || ''), 'error');
@@ -339,6 +373,7 @@
         setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
         setTranscript('', false);
         if (els.result) els.result.style.display = 'none';
+        hideModelProgress(); // Start hidden
 
         if (els.orbContainer) els.orbContainer.addEventListener('click', onMicClick);
 
