@@ -1671,6 +1671,15 @@
             <button type="button" class="voice-tts-toggle" id="voiceTtsToggle" aria-label="پاسخ صوتی خاموش است"><i class="fas fa-volume-xmark"></i></button>
         </div>
 
+        <!-- Model download progress bar (hidden initially) -->
+<div class="voice-model-progress" id="voiceModelProgress" style="display:none;">
+  <div class="voice-model-progress-label">در حال دانلود مدل صوتی (۵۳ مگابایت)...</div>
+  <div class="voice-model-progress-track">
+    <div class="voice-model-progress-bar" id="voiceModelProgressBar" style="width:0%;"></div>
+  </div>
+  <div class="voice-model-progress-percent" id="voiceModelProgressPercent">۰%</div>
+</div>
+
         <!-- Fox mark: FoxiMed's mascot doubling as the assistant's "face" —
              the dominant element on this page by design -->
         <div class="voice-orb-zone">
