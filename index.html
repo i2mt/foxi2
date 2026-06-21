@@ -1,0 +1,2011 @@
+<!DOCTYPE html>
+<!--
+    FoxiMed — Medical Calculator PWA
+    © 2025 Mohammad Mahdi Taghavi. All rights reserved.
+    License: CC BY-NC 4.0 — https://creativecommons.org/licenses/by-nc/4.0/
+    Contact: https://t.me/i_2mt
+-->
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="author" content="Mohammad Mahdi Taghavi">
+    <meta name="copyright" content="© 2025 Mohammad Mahdi Taghavi. CC BY-NC 4.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a" id="themeColorMeta">
+    <title>FoxiMed | دستیار محاسبات بالینی</title>
+    <meta name="description" content="دستیار هوشمند پرستاری — FoxiMed">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="voice-assistant.css">
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <img src="icons/icon-192.png" alt="FoxiMed" class="loading-logo-img" onerror="this.style.display='none';document.querySelector('.loading-logo-icon').style.display='flex'">
+                <div class="loading-logo-icon" style="display:none;"><i class="fas fa-syringe"></i></div>
+            </div>
+            <div class="loading-app-name">FoxiMed</div>
+            <div class="loading-tagline">محاسبه‌گر هوشمند</div>
+            <div class="loading-bar-wrap">
+                <div class="loading-bar" id="loadingBar"></div>
+            </div>
+            <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
+            <div class="loading-tips" id="loadingTips">
+                <div class="loading-tip active">💊 محاسبه دقیق دوز برای داروهای رایج </div>
+                <div class="loading-tip">🧠 ارزیابی بیمار: GCS و درصد سطح سوختگی</div>
+                <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
+                <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
+            </div>
+            <div class="loading-version">نسخه 4.6.0</div>
+            <div class="loading-credit">
+                <i class="fas fa-code"></i>
+                <span>Designed &amp; developed by</span>
+                <strong>Mohammad Mahdi Taghavi</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- PWA Install Guide Modal -->
+    <div id="pwaModal" class="pwa-modal" style="display:none;">
+        <div class="pwa-modal-overlay" id="pwaModalOverlay"></div>
+        <div class="pwa-modal-box">
+            <div class="pwa-modal-header">
+                <div class="pwa-modal-icon"><i class="fas fa-download"></i></div>
+                <div class="pwa-modal-title">نصب FoxiMed</div>
+                <button class="pwa-modal-close" id="pwaModalClose"><i class="fas fa-times"></i></button>
+            </div>
+
+            <div class="pwa-install-section" id="pwaAndroidNative">
+                <p class="pwa-modal-desc">برای دسترسی سریع‌تر و استفاده آفلاین، اپ را روی گوشی خود نصب کنید.</p>
+                <button class="pwa-install-btn" id="pwaInstallBtn">
+                    <i class="fas fa-download"></i> نصب اپلیکیشن
+                </button>
+            </div>
+
+            <div class="pwa-install-section" id="pwaIOSGuide" style="display:none;">
+                <p class="pwa-modal-desc">برای نصب در آیفون:</p>
+                <div class="pwa-steps">
+                    <div class="pwa-step"><div class="pwa-step-num">۱</div><div class="pwa-step-text">در Safari روی آیکون <strong>اشتراک‌گذاری</strong> <i class="fas fa-share-from-square"></i> در پایین صفحه بزنید</div></div>
+                    <div class="pwa-step"><div class="pwa-step-num">۲</div><div class="pwa-step-text">گزینه <strong>«Add to Home Screen»</strong> را انتخاب کنید</div></div>
+                    <div class="pwa-step"><div class="pwa-step-num">۳</div><div class="pwa-step-text">روی <strong>«Add»</strong> بزنید — اپ روی صفحه اصلی ظاهر می‌شود</div></div>
+                </div>
+            </div>
+
+            <div class="pwa-install-section" id="pwaGenericGuide" style="display:none;">
+                <p class="pwa-modal-desc">برای نصب در مرورگر:</p>
+                <div class="pwa-steps">
+                    <div class="pwa-step"><div class="pwa-step-num">۱</div><div class="pwa-step-text">در نوار آدرس روی آیکون <i class="fas fa-ellipsis-v"></i> یا <strong>منو</strong> بزنید</div></div>
+                    <div class="pwa-step"><div class="pwa-step-num">۲</div><div class="pwa-step-text">گزینه <strong>«Install App»</strong> یا <strong>«Add to Home Screen»</strong> را بزنید</div></div>
+                </div>
+            </div>
+
+            <div class="pwa-modal-actions">
+                <button class="pwa-btn-later-modal" id="pwaLaterBtn">بعداً یادم بنداز</button>
+                <button class="pwa-btn-never" id="pwaNeverBtn">دیگر نشان نده</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo-section">
+                <div class="logo"><i class="fas fa-syringe"></i></div>
+                <div class="logo-text">
+                    <h1>FoxiMed</h1>
+                    <p>ابزار هوشمند پرستاری</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="icon-btn" id="themeToggle" title="تغییر تم">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <button class="icon-btn" id="historyBtn" title="تاریخچه">
+                    <i class="fas fa-history"></i>
+                </button>
+                <button class="icon-btn" id="settingsBtn" title="تنظیمات">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <div class="voice-indicator" id="voiceIndicator" style="display:none;">
+                    <span class="voice-dot"></span>
+                    <span class="voice-label">ضبط</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Greeting Banner -->
+    <div class="greeting-banner" id="greetingBanner" style="display:none;">
+        <span class="greeting-text" id="greetingText"></span>
+        <button class="greeting-close" id="greetingClose" aria-label="بستن"><i class="fas fa-times"></i></button>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container">
+        <div class="main-content">
+
+            <!-- Calculator Tab -->
+            <div class="tab-pane active" id="calculatorTab">
+                <div class="calculator-layout">
+                    <div class="drug-sidebar">
+                        <div class="drug-quick-select">
+                            <h3><i class="fas fa-search"></i> انتخاب سریع دارو</h3>
+                            <div class="drug-search-container">
+                                <input type="text" id="drugSearch" placeholder="جستجوی دارو..." autocomplete="off">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <div class="drug-scroll-container">
+                                <div class="drug-grid-compact" id="drugGrid"></div>
+                            </div>
+                            <button class="manual-entry-btn gradient" id="openManual">
+                                <i class="fas fa-edit"></i>
+                                <span>محاسبه دستی داروی دیگر</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="calculator-main">
+                        <div class="selected-drug-compact">
+                            <div class="selected-drug-icon-compact" id="selectedDrugIcon"><i class="fas fa-pills"></i></div>
+                            <div class="selected-drug-info-compact">
+                                <div class="selected-drug-name-compact" id="selectedDrugName">هپارین</div>
+                                <div class="selected-drug-desc-compact" id="selectedDrugDesc">
+                                    <span class="latin-inline">Heparin</span>
+                                    <span> - </span>
+                                    <span class="latin-inline">Anticoagulant</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="manual-calculation-section" id="manualSection" style="display: none;"></div>
+
+                        <div class="calculator-controls-grid" id="calculatorControls">
+                            <div class="control-group">
+                                <label><i class="fas fa-infinity"></i> روش تزریق
+                                    <button class="help-icon" data-help="method">ⓘ</button>
+                                </label>
+                                <div class="method-selector-compact">
+                                    <button class="method-btn-compact gradient active" data-method="syringe">
+                                        <i class="fas fa-syringe"></i> <span>پمپ سرنگ</span>
+                                    </button>
+                                    <button class="method-btn-compact gradient" data-method="infusion">
+                                        <i class="fas fa-pump-medical"></i> <span>پمپ انفوزیون</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="control-group">
+                                <label><i class="fas fa-flask"></i> حجم محلول
+                                    <button class="help-icon" data-help="volume">ⓘ</button>
+                                </label>
+                                <div class="volume-selector-enhanced">
+                                    <div class="volume-presets" id="volumeOptions"></div>
+                                    <div class="volume-custom-input" id="customVolumeContainer" style="display: none;">
+                                        <input type="number" id="customVolume" placeholder="حجم دلخواه" min="1" max="5000">
+                                        <span>سی‌سی</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="control-group">
+                                <label><i class="fas fa-syringe"></i> مقدار دارو
+                                    <button class="help-icon" data-help="ampoule">ⓘ</button>
+                                </label>
+                                <div class="calc-toggles-stack">
+                                    <!-- Ampoule counter row -->
+                                    <div class="calc-toggle-item" id="ampouleCounterRow">
+                                        <div class="ampoule-counter-inner">
+                                            <button class="ampoule-btn-enhanced gradient" id="decreaseAmpoule"><i class="fas fa-minus"></i></button>
+                                            <div class="ampoule-count-enhanced">
+                                                <span id="ampouleCount">2</span>
+                                                <small>عدد</small>
+                                            </div>
+                                            <button class="ampoule-btn-enhanced gradient" id="increaseAmpoule"><i class="fas fa-plus"></i></button>
+                                        </div>
+                                        <div class="ampoule-info-enhanced" id="ampouleInfo">
+                                            <span>هر آمپول: </span><span class="latin-inline">5000 units in 1 ml</span>
+                                        </div>
+                                        <div class="ampoule-type-buttons" id="ampouleTypeButtons" style="display:none;"></div>
+                                    </div>
+                                    <!-- Custom amount toggle -->
+                                    <div class="calc-toggle-item" id="customAmountToggleRow">
+                                        <div class="calc-toggle-row" id="customAmountToggleClickRow">
+                                            <div class="calc-toggle-label">
+                                                <i class="fas fa-vial-circle-check"></i>
+                                                <span id="customAmountToggleLabel">مقدار دلخواه دارو</span>
+                                            </div>
+                                            <span class="ios-toggle" id="customAmountIosToggle">
+                                                <span class="ios-knob"></span>
+                                            </span>
+                                            <input type="checkbox" id="customAmountToggle" style="display:none;">
+                                        </div>
+                                    </div>
+                                    <!-- Custom amount input (shown when toggle on, or always for insulin) -->
+                                    <div class="calc-toggle-item" id="customAmountInputRow" style="display:none;">
+                                        <div class="custom-amount-presets" id="customAmountPresets"></div>
+                                        <div class="custom-amount-field">
+                                            <input type="text" inputmode="decimal" id="customAmountInput" class="custom-amount-input" placeholder="مقدار دارو...">
+                                            <span class="custom-amount-unit" id="customAmountUnit">mg</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="control-group">
+                                <label><i class="fas fa-file-medical-alt"></i> دوز درخواستی
+                                    <button class="help-icon" data-help="dose">ⓘ</button>
+                                </label>
+                                <div class="calc-toggles-stack" id="calcTogglesStack">
+                                    <!-- Dose input row -->
+                                    <div class="calc-toggle-item dose-input-card">
+                                        <div class="dose-input-enhanced">
+                                            <div class="dose-input-wrapper">
+                                                <input type="number" id="doctorOrder" placeholder="0" min="0" step="0.1">
+                                                <span class="dose-unit-enhanced" id="orderUnit">units/hour</span>
+                                            </div>
+                                        </div>
+                                        <div class="dose-range-indicator" id="doseRangeIndicator" style="display:none;">
+                                            <span class="dose-range-dot" id="doseRangeDot"></span>
+                                            <span class="dose-range-text" id="doseRangeText"></span>
+                                        </div>
+                                    </div>
+                                    <!-- Weight toggle -->
+                                    <div class="calc-toggle-item" id="weightContainer" style="display:none;">
+                                        <div class="calc-toggle-row" id="weightToggleRow">
+                                            <div class="calc-toggle-label">
+                                                <i class="fas fa-weight-scale"></i>
+                                                <span>محاسبه بر اساس وزن</span>
+                                                <button class="help-icon" data-help="weight">ⓘ</button>
+                                            </div>
+                                            <span class="ios-toggle" id="weightIosToggle">
+                                                <span class="ios-knob"></span>
+                                            </span>
+                                            <input type="checkbox" id="weightCheckbox" style="display:none;">
+                                        </div>
+                                        <div class="weight-input-row" id="weightInputRow" style="display:none;">
+                                            <i class="fas fa-user"></i>
+                                            <input type="number" id="patientWeight" placeholder="وزن بیمار" min="0" step="0.1" inputmode="decimal">
+                                            <span class="weight-unit latin-inline">kg</span>
+                                        </div>
+                                    </div>
+                                    <!-- Reverse toggle -->
+                                    <div class="calc-toggle-item">
+                                        <div class="calc-toggle-row reverse-toggle-row">
+                                            <div class="calc-toggle-label">
+                                                <i class="fas fa-arrow-right-arrow-left"></i>
+                                                <span>محاسبه معکوس</span>
+                                                <button class="help-icon" data-help="reverse">ⓘ</button>
+                                            </div>
+                                            <span class="ios-toggle" id="reverseIosToggle">
+                                                <span class="ios-knob"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sticky Calculate Button -->
+                        <div class="calculate-btn-sticky-wrap" id="calculateBtnWrap">
+                            <button class="calculate-btn-enhanced gradient" id="calculateBtn">
+                                <i class="fas fa-calculator"></i>
+                                <span>محاسبه سرعت پمپ</span>
+                            </button>
+                        </div>
+
+                        <!-- Results -->
+                        <div class="results-section-enhanced" id="resultsSection" style="display: none;">
+                            <div class="results-header-row">
+                                <h3><i class="fas fa-chart-line"></i> نتایج محاسبه</h3>
+                                <button class="copy-result-btn" id="copyResultBtn" title="اشتراک‌گذاری نتیجه">
+                                    <i class="fas fa-share-nodes"></i>
+                                    <span>اشتراک</span>
+                                </button>
+                            </div>
+                            <div class="results-grid-enhanced">
+                                <div class="result-item-enhanced">
+                                    <div class="result-label-enhanced">مقدار کل دارو</div>
+                                    <div class="result-value-enhanced" id="totalDrugAmount">0</div>
+                                    <div class="result-unit-enhanced" id="totalDrugUnit">واحد</div>
+                                </div>
+                                <div class="result-item-enhanced">
+                                    <div class="result-label-enhanced">غلظت محلول</div>
+                                    <div class="result-value-enhanced" id="concentrationResult">0</div>
+                                    <div class="result-unit-enhanced" id="concentrationUnit">واحد/سی‌سی</div>
+                                </div>
+                                <div class="result-item-enhanced highlight gradient">
+                                    <div class="result-label-enhanced">سرعت پمپ</div>
+                                    <div class="result-value-enhanced" id="pumpRateResult">0</div>
+                                    <div class="result-unit-enhanced" id="pumpRateUnit">سی‌سی/ساعت</div>
+                                </div>
+                                <div class="result-item-enhanced">
+                                    <div class="result-label-enhanced">زمان تخمینی</div>
+                                    <div class="result-value-enhanced" id="durationResult">0</div>
+                                    <div class="result-unit-enhanced" id="durationUnit">ساعت</div>
+                                </div>
+                            </div>
+                            <div class="drip-rate-row" id="dripRateRow" style="display:none;">
+                                <div class="drip-rate-icon"><i class="fas fa-droplet"></i></div>
+                                <div class="drip-rate-body">
+                                    <span class="drip-rate-label" id="dripRateLabel">سرعت قطره (ماکروست — 20 قطره/mL)</span>
+                                    <span class="drip-rate-value"><span id="dripRateResult">0</span> <span class="drip-rate-unit">قطره/دقیقه</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step-by-Step Guide -->
+                        <div class="guide-section" id="guideSection" style="display: none;">
+                            <div class="guide-header">
+                                <i class="fas fa-list-ol"></i>
+                                <span>راهنمای آماده‌سازی و تزریق</span>
+                            </div>
+                            <div class="guide-steps" id="stepByStepGuide"></div>
+                        </div>
+
+                        <!-- Warnings -->
+                        <div class="warnings-section" id="warningsSection" style="display: none;">
+                            <div class="warnings-header">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>هشدارها و نکات مهم</span>
+                            </div>
+                            <div class="warnings-list" id="warningsList"></div>
+                        </div>
+
+                        <!-- Compatibility -->
+                        <div class="compatibility-section" id="compatibilitySection" style="display: none;">
+                            <div class="compatibility-header">
+                                <i class="fas fa-exchange-alt"></i>
+                                <span>سازگاری Y-Site</span>
+                            </div>
+                            <div class="compatibility-grid">
+                                <div class="compatible-drugs">
+                                    <div class="compatibility-title"><i class="fas fa-check-circle"></i><span>سازگار</span></div>
+                                    <div class="compatibility-list" id="compatibleDrugsList"></div>
+                                </div>
+                                <div class="incompatible-drugs">
+                                    <div class="compatibility-title"><i class="fas fa-times-circle"></i><span>ناسازگار</span></div>
+                                    <div class="compatibility-list" id="incompatibleDrugsList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drugs Tab (Quick Reference) -->
+            <div class="tab-pane" id="drugsTab">
+                <div class="drugs-container">
+                    <h2><i class="fas fa-book-medical"></i> مرجع سریع داروها</h2>
+                    <div class="drugs-search">
+                        <input type="text" id="librarySearch" placeholder="جستجو در مرجع دارویی...">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <div class="drugs-library" id="drugLibrary"></div>
+                </div>
+            </div>
+
+            <!-- Unified Tools + Converters Tab -->
+            <div class="tab-pane" id="toolsTab">
+                <div class="tools-container">
+
+                    <!-- Section 1: Patient Assessment -->
+                    <div class="accordion-section">
+                        <div class="accordion-section-header">
+                            <i class="fas fa-stethoscope"></i>
+                            <span>ارزیابی بیمار</span>
+                        </div>
+                        <div class="accordion-list">
+                        <div class="accordion-item" id="gcsAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-brain"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مقیاس کُما گلاسکو</span>
+                                    <span class="accordion-sub">Glasgow Coma Scale — GCS</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body" id="gcsAccordionBody">
+                                <!-- Eye -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon eye"><i class="fas fa-eye"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">پاسخ چشمی — Eye Opening (E)</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="eScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-domain="eye" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">خودبخود باز می‌شود</span></button>
+                                        <button class="gcs-btn" data-domain="eye" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">با صدا باز می‌شود</span></button>
+                                        <button class="gcs-btn" data-domain="eye" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">با درد باز می‌شود</span></button>
+                                        <button class="gcs-btn" data-domain="eye" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">هیچ پاسخی ندارد</span></button>
+                                    </div>
+                                </div>
+
+                                <!-- Verbal -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon verbal"><i class="fas fa-comment-medical"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">پاسخ کلامی — Verbal Response (V)</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="vScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-domain="verbal" data-score="5"><span class="gcs-score-badge">5</span><span class="gcs-btn-label">جواب منطقی می‌دهد</span></button>
+                                        <button class="gcs-btn" data-domain="verbal" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">گیج و سردرگم</span></button>
+                                        <button class="gcs-btn" data-domain="verbal" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">کلمات نامناسب</span></button>
+                                        <button class="gcs-btn" data-domain="verbal" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">صداهای نامفهوم</span></button>
+                                        <button class="gcs-btn" data-domain="verbal" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">هیچ پاسخی ندارد</span></button>
+                                    </div>
+                                </div>
+
+                                <!-- Motor -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon motor"><i class="fas fa-hand-fist"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">پاسخ حرکتی — Motor Response (M)</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="mScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-domain="motor" data-score="6"><span class="gcs-score-badge">6</span><span class="gcs-btn-label">از دستورات پیروی می‌کند</span></button>
+                                        <button class="gcs-btn" data-domain="motor" data-score="5"><span class="gcs-score-badge">5</span><span class="gcs-btn-label">محل درد را پیدا می‌کند</span></button>
+                                        <button class="gcs-btn" data-domain="motor" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">از درد فرار می‌کند</span></button>
+                                        <button class="gcs-btn" data-domain="motor" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">دکوریکاسیون (فلکشن)</span></button>
+                                        <button class="gcs-btn" data-domain="motor" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">دسربراسیون (اکستنشن)</span></button>
+                                        <button class="gcs-btn" data-domain="motor" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">هیچ پاسخی ندارد</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-result-box" id="gcsResultBox" style="display:none;">
+                                    <div class="gcs-total-row">
+                                        <div class="gcs-total-label">امتیاز کل GCS</div>
+                                        <div class="gcs-total-score" id="gcsTotalScore">—</div>
+                                        <div class="gcs-total-formula" id="gcsTotalFormula"></div>
+                                    </div>
+                                    <div class="gcs-severity-badge" id="gcsSeverityBadge"></div>
+                                    <div class="gcs-notes" id="gcsNotes"></div>
+                                    <button class="gcs-reset-btn" id="gcsResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RASS -->
+                        <div class="accordion-item" id="rassAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"><i class="fas fa-bed-pulse"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مقیاس آرام‌بخشی ریچموند</span>
+                                    <span class="accordion-sub">Richmond Agitation-Sedation Scale — RASS</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body" id="rassAccordionBody">
+                                <div class="rass-scale">
+                                    <div class="rass-track" id="rassTrack">
+                                        <div class="rass-level" data-score="4">
+                                            <div class="rass-score-pill agitated">+4</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">خشونت آشکار</div>
+                                                <div class="rass-level-desc">خشن، خطرناک برای کادر درمان</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="3">
+                                            <div class="rass-score-pill agitated">+3</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">بسیار آژیته</div>
+                                                <div class="rass-level-desc">لوله‌ها را می‌کشد، تهاجمی است</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="2">
+                                            <div class="rass-score-pill agitated">+2</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">آژیته</div>
+                                                <div class="rass-level-desc">حرکات مکرر، مقاوم در برابر ونتیلاتور</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="1">
+                                            <div class="rass-score-pill agitated">+1</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">بی‌قرار</div>
+                                                <div class="rass-level-desc">نگران و بی‌قرار ولی حرکات تهاجمی ندارد</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level rass-target" data-score="0">
+                                            <div class="rass-score-pill target">0</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">هوشیار و آرام</div>
+                                                <div class="rass-level-desc">سطح هدف — هوشیار و آرام</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="-1">
+                                            <div class="rass-score-pill sedated">-1</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">خواب‌آلود</div>
+                                                <div class="rass-level-desc">بیدار نمی‌ماند ولی با صدا بیدار می‌شود (>۱۰ ثانیه)</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="-2">
+                                            <div class="rass-score-pill sedated">-2</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">سداسیون خفیف</div>
+                                                <div class="rass-level-desc">با صدا بیدار می‌شود، تماس کوتاه (<۱۰ ثانیه)</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="-3">
+                                            <div class="rass-score-pill sedated">-3</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">سداسیون متوسط</div>
+                                                <div class="rass-level-desc">حرکت یا بازکردن چشم با صدا — بدون تماس چشمی</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="-4">
+                                            <div class="rass-score-pill sedated">-4</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">سداسیون عمیق</div>
+                                                <div class="rass-level-desc">بدون پاسخ به صدا — با تحریک فیزیکی حرکت می‌کند</div>
+                                            </div>
+                                        </div>
+                                        <div class="rass-level" data-score="-5">
+                                            <div class="rass-score-pill sedated">-5</div>
+                                            <div class="rass-level-content">
+                                                <div class="rass-level-title">بی‌هوشی</div>
+                                                <div class="rass-level-desc">بدون پاسخ به صدا یا تحریک فیزیکی</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="rass-result-box" id="rassResultBox" style="display:none;">
+                                    <div class="rass-result-score" id="rassResultScore"></div>
+                                    <div class="rass-result-label" id="rassResultLabel"></div>
+                                    <div class="rass-result-note" id="rassResultNote"></div>
+                                    <button class="gcs-reset-btn" id="rassResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Braden Scale -->
+                        <div class="accordion-item" id="bradenAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-shield-heart"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مقیاس برادن</span>
+                                    <span class="accordion-sub">Braden Scale — زخم فشاری</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body" id="bradenAccordionBody">
+                                <!-- Sensory Perception -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-hand-dots"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">حس درد — Sensory Perception</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenSensoryScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="sensory" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">احساس درد ندارد و پاسخ نمی‌دهد</span></button>
+                                        <button class="gcs-btn" data-braden="sensory" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">اختلال حسی، هوشیاری در حد ناله کردن</span></button>
+                                        <button class="gcs-btn" data-braden="sensory" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">محدودیت خفیف، مشکلات حسی قابل توجه</span></button>
+                                        <button class="gcs-btn" data-braden="sensory" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">بدون محدودیت، قدرت بیان درد دارد</span></button>
+                                    </div>
+                                </div>
+                                <!-- Moisture -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"><i class="fas fa-droplet"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">رطوبت پوست — Moisture</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenMoistureScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="moisture" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">دائماً مرطوب — تعریق، بی‌اختیاری ادرار/مدفوع</span></button>
+                                        <button class="gcs-btn" data-braden="moisture" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">مرطوب، تعویض ملحفه در هر شیفت</span></button>
+                                        <button class="gcs-btn" data-braden="moisture" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">گاهی مرطوب، تعویض ملحفه روزانه</span></button>
+                                        <button class="gcs-btn" data-braden="moisture" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">پوست خشک، تعویض ملحفه روتین</span></button>
+                                    </div>
+                                </div>
+                                <!-- Activity -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#f97316,#fbbf24)"><i class="fas fa-person-walking"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">فعالیت — Activity</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenActivityScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="activity" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">وابسته به تخت، بدون خروج از تخت</span></button>
+                                        <button class="gcs-btn" data-braden="activity" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">پایین آمدن از تخت و نشستن روی صندلی با کمک</span></button>
+                                        <button class="gcs-btn" data-braden="activity" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">قدم زدن گهگاه توسط خود بیمار</span></button>
+                                        <button class="gcs-btn" data-braden="activity" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">بدون محدودیت در راه رفتن</span></button>
+                                    </div>
+                                </div>
+                                <!-- Mobility -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#8b5cf6,#d946ef)"><i class="fas fa-arrows-up-down-left-right"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">تحرک — Mobility</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenMobilityScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="mobility" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">کاملاً بی‌حرکت، بدون تغییر پوزیشن</span></button>
+                                        <button class="gcs-btn" data-braden="mobility" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">محدودیت زیاد، حرکت گهگاه</span></button>
+                                        <button class="gcs-btn" data-braden="mobility" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">خفیف، مداوم در تخت حرکت می‌کند</span></button>
+                                        <button class="gcs-btn" data-braden="mobility" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">بدون محدودیت، بدون کمک تغییر پوزیشن می‌دهد</span></button>
+                                    </div>
+                                </div>
+                                <!-- Nutrition -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#ef4444,#f97316)"><i class="fas fa-utensils"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">تغذیه — Nutrition</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenNutritionScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="nutrition" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">خیلی ضعیف، عدم توانایی مصرف غذا — NPO</span></button>
+                                        <button class="gcs-btn" data-braden="nutrition" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">ناکافی، به ندرت غذای کافی می‌گیرد</span></button>
+                                        <button class="gcs-btn" data-braden="nutrition" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">کافی، تغذیه با NGT یا TPN</span></button>
+                                        <button class="gcs-btn" data-braden="nutrition" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">عالی، مصرف همه انواع غذا</span></button>
+                                    </div>
+                                </div>
+                                <!-- Friction & Shear -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#64748b,#475569)"><i class="fas fa-compress"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">اصطکاک و سایش پوست — Friction & Shear</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="bradenFrictionScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-braden="friction" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">بیمار بی‌قرار، نیاز به کمک برای حرکت</span></button>
+                                        <button class="gcs-btn" data-braden="friction" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">حداقل کمک برای جابجا شدن نیاز دارد</span></button>
+                                        <button class="gcs-btn" data-braden="friction" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">راحت در تغییر پوزیشن، مشکلی ندارد</span></button>
+                                    </div>
+                                </div>
+                                <div class="gcs-result-box" id="bradenResultBox" style="display:none;">
+                                    <div class="gcs-total-row">
+                                        <div class="gcs-total-label">امتیاز کل Braden</div>
+                                        <div class="gcs-total-score" id="bradenTotalScore">—</div>
+                                    </div>
+                                    <div class="gcs-severity-badge" id="bradenSeverityBadge"></div>
+                                    <div class="gcs-notes" id="bradenNotes"></div>
+                                    <button class="gcs-reset-btn" id="bradenResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Morse Fall Scale -->
+                        <div class="accordion-item" id="morseAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-person-falling"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مقیاس سقوط مورس</span>
+                                    <span class="accordion-sub">Morse Fall Scale — MFS</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body" id="morseAccordionBody">
+                                <!-- History of Falling -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-clock-rotate-left"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">سابقه افتادن — History of Falls</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseFallHistoryScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="fallHistory" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">خیر</span></button>
+                                        <button class="gcs-btn" data-morse="fallHistory" data-score="25"><span class="gcs-score-badge">25</span><span class="gcs-btn-label">بله</span></button>
+                                    </div>
+                                </div>
+                                <!-- Secondary Diagnosis -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)"><i class="fas fa-file-medical"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">تشخیص ثانویه — Secondary Diagnosis</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseSecDiagScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="secDiag" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">خیر</span></button>
+                                        <button class="gcs-btn" data-morse="secDiag" data-score="15"><span class="gcs-score-badge">15</span><span class="gcs-btn-label">بله</span></button>
+                                    </div>
+                                </div>
+                                <!-- Ambulatory Aid -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4)"><i class="fas fa-crutch"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">وسیله کمکی — Ambulatory Aid</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseAidScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="aid" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">بی‌نیاز / استراحت مطلق</span></button>
+                                        <button class="gcs-btn" data-morse="aid" data-score="15"><span class="gcs-score-badge">15</span><span class="gcs-btn-label">عصا / واکر</span></button>
+                                        <button class="gcs-btn" data-morse="aid" data-score="30"><span class="gcs-score-badge">30</span><span class="gcs-btn-label">به اشیاء تکیه می‌کند</span></button>
+                                    </div>
+                                </div>
+                                <!-- IV / Heparin Lock -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-syringe"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">سرم وریدی / هپارین — IV Access</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseIVScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="iv" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">خیر</span></button>
+                                        <button class="gcs-btn" data-morse="iv" data-score="20"><span class="gcs-score-badge">20</span><span class="gcs-btn-label">بله</span></button>
+                                    </div>
+                                </div>
+                                <!-- Gait -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#f97316,#fbbf24)"><i class="fas fa-shoe-prints"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">راه رفتن — Gait</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseGaitScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="gait" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">طبیعی / بستری / ویلچر</span></button>
+                                        <button class="gcs-btn" data-morse="gait" data-score="10"><span class="gcs-score-badge">10</span><span class="gcs-btn-label">ضعیف</span></button>
+                                        <button class="gcs-btn" data-morse="gait" data-score="20"><span class="gcs-score-badge">20</span><span class="gcs-btn-label">مختل / ناپایدار</span></button>
+                                    </div>
+                                </div>
+                                <!-- Mental Status -->
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-brain"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">وضعیت ذهنی — Mental Status</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="morseMentalScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-morse="mental" data-score="0"><span class="gcs-score-badge">0</span><span class="gcs-btn-label">توانایی خود را درست ارزیابی می‌کند</span></button>
+                                        <button class="gcs-btn" data-morse="mental" data-score="15"><span class="gcs-score-badge">15</span><span class="gcs-btn-label">توانایی خود را بیش از حد تخمین می‌زند</span></button>
+                                    </div>
+                                </div>
+                                <div class="gcs-result-box" id="morseResultBox" style="display:none;">
+                                    <div class="gcs-total-row">
+                                        <div class="gcs-total-label">امتیاز کل Morse</div>
+                                        <div class="gcs-total-score" id="morseTotalScore">—</div>
+                                    </div>
+                                    <div class="gcs-severity-badge" id="morseSeverityBadge"></div>
+                                    <div class="gcs-notes" id="morseNotes"></div>
+                                    <button class="gcs-reset-btn" id="morseResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Oxygen Cylinder Calculator -->
+                        <div class="accordion-item" id="oxygenAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#0ea5e9,#38bdf8)"><i class="fas fa-lungs"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">کپسول اکسیژن</span>
+                                    <span class="accordion-sub">محاسبه مدت زمان کپسول اکسیژن</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body">
+                                <div class="oxy-calc">
+                                    <div class="control-group">
+                                        <label><i class="fas fa-gauge-high"></i> ظرفیت و فشار کپسول</label>
+                                        <div class="calc-toggles-stack">
+                                            <div class="calc-toggle-item">
+                                                <div class="oxy-input-row">
+                                                    <span class="oxy-label">حجم کپسول</span>
+                                                    <div class="oxy-field">
+                                                        <input type="text" inputmode="decimal" id="oxyCylinderSize" class="oxy-input" placeholder="۱۰">
+                                                        <span class="oxy-unit">لیتر</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="calc-toggle-item">
+                                                <div class="oxy-input-row">
+                                                    <span class="oxy-label">فشار فعلی گاز</span>
+                                                    <div class="oxy-field">
+                                                        <input type="text" inputmode="decimal" id="oxyPressure" class="oxy-input" placeholder="۱۵۰">
+                                                        <span class="oxy-unit">bar</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="calc-toggle-item">
+                                                <div class="oxy-input-row">
+                                                    <span class="oxy-label">جریان اکسیژن</span>
+                                                    <div class="oxy-field">
+                                                        <input type="text" inputmode="decimal" id="oxyFlow" class="oxy-input" placeholder="۴">
+                                                        <span class="oxy-unit">L/min</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Cylinder size quick picks -->
+                                    <div class="control-group" style="margin-top:6px;">
+                                        <label><i class="fas fa-cylinder"></i> سایز کپسول متداول</label>
+                                        <div class="manual-volume-presets" id="oxySizePresets">
+                                            <button class="volume-preset-btn" data-oxysize="2"><span class="number">2</span><span class="unit-text">L</span></button>
+                                            <button class="volume-preset-btn active" data-oxysize="5"><span class="number">5</span><span class="unit-text">L</span></button>
+                                            <button class="volume-preset-btn" data-oxysize="10"><span class="number">10</span><span class="unit-text">L</span></button>
+                                            <button class="volume-preset-btn" data-oxysize="20"><span class="number">20</span><span class="unit-text">L</span></button>
+                                            <button class="volume-preset-btn" data-oxysize="40"><span class="number">40</span><span class="unit-text">L</span></button>
+                                        </div>
+                                    </div>
+                                    <button class="calculate-btn-enhanced gradient" onclick="calculateOxygen()">
+                                        <i class="fas fa-calculator"></i><span>محاسبه</span>
+                                    </button>
+                                    <div class="oxy-result" id="oxyResult" style="display:none;">
+                                        <div class="oxy-result-main">
+                                            <div class="oxy-result-value" id="oxyDuration">—</div>
+                                            <div class="oxy-result-label">مدت زمان کپسول</div>
+                                        </div>
+                                        <div class="oxy-result-details">
+                                            <div class="oxy-detail"><i class="fas fa-flask"></i><span>حجم کل گاز: <strong id="oxyTotalVol">—</strong> لیتر</span></div>
+                                            <div class="oxy-detail"><i class="fas fa-triangle-exclamation"></i><span>توجه: ۱۰٪ ذخیره ایمنی در نظر گرفته شده</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Burns TBSA -->
+                        <div class="accordion-item" id="burnsAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#f97316,#ef4444)"><i class="fas fa-fire"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">درصد سطح سوختگی</span>
+                                    <span class="accordion-sub">Total Body Surface Area — TBSA</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body">
+                                <div class="burns-age-toggle">
+                                    <button class="burns-age-btn active" id="burnsAdultBtn" onclick="setBurnsAge('adult')"><i class="fas fa-person"></i> بزرگسال</button>
+                                    <button class="burns-age-btn" id="burnsPedBtn" onclick="setBurnsAge('pediatric')"><i class="fas fa-child"></i> کودک</button>
+                                </div>
+                                <p class="burns-rule-note" id="burnsRuleNote">قانون نُه — بزرگسال</p>
+
+                                <div class="burns-body-wrap">
+                                    <div class="burns-body-view">
+                                        <div class="burns-view-label">جلو</div>
+                                        <svg class="burns-svg" viewBox="0 0 120 260" id="burnsSvgFront">
+                                            <ellipse cx="60" cy="22" rx="18" ry="20" class="burns-region" data-region="head" data-label="سر"/>
+                                            <rect x="53" y="42" width="14" height="10" rx="4" class="burns-region" data-region="neck" data-label="گردن"/>
+                                            <rect x="34" y="54" width="52" height="36" rx="6" class="burns-region" data-region="chest" data-label="قفسه سینه (جلو)"/>
+                                            <rect x="36" y="92" width="48" height="34" rx="6" class="burns-region" data-region="abdomen" data-label="شکم (جلو)"/>
+                                            <rect x="46" y="128" width="28" height="14" rx="5" class="burns-region" data-region="perineum" data-label="پرینه"/>
+                                            <rect x="14" y="56" width="18" height="32" rx="7" class="burns-region" data-region="l_upper_arm" data-label="بازوی چپ"/>
+                                            <rect x="88" y="56" width="18" height="32" rx="7" class="burns-region" data-region="r_upper_arm" data-label="بازوی راست"/>
+                                            <rect x="8" y="90" width="15" height="26" rx="6" class="burns-region" data-region="l_lower_arm" data-label="ساعد چپ"/>
+                                            <rect x="97" y="90" width="15" height="26" rx="6" class="burns-region" data-region="r_lower_arm" data-label="ساعد راست"/>
+                                            <ellipse cx="15" cy="127" rx="8" ry="10" class="burns-region" data-region="l_hand" data-label="دست چپ"/>
+                                            <ellipse cx="105" cy="127" rx="8" ry="10" class="burns-region" data-region="r_hand" data-label="دست راست"/>
+                                            <rect x="34" y="144" width="22" height="36" rx="7" class="burns-region" data-region="l_thigh_f" data-label="ران چپ (جلو)"/>
+                                            <rect x="64" y="144" width="22" height="36" rx="7" class="burns-region" data-region="r_thigh_f" data-label="ران راست (جلو)"/>
+                                            <rect x="35" y="182" width="20" height="36" rx="6" class="burns-region" data-region="l_leg_f" data-label="ساق چپ (جلو)"/>
+                                            <rect x="65" y="182" width="20" height="36" rx="6" class="burns-region" data-region="r_leg_f" data-label="ساق راست (جلو)"/>
+                                            <ellipse cx="45" cy="225" rx="12" ry="8" class="burns-region" data-region="l_foot" data-label="پای چپ"/>
+                                            <ellipse cx="75" cy="225" rx="12" ry="8" class="burns-region" data-region="r_foot" data-label="پای راست"/>
+                                        </svg>
+                                    </div>
+                                    <div class="burns-body-view">
+                                        <div class="burns-view-label">پشت</div>
+                                        <svg class="burns-svg" viewBox="0 0 120 260" id="burnsSvgBack">
+                                            <ellipse cx="60" cy="22" rx="18" ry="20" class="burns-region" data-region="head_b" data-label="سر (پشت)"/>
+                                            <rect x="34" y="54" width="52" height="36" rx="6" class="burns-region" data-region="upper_back" data-label="کمربند شانه (پشت)"/>
+                                            <rect x="36" y="92" width="48" height="34" rx="6" class="burns-region" data-region="lower_back" data-label="کمر (پشت)"/>
+                                            <rect x="38" y="128" width="44" height="18" rx="6" class="burns-region" data-region="buttocks" data-label="باسن"/>
+                                            <rect x="14" y="56" width="18" height="32" rx="7" class="burns-region" data-region="l_upper_arm_b" data-label="بازوی چپ (پشت)"/>
+                                            <rect x="88" y="56" width="18" height="32" rx="7" class="burns-region" data-region="r_upper_arm_b" data-label="بازوی راست (پشت)"/>
+                                            <rect x="8" y="90" width="15" height="26" rx="6" class="burns-region" data-region="l_lower_arm_b" data-label="ساعد چپ (پشت)"/>
+                                            <rect x="97" y="90" width="15" height="26" rx="6" class="burns-region" data-region="r_lower_arm_b" data-label="ساعد راست (پشت)"/>
+                                            <rect x="34" y="148" width="22" height="36" rx="7" class="burns-region" data-region="l_thigh_b" data-label="ران چپ (پشت)"/>
+                                            <rect x="64" y="148" width="22" height="36" rx="7" class="burns-region" data-region="r_thigh_b" data-label="ران راست (پشت)"/>
+                                            <rect x="35" y="186" width="20" height="36" rx="6" class="burns-region" data-region="l_leg_b" data-label="ساق چپ (پشت)"/>
+                                            <rect x="65" y="186" width="20" height="36" rx="6" class="burns-region" data-region="r_leg_b" data-label="ساق راست (پشت)"/>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <div class="burns-selected-chips" id="burnsChips">
+                                    <span class="burns-chips-placeholder">هیچ ناحیه‌ای انتخاب نشده — روی نواحی بدن ضربه بزنید</span>
+                                </div>
+
+                                <div class="burns-result-box" id="burnsResultBox" style="display:none;">
+                                    <div class="burns-result-row">
+                                        <span class="burns-result-label">درصد کل سوختگی (TBSA)</span>
+                                        <span class="burns-result-value" id="burnsTBSA">0%</span>
+                                    </div>
+                                    <div class="burns-parkland-weight">
+                                        <label style="font-family:var(--font-persian);font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">وزن بیمار برای محاسبه Parkland</label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="burnsWeight" placeholder="وزن" inputmode="decimal" step="0.1" oninput="updateParkland()">
+                                            <span class="input-unit">kg</span>
+                                        </div>
+                                    </div>
+                                    <div class="burns-result-row" id="parklandRow" style="display:none;">
+                                        <span class="burns-result-label" id="parklandLabel">مایع Parkland 24h</span>
+                                        <span class="burns-result-value" id="parklandResult">—</span>
+                                    </div>
+                                    <div class="burns-notes" id="burnsNotes"></div>
+                                </div>
+
+                                <button class="tool-btn" onclick="resetBurns()" style="margin-top:8px;background:var(--surface-elevated);color:var(--text-secondary);border:1px solid var(--border);box-shadow:none;">
+                                    <i class="fas fa-rotate-right"></i> پاک کردن انتخاب‌ها
+                                </button>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Clinical Calculations -->
+                    <div class="accordion-section">
+                        <div class="accordion-section-header">
+                            <i class="fas fa-calculator"></i>
+                            <span>محاسبات بالینی</span>
+                        </div>
+                        <div class="accordion-list">
+                            <!-- BMI -->
+                            <div class="accordion-item" id="bmiAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#667eea,#764ba2)"><i class="fas fa-weight-scale"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">شاخص توده بدنی</span>
+                                        <span class="accordion-sub">Body Mass Index — BMI</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>وزن</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="bmiWeight" placeholder="70" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">kg</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>قد</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="bmiHeight" placeholder="170" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">cm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="tool-btn" onclick="calculateBMI()"><i class="fas fa-calculator"></i> محاسبه BMI</button>
+                                    <div class="tool-result" id="bmiResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Y-Site Compatibility Matrix -->
+                            <div class="accordion-item" id="ysiteAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#a18cd1,#fbc2eb)"><i class="fas fa-vials"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">سازگاری Y-Site</span>
+                                        <span class="accordion-sub">Drug Compatibility Matrix</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body" id="ysiteAccordionBody">
+                                    <p class="ysite-intro">
+                                        یک یا چند دارو انتخاب کنید تا سازگاری Y-Site بین آن‌ها بررسی شود.
+                                        <button class="help-icon" data-help="ysite">ⓘ</button>
+                                    </p>
+                                    <div class="ysite-drug-grid" id="ysiteDrugGrid"></div>
+                                    <div class="ysite-matrix-wrap" id="ysiteMatrixWrap" style="display:none;">
+                                        <div class="ysite-matrix" id="ysiteMatrix"></div>
+                                    </div>
+                                    <button class="gcs-reset-btn" id="ysiteResetBtn" style="margin-top:12px;"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+
+
+                            <!-- BSA -->
+                            <div class="accordion-item" id="bsaAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#4facfe,#00f2fe)"><i class="fas fa-ruler-combined"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">سطح بدن</span>
+                                        <span class="accordion-sub">Body Surface Area — BSA</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>وزن</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="bsaWeight" placeholder="70" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">kg</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>قد</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="bsaHeight" placeholder="170" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">cm</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="input-group">
+                                        <label>فرمول</label>
+                                        <select id="bsaFormula">
+                                            <option value="mosteller">Mosteller</option>
+                                            <option value="dubois">DuBois &amp; DuBois</option>
+                                            <option value="haycock">Haycock</option>
+                                        </select>
+                                    </div>
+                                    <button class="tool-btn" onclick="calculateBSA()"><i class="fas fa-calculator"></i> محاسبه BSA</button>
+                                    <div class="tool-result" id="bsaResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- IBW -->
+                            <div class="accordion-item" id="ibwAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"><i class="fas fa-person"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">وزن ایده‌آل</span>
+                                        <span class="accordion-sub">Ideal Body Weight — IBW</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>قد</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="ibwHeight" placeholder="170" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">cm</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>جنسیت</label>
+                                            <select id="ibwGender">
+                                                <option value="male">مرد</option>
+                                                <option value="female">زن</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="input-group">
+                                        <label>فرمول</label>
+                                        <select id="ibwFormula">
+                                            <option value="devine">Devine</option>
+                                            <option value="robinson">Robinson</option>
+                                            <option value="miller">Miller</option>
+                                        </select>
+                                    </div>
+                                    <button class="tool-btn" onclick="calculateIBW()"><i class="fas fa-calculator"></i> محاسبه</button>
+                                    <div class="tool-result" id="ibwResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Ventilator Tidal Volume -->
+                            <div class="accordion-item" id="ventilatorAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#0ea5e9,#22d3ee)"><i class="fas fa-lungs-virus"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">حجم جاری ونتیلاتور</span>
+                                        <span class="accordion-sub">Tidal Volume — Lung-Protective 6 mL/kg PBW</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <p class="tool-note"><i class="fas fa-info-circle"></i> حجم جاری بر اساس وزن ایده‌آل (PBW) محاسبه می‌شود، نه وزن واقعی بیمار.</p>
+
+                                    <!-- Gender -->
+                                    <div class="control-group">
+                                        <label>جنسیت</label>
+                                        <div class="method-selector-compact" id="ventGenderBtns">
+                                            <button class="method-btn-compact gradient active" data-gender="male"><i class="fas fa-mars"></i> مرد</button>
+                                            <button class="method-btn-compact gradient" data-gender="female"><i class="fas fa-venus"></i> زن</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Measurement method tabs -->
+                                    <div class="control-group" style="margin-top:10px;">
+                                        <label>روش اندازه‌گیری</label>
+                                        <div class="vent-method-tabs" id="ventMethodTabs">
+                                            <button class="vent-tab active" data-tab="height">قد <span class="latin-inline">(cm)</span></button>
+                                            <button class="vent-tab" data-tab="ulna">طول اولنا <span class="latin-inline">(cm)</span></button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Height input -->
+                                    <div class="vent-input-panel" id="ventPanel_height">
+                                        <div class="calc-toggles-stack">
+                                            <div class="calc-toggle-item">
+                                                <div class="oxy-input-row">
+                                                    <span class="oxy-label">قد بیمار</span>
+                                                    <div class="oxy-field">
+                                                        <input type="number" id="ventHeight" inputmode="decimal" placeholder="170" class="oxy-input" step="0.1">
+                                                        <span class="oxy-unit">cm</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Ulna length input -->
+                                    <div class="vent-input-panel" id="ventPanel_ulna" style="display:none;">
+                                        <p class="tool-note" style="margin-bottom:8px;"><i class="fas fa-ruler"></i> از نوک آرنج (اولکرانون) تا مچ (استایلوئید اولنا) اندازه بگیرید.</p>
+                                        <div class="calc-toggles-stack">
+                                            <div class="calc-toggle-item">
+                                                <div class="oxy-input-row">
+                                                    <span class="oxy-label">طول اولنا</span>
+                                                    <div class="oxy-field">
+                                                        <input type="number" id="ventUlna" inputmode="decimal" placeholder="26" class="oxy-input" step="0.1">
+                                                        <span class="oxy-unit">cm</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button class="calculate-btn-enhanced gradient" onclick="calculateVentTV()">
+                                        <i class="fas fa-calculator"></i><span>محاسبه</span>
+                                    </button>
+
+                                    <div class="vent-result" id="ventResult" style="display:none;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Nutritional Calculator -->
+                            <div class="accordion-item" id="nutritionAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#f59e0b,#10b981)"><i class="fas fa-utensils"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">محاسبه نیاز تغذیه‌ای</span>
+                                        <span class="accordion-sub">Caloric & Protein Requirements — ICU</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="calc-toggles-stack">
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">وزن بیمار</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="nutWeight" inputmode="decimal" placeholder="70" class="oxy-input" step="0.1">
+                                                    <span class="oxy-unit">kg</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">قد بیمار</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="nutHeight" inputmode="decimal" placeholder="170" class="oxy-input" step="0.1">
+                                                    <span class="oxy-unit">cm</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">سن</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="nutAge" inputmode="numeric" placeholder="50" class="oxy-input" step="1">
+                                                    <span class="oxy-unit">سال</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Gender -->
+                                    <div class="control-group" style="margin-top:10px;">
+                                        <label>جنسیت</label>
+                                        <div class="method-selector-compact" id="nutGenderBtns">
+                                            <button class="method-btn-compact gradient active" data-gender="male"><i class="fas fa-mars"></i> مرد</button>
+                                            <button class="method-btn-compact gradient" data-gender="female"><i class="fas fa-venus"></i> زن</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Stress factor -->
+                                    <div class="control-group" style="margin-top:10px;">
+                                        <label>وضعیت بالینی (ضریب استرس)</label>
+                                        <div class="calc-toggles-stack">
+                                            <div class="calc-toggle-item">
+                                                <select id="nutStress" class="manual-unit-select" style="width:100%;padding:10px 12px;border-radius:8px;font-family:var(--font-persian);font-size:13px;direction:rtl;">
+                                                    <option value="1.0">طبیعی / بستری ساده (×1.0)</option>
+                                                    <option value="1.2" selected>بعد از جراحی / ICU خفیف (×1.2)</option>
+                                                    <option value="1.35">سپسیس / تروما (×1.35)</option>
+                                                    <option value="1.5">سوختگی متوسط / هد اینجوری (×1.5)</option>
+                                                    <option value="1.7">سوختگی شدید (×1.7)</option>
+                                                    <option value="2.0">سوختگی >40% / ARDS (×2.0)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button class="calculate-btn-enhanced gradient" onclick="calculateNutrition()">
+                                        <i class="fas fa-calculator"></i><span>محاسبه</span>
+                                    </button>
+
+                                    <div class="nut-result" id="nutResult" style="display:none;"></div>
+                                </div>
+                            </div>
+
+                            <!-- VBG Interpreter -->
+                            <div class="accordion-item" id="vbgAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#dc2626,#7c3aed)"><i class="fas fa-droplet"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">تفسیر گازهای خون وریدی</span>
+                                        <span class="accordion-sub">VBG Interpretation — ABG</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <!-- Mode selector -->
+                                    <div class="method-selector-compact" style="margin-bottom:10px;" id="vbgModeBtns">
+                                        <button class="method-btn-compact gradient active" data-mode="vbg"><i class="fas fa-droplet"></i> VBG — وریدی</button>
+                                        <button class="method-btn-compact gradient" data-mode="abg"><i class="fas fa-heart-pulse"></i> ABG — شریانی</button>
+                                    </div>
+                                    <input type="checkbox" id="vbgModeABG" style="display:none;">
+                                    <p class="tool-note" id="vbgModeNote"><i class="fas fa-info-circle"></i> حالت VBG: pH وریدی معمولاً ۰.۰۳–۰.۰۵ کمتر از شریانی است. pCO₂ وریدی ۶–۸ mmHg بالاتر است.</p>
+                                    <div class="calc-toggles-stack">
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">pH</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgPH" inputmode="decimal" placeholder="7.40" step="0.01" min="6.5" max="8.0" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit" style="opacity:0">—</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">pCO₂</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgPCO2" inputmode="decimal" placeholder="45" step="0.1" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">mmHg</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">HCO₃⁻</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgHCO3" inputmode="decimal" placeholder="24" step="0.1" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">mEq/L</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">BE</span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgBE" inputmode="decimal" placeholder="0" step="0.1" min="-30" max="30" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">mEq/L</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">Na⁺ <span style="font-size:10px;opacity:0.7">(اختیاری)</span></span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgNa" inputmode="decimal" placeholder="140" step="1" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">mEq/L</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">Cl⁻ <span style="font-size:10px;opacity:0.7">(اختیاری)</span></span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgCl" inputmode="decimal" placeholder="104" step="1" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">mEq/L</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-toggle-item">
+                                            <div class="oxy-input-row">
+                                                <span class="oxy-label">Albumin <span style="font-size:10px;opacity:0.7">(اختیاری)</span></span>
+                                                <div class="oxy-field">
+                                                    <input type="number" id="vbgAlbumin" inputmode="decimal" placeholder="4.0" step="0.1" class="oxy-input" style="width:90px;">
+                                                    <span class="oxy-unit">g/dL</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="calculate-btn-enhanced gradient" onclick="interpretVBG()">
+                                        <i class="fas fa-magnifying-glass"></i><span>تفسیر</span>
+                                    </button>
+                                    <div class="vbg-result" id="vbgResult" style="display:none;"></div>
+                                </div>
+                            </div>
+
+                            <!-- CrCl -->
+                            <div class="accordion-item" id="crclAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#fa709a,#fee140)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:block; margin:0 auto;">
+        <path d="M12 4C8 4 6 8 6 12c0 4 2 8 6 8s6-4 6-8c0-4-2-8-6-8zm0 14c-2.2 0-4-2.8-4-6s1.8-6 4-6 4 2.8 4 6-1.8 6-4 6z"/>
+        <circle cx="9.5" cy="10" r="1.2"/>
+        <circle cx="14.5" cy="10" r="1.2"/>
+    </svg>
+</div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">کلیرانس کراتینین</span>
+                                        <span class="accordion-sub">Cockcroft-Gault — CrCl</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>سن</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="crclAge" placeholder="40" step="1" inputmode="numeric">
+                                                <span class="input-unit">yr</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>وزن</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="crclWeight" placeholder="70" step="0.1" inputmode="decimal">
+                                                <span class="input-unit">kg</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>کراتینین</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="crclValue" placeholder="1.0" step="0.01" inputmode="decimal">
+                                                <span class="input-unit">mg/dL</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>جنسیت</label>
+                                            <select id="crclGender">
+                                                <option value="male">مرد</option>
+                                                <option value="female">زن</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <button class="tool-btn" onclick="calculateCrCl()"><i class="fas fa-calculator"></i> محاسبه CrCl</button>
+                                    <div class="tool-result" id="crclResult"></div>
+                                </div>
+                            </div>
+
+                            
+                            <!-- Y-Site<!-- Y-Site Compatibility -->
+
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Unit Converters -->
+                    <div class="accordion-section">
+                        <div class="accordion-section-header">
+                            <i class="fas fa-exchange-alt"></i>
+                            <span>مبدل‌های واحد</span>
+                        </div>
+                        <div class="accordion-list">
+                            <!-- Drip Rate -->
+                            <div class="accordion-item" id="dripAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"><i class="fas fa-droplet"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">محاسبه نرخ قطره</span>
+                                        <span class="accordion-sub">drops/min — Gravity IV</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>حجم</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="dripVolume" placeholder="500" step="1" inputmode="numeric" oninput="calculateDripRateLive()">
+                                                <span class="input-unit">mL</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>زمان</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="dripTime" placeholder="8" step="0.1" inputmode="decimal" oninput="calculateDripRateLive()">
+                                                <span class="input-unit">hr</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="input-group">
+                                        <label>نوع ست</label>
+                                        <select id="dripFactorSelect" onchange="calculateDripRateLive()">
+                                            <option value="20">ماکروست — ۲۰ gtt/mL (سرم‌های ≥۲۵۰ mL)</option>
+                                            <option value="60">میکروست — ۶۰ gtt/mL (محلول‌های ≤۱۰۰ mL)</option>
+                                            <option value="15">۱۵ gtt/mL</option>
+                                            <option value="10">۱۰ gtt/mL</option>
+                                        </select>
+                                    </div>
+                                    <div class="converter-result" id="dripResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Unit Converter -->
+                            <div class="accordion-item" id="unitAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#667eea,#764ba2)"><i class="fas fa-balance-scale"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">مبدل واحد دارو</span>
+                                        <span class="accordion-sub">mcg ↔ mg ↔ g — Live</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="bidir-converter">
+                                        <div class="bidir-field">
+                                            <select id="unitFromSelect" onchange="convertUnitsLive()">
+                                                <option value="mcg">mcg</option>
+                                                <option value="mg" selected>mg</option>
+                                                <option value="g">g</option>
+                                            </select>
+                                            <input type="number" id="unitFromVal" placeholder="0" inputmode="decimal" oninput="convertUnitsLive('from')">
+                                        </div>
+                                        <div class="bidir-arrow"><i class="fas fa-arrow-right-arrow-left"></i></div>
+                                        <div class="bidir-field">
+                                            <select id="unitToSelect" onchange="convertUnitsLive()">
+                                                <option value="mcg" selected>mcg</option>
+                                                <option value="mg">mg</option>
+                                                <option value="g">g</option>
+                                            </select>
+                                            <input type="number" id="unitToVal" placeholder="0" inputmode="decimal" oninput="convertUnitsLive('to')">
+                                        </div>
+                                    </div>
+                                    <div class="converter-result" id="unitResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Electrolyte Converter -->
+                            <div class="accordion-item" id="electrolyteAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#f093fb,#f5576c)"><i class="fas fa-bolt"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">مبدل الکترولیت</span>
+                                        <span class="accordion-sub">mEq ↔ mg — Live</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-group" style="margin-bottom:10px;">
+                                        <label>عنصر</label>
+                                        <select id="electrolyteElement" onchange="convertElectrolyteLive()">
+                                            <option value="sodium">سدیم — Na (وزن ۲۳)</option>
+                                            <option value="potassium">پتاسیم — K (وزن ۳۹)</option>
+                                            <option value="calcium">کلسیم — Ca (وزن ۲۰)</option>
+                                            <option value="magnesium">منیزیم — Mg (وزن ۱۲)</option>
+                                            <option value="sodium_bicarbonate">بی‌کربنات سدیم — NaHCO₃ (وزن ۸۴)</option>
+                                        </select>
+                                    </div>
+                                    <div class="bidir-converter">
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">mEq</label>
+                                            <input type="number" id="electrolyteMeq" placeholder="0" inputmode="decimal" oninput="convertElectrolyteLive('meq')">
+                                        </div>
+                                        <div class="bidir-arrow"><i class="fas fa-arrow-right-arrow-left"></i></div>
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">mg</label>
+                                            <input type="number" id="electrolyteMg" placeholder="0" inputmode="decimal" oninput="convertElectrolyteLive('mg')">
+                                        </div>
+                                    </div>
+                                    <div class="converter-result" id="electrolyteResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Percentage Converter -->
+                            <div class="accordion-item" id="percentageAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#4facfe,#00f2fe)"><i class="fas fa-percent"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">مبدل درصدی محلول</span>
+                                        <span class="accordion-sub">% → g/mL → mg/mL</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="input-row-2col">
+                                        <div class="input-group">
+                                            <label>درصد محلول</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="percentageValue" placeholder="5" step="0.1" inputmode="decimal" oninput="convertPercentageLive()">
+                                                <span class="input-unit">%</span>
+                                            </div>
+                                        </div>
+                                        <div class="input-group">
+                                            <label>حجم</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="percentageVolume" value="100" step="1" inputmode="numeric" oninput="convertPercentageLive()">
+                                                <span class="input-unit">mL</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="converter-result" id="percentageResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Temperature Converter -->
+                            <div class="accordion-item" id="tempAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#fa709a,#fee140)"><i class="fas fa-temperature-half"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">مبدل دما</span>
+                                        <span class="accordion-sub">°C ↔ °F — Live</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="bidir-converter">
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">سلسیوس °C</label>
+                                            <input type="number" id="tempC" placeholder="37" inputmode="decimal" step="0.1" oninput="convertTempLive('c')">
+                                        </div>
+                                        <div class="bidir-arrow"><i class="fas fa-arrow-right-arrow-left"></i></div>
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">فارنهایت °F</label>
+                                            <input type="number" id="tempF" placeholder="98.6" inputmode="decimal" step="0.1" oninput="convertTempLive('f')">
+                                        </div>
+                                    </div>
+                                    <div class="converter-result" id="tempResult"></div>
+                                </div>
+                            </div>
+
+                            <!-- Weight Converter -->
+                            <div class="accordion-item" id="weightAccordionItem">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#a18cd1,#fbc2eb)"><i class="fas fa-weight-hanging"></i></div>
+                                    <div class="accordion-title-wrap">
+                                        <span class="accordion-title">مبدل وزن</span>
+                                        <span class="accordion-sub">kg ↔ lb ↔ g — Live</span>
+                                    </div>
+                                    <i class="fas fa-chevron-down accordion-chevron"></i>
+                                </button>
+                                <div class="accordion-body">
+                                    <div class="bidir-converter" style="flex-wrap:wrap;gap:8px;">
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">کیلوگرم (kg)</label>
+                                            <input type="number" id="weightKg" placeholder="70" inputmode="decimal" step="0.1" oninput="convertWeightLive('kg')">
+                                        </div>
+                                        <div class="bidir-arrow"><i class="fas fa-arrow-right-arrow-left"></i></div>
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">پوند (lb)</label>
+                                            <input type="number" id="weightLb" placeholder="154" inputmode="decimal" step="0.1" oninput="convertWeightLive('lb')">
+                                        </div>
+                                        <div class="bidir-arrow"><i class="fas fa-arrow-right-arrow-left"></i></div>
+                                        <div class="bidir-field">
+                                            <label class="bidir-label">گرم (g)</label>
+                                            <input type="number" id="weightG" placeholder="70000" inputmode="decimal" step="1" oninput="convertWeightLive('g')">
+                                        </div>
+                                    </div>
+                                    <div class="converter-result" id="weightResult"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pressure Converter -->
+                        <div class="accordion-item" id="pressureAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"><i class="fas fa-gauge"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مبدل فشار</span>
+                                    <span class="accordion-sub">PSI ↔ mmHg ↔ cmH₂O ↔ bar — Live</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body">
+                                <div class="pressure-stacked">
+                                    <div class="pressure-row-input">
+                                        <label class="pressure-input-label">PSI</label>
+                                        <input type="number" id="pressurePSI" placeholder="14.7" inputmode="decimal" step="any" oninput="convertPressureLive('psi')" class="pressure-input">
+                                    </div>
+                                    <div class="pressure-row-input">
+                                        <label class="pressure-input-label">mmHg</label>
+                                        <input type="number" id="pressureMMHG" placeholder="760" inputmode="decimal" step="any" oninput="convertPressureLive('mmhg')" class="pressure-input">
+                                    </div>
+                                    <div class="pressure-row-input">
+                                        <label class="pressure-input-label">cmH₂O</label>
+                                        <input type="number" id="pressureCMH2O" placeholder="1033.6" inputmode="decimal" step="any" oninput="convertPressureLive('cmh2o')" class="pressure-input">
+                                    </div>
+                                    <div class="pressure-row-input">
+                                        <label class="pressure-input-label">bar</label>
+                                        <input type="number" id="pressureBAR" placeholder="1.013" inputmode="decimal" step="any" oninput="convertPressureLive('bar')" class="pressure-input">
+                                    </div>
+                                    <div class="pressure-row-input">
+                                        <label class="pressure-input-label">kPa</label>
+                                        <input type="number" id="pressureKPA" placeholder="101.3" inputmode="decimal" step="any" oninput="convertPressureLive('kpa')" class="pressure-input">
+                                    </div>
+                                </div>
+                                <div class="converter-result" id="pressureResult"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+<div id="voiceTab" class="tab-pane" style="display:none;">
+    <div class="voice-container">
+
+        <!-- Environment notice (iOS standalone limits / unsupported browser) -->
+        <div class="voice-env-banner" id="voiceEnvBanner" style="display:none;">
+            <i class="fas fa-circle-info voice-env-icon"></i>
+            <div class="voice-env-text" id="voiceEnvBannerText"></div>
+            <button type="button" class="voice-env-action" id="voiceEnvBannerAction" style="display:none;"></button>
+        </div>
+
+        <!-- Header: flex row so the TTS toggle never overlaps the centered title -->
+        <div class="voice-header">
+            <span class="voice-header-spacer" aria-hidden="true"></span>
+            <div class="voice-title">
+                <i class="fa-solid fa-wand-magic-sparkles voice-icon"></i>
+                <span>دستیار هوشمند</span>
+            </div>
+            <button type="button" class="voice-tts-toggle" id="voiceTtsToggle" aria-label="پاسخ صوتی خاموش است"><i class="fas fa-volume-xmark"></i></button>
+        </div>
+
+        <!-- Fox mark: FoxiMed's mascot doubling as the assistant's "face" —
+             the dominant element on this page by design -->
+        <div class="voice-orb-zone">
+            <button type="button" class="voice-orb-container is-idle" id="voiceOrbContainer" aria-label="شروع یا پایان دستور صوتی">
+                <span class="voice-ambient-glow" aria-hidden="true"></span>
+                <span class="voice-ripple" aria-hidden="true"></span>
+                <span class="voice-ripple" aria-hidden="true"></span>
+                <span class="voice-ripple" aria-hidden="true"></span>
+                <span class="voice-eye-spark left" aria-hidden="true"></span>
+                <span class="voice-eye-spark right" aria-hidden="true"></span>
+                <span class="voice-fox-mark" id="voiceOrb" aria-hidden="true"></span>
+                <span class="voice-embers" id="voiceEmbers" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div class="voice-status" id="voiceStatus">برای شروع، دکمه را بزنید یا تایپ کنید</div>
+
+        <!-- Transcript — only takes up space while actually listening/processing -->
+        <div class="voice-transcript-area" id="voiceTranscriptArea" style="display:none;">
+            <div class="voice-transcript" id="voiceTranscript">…</div>
+        </div>
+
+        <!-- Result (dynamic) -->
+        <div class="voice-result" id="voiceResult" style="display:none;"></div>
+
+        <!-- Text fallback — redesigned, moved up as a real secondary input -->
+        <div class="voice-text-fallback">
+            <i class="fas fa-keyboard voice-text-icon" aria-hidden="true"></i>
+            <input type="text" id="voiceTextInput" placeholder="یا دستور را تایپ کنید…" inputmode="text" autocomplete="off" />
+            <button type="button" id="voiceTextSend" aria-label="ارسال دستور"><i class="fas fa-arrow-left"></i></button>
+        </div>
+
+        <!-- Example chips — single-row horizontal scroll, hides while busy -->
+        <div class="voice-examples" id="voiceExamples">
+            <div class="voice-chips">
+                <button type="button" class="voice-example-chip" data-command="هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰"><span class="chip-emoji">💉</span> هپارین</button>
+                <button type="button" class="voice-example-chip" data-command="BMI وزن ۷۵ قد ۱۷۵"><span class="chip-emoji">📊</span> BMI</button>
+                <button type="button" class="voice-example-chip" data-command="GCS 4 5 6"><span class="chip-emoji">🧠</span> GCS</button>
+                <button type="button" class="voice-example-chip" data-command="قطره ۵۰۰ میلی‌لیتر در ۸ ساعت"><span class="chip-emoji">💧</span> قطره</button>
+                <button type="button" class="voice-example-chip" data-command="تبدیل ۲۰ mEq سدیم به mg"><span class="chip-emoji">🧪</span> تبدیل</button>
+                <button type="button" class="voice-example-chip" data-command="تاریک"><span class="chip-emoji">🌙</span> تاریک</button>
+                <button type="button" class="voice-example-chip" data-command="سازگاری هپارین و وانکومایسین"><span class="chip-emoji">🔬</span> سازگاری</button>
+                <button type="button" class="voice-example-chip" data-command="راهنما"><span class="chip-emoji">❓</span> راهنما</button>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="voice-history-section" id="voiceHistory" style="display:none;">
+            <div class="voice-history-head">
+                <span class="voice-history-label">تاریخچه</span>
+                <button type="button" class="voice-clear-history" id="voiceClearHistoryBtn">پاک کردن</button>
+            </div>
+            <div class="voice-history-list" id="voiceHistoryList"></div>
+        </div>
+
+    </div>
+</div>
+
+        <!-- Bottom Tab Navigation -->
+        <div class="tab-bar">
+            <button class="tab-item active" data-tab="calculator"><i class="fas fa-calculator"></i><span>محاسبه</span></button>
+            <button class="tab-item" data-tab="drugs"><i class="fas fa-book-medical"></i><span>مرجع</span></button>
+            <button class="tab-item" data-tab="tools"><i class="fas fa-tools"></i><span>ابزارها</span></button>
+            <button class="tab-item" data-tab="voice"><i class="fas fa-microphone"></i><span>دستیار</span></button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-cog"></i> تنظیمات</h3>
+                <button class="modal-close" id="closeSettings">&times;</button>
+            </div>
+            <div class="modal-body">
+
+                <!-- User Profile -->
+                <div class="settings-group">
+    <h4><i class="fas fa-user-circle"></i> پروفایل کاربر</h4>
+    <div class="username-field compact">
+        <div class="username-input-row">
+            <input type="text" id="userNameInput" class="username-input" placeholder="نام خود را وارد کنید" maxlength="30" autocomplete="off">
+            <button class="username-save-btn" id="userNameSaveBtn"><i class="fas fa-check"></i></button>
+        </div>
+        <!-- hint removed to save space -->
+    </div>
+</div>
+
+                <!-- Appearance -->
+                <div class="settings-group">
+                    <h4><i class="fas fa-palette"></i> ظاهر</h4>
+
+                    <!-- Theme mode: 3 buttons -->
+                    <div class="setting-item setting-item--block">
+                        <span class="setting-label-full">حالت نمایش</span>
+                        <div class="theme-mode-btns" id="themeModeButtons">
+                            <button class="theme-mode-btn" data-mode="light"><i class="fas fa-sun"></i> روشن</button>
+                            <button class="theme-mode-btn" data-mode="dark"><i class="fas fa-moon"></i> تاریک</button>
+                            <button class="theme-mode-btn" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> خودکار</button>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <span>فونت بزرگ</span>
+                        <label class="switch"><input type="checkbox" id="largeFontToggle"><span class="slider"></span></label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label-stack">
+                            <span><i class="fas fa-mobile-screen-button" style="margin-left:6px;opacity:0.7"></i>لرزش لمسی</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" id="hapticToggle" checked><span class="slider"></span></label>
+                    </div>
+
+                    <!-- Theme Color Picker -->
+                    <div class="theme-picker-section">
+                        <span class="theme-picker-label"><i class="fas fa-swatchbook"></i> رنگ تم</span>
+                        <div class="theme-swatches" id="themeSwatches">
+                            <button class="theme-swatch active" data-theme="default" title="پیش‌فرض">
+                                <span class="swatch-dot" style="background:linear-gradient(135deg,#667eea,#764ba2)"></span>
+                                <span class="swatch-name">Hedo</span>
+                            </button>
+                            <button class="theme-swatch" data-theme="fox" title="روباه">
+                                <span class="swatch-dot" style="background:linear-gradient(135deg,#f97316,#dc2626)"></span>
+                                <span class="swatch-name">Fox</span>
+                            </button>
+                            <button class="theme-swatch" data-theme="ocean" title="اقیانوس">
+                                <span class="swatch-dot" style="background:linear-gradient(135deg,#0ea5e9,#0d9488)"></span>
+                                <span class="swatch-name">Siren</span>
+                            </button>
+                            <button class="theme-swatch" data-theme="rose" title="گل‌سرخ">
+                                <span class="swatch-dot" style="background:linear-gradient(135deg,#f43f5e,#ec4899)"></span>
+                                <span class="swatch-name">Vixen</span>
+                            </button>
+                            <button class="theme-swatch" data-theme="forest" title="جنگل">
+                                <span class="swatch-dot" style="background:linear-gradient(135deg,#22c55e,#14b8a6)"></span>
+                                <span class="swatch-name">Lynx</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notifications -->
+                <div class="settings-group">
+                    <h4><i class="fas fa-bell"></i> اعلان‌ها</h4>
+                    <div class="setting-item">
+                        <span>هشدار دوز</span>
+                        <label class="switch"><input type="checkbox" id="doseAlertToggle" checked><span class="slider"></span></label>
+                    </div>
+                    <div class="setting-item">
+                        <span>هشدار سازگاری</span>
+                        <label class="switch"><input type="checkbox" id="compatAlertToggle" checked><span class="slider"></span></label>
+                    </div>
+                </div>
+
+                <!-- Data -->
+                <div class="settings-group">
+                    <h4><i class="fas fa-database"></i> داده‌ها</h4>
+                    <div class="setting-item">
+                        <span>ذخیره تاریخچه</span>
+                        <label class="switch"><input type="checkbox" id="saveHistoryToggle" checked><span class="slider"></span></label>
+                    </div>
+                    <div class="settings-btn-row">
+                        <button class="setting-btn gradient" id="clearHistoryBtn"><i class="fas fa-trash"></i> پاک کردن تاریخچه</button>
+                        <button class="setting-btn gradient" id="exportDataBtn"><i class="fas fa-download"></i> خروجی گرفتن</button>
+                    </div>
+                </div>
+
+                <!-- Contact -->
+                <div class="settings-group">
+                    <h4><i class="fas fa-headset"></i> ارتباط با ما</h4>
+                    <a class="setting-contact-btn" href="https://t.me/i_2mt" target="_blank" rel="noopener">
+                        <i class="fab fa-telegram"></i>
+                        <span>پشتیبانی و ارتباط از طریق تلگرام</span>
+                        <span class="contact-handle">@i_2mt</span>
+                    </a>
+                </div>
+
+                <!-- About -->
+                <div class="settings-group">
+                    <h4><i class="fas fa-info-circle"></i> درباره</h4>
+                    <div class="about-info">
+                        <div class="about-row"><span>نسخه</span><span>4.6.0</span></div>
+                        <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
+                        <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
+                    </div>
+                    <div class="settings-btn-row">
+                        <button class="setting-btn gradient" id="checkUpdateBtn"><i class="fas fa-sync-alt"></i> بررسی به‌روزرسانی</button>
+                        <button class="setting-btn gradient" onclick="showTutorial()"><i class="fas fa-graduation-cap"></i> راهنمای برنامه</button>
+                    </div>
+                    <div class="settings-credits">
+                        <i class="fas fa-code"></i>
+                        <span>Designed &amp; developed by</span>
+                        <strong>Mohammad Mahdi Taghavi</strong>
+                    </div>
+                </div>
+
+            </div><!-- /.modal-body -->
+        </div><!-- /.modal-content -->
+    </div><!-- /#settingsModal -->
+
+    <!-- History Modal -->
+    <div class="modal" id="historyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-history"></i> تاریخچه محاسبات</h3>
+                <button class="modal-close" id="closeHistory">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="history-list" id="historyList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tutorial Overlay (slide-based) -->
+    <div id="onboardingOverlay" class="onboarding-overlay" style="display:none;">
+        <div class="onboarding-backdrop"></div>
+        <div class="onboarding-box tutorial-box">
+            <!-- Slide indicators -->
+            <div class="tutorial-dots" id="tutorialDots"></div>
+
+            <!-- Slides container -->
+            <div class="tutorial-slides" id="tutorialSlides">
+
+                <!-- Slide 1: Welcome -->
+                <div class="tutorial-slide active">
+                    <div class="tutorial-icon" style="background:var(--gradient-primary)"><i class="fas fa-syringe"></i></div>
+                    <h2 class="tutorial-title">به FoxiMed خوش آمدید</h2>
+                    <p class="tutorial-body">دستیار هوشمند محاسبات دارویی برای پرستاران و پزشکان ICU — آفلاین، سریع و دقیق.</p>
+                </div>
+
+                <!-- Slide 2: Drug calculator -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#f97316,#dc2626)"><i class="fas fa-calculator"></i></div>
+                    <h2 class="tutorial-title">محاسبه‌گر دارویی</h2>
+                    <p class="tutorial-body">از تب اول دارو را انتخاب کنید، روش تزریق و حجم محلول را تنظیم کنید، دوز پزشک را وارد کنید و دکمه محاسبه را بزنید — سرعت پمپ فوری نمایش داده می‌شود.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> برای داروهای وزن‌محور، گزینه «محاسبه بر اساس وزن» را فعال کنید.</div>
+                </div>
+
+                <!-- Slide 3: Drug reference -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"><i class="fas fa-book-medical"></i></div>
+                    <h2 class="tutorial-title">مرجع سریع داروها</h2>
+                    <p class="tutorial-body">تب دوم مرجع کامل هر دارو است — سازگاری، دوز معمول، نکات تهیه و اخطارها. روی هر دارو ضربه بزنید تا اطلاعات کامل را ببینید.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> جستجوی سریع بالای صفحه برای یافتن دارو با نام فارسی یا انگلیسی.</div>
+                </div>
+
+                <!-- Slide 4: Tools -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-toolbox"></i></div>
+                    <h2 class="tutorial-title">ابزارهای بالینی</h2>
+                    <p class="tutorial-body">تب سوم شامل ابزارهای کلینیکی است: GCS، RASS، Braden، Morse، محاسبه BMI و BSA، کپسول اکسیژن، مبدل‌های واحد و محاسبه‌گر دستی.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> روی هر آکاردئون ضربه بزنید تا باز شود — برای بستن دوباره ضربه بزنید یا از دکمه بستن استفاده کنید.</div>
+                </div>
+
+                <!-- Slide 5: History -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#8b5cf6,#d946ef)"><i class="fas fa-history"></i></div>
+                    <h2 class="tutorial-title">تاریخچه محاسبات</h2>
+                    <p class="tutorial-body">دکمه ساعت در نوار بالا تاریخچه تمام محاسبات شما را نشان می‌دهد. می‌توانید هر محاسبه قبلی را دوباره بارگذاری کنید.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> ذخیره تاریخچه را می‌توانید از تنظیمات مدیریت کنید.</div>
+                </div>
+
+                <!-- Slide 6: Settings & themes -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-cog"></i></div>
+                    <h2 class="tutorial-title">تنظیمات و تم</h2>
+                    <p class="tutorial-body">دکمه چرخ‌دنده در بالا تنظیمات را باز می‌کند. می‌توانید نام خود را وارد کنید، حالت تاریک/روشن/خودکار را انتخاب کنید و از 5 تم رنگی مختلف استفاده کنید.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> دکمه نیمه‌ماه در نوار بالا هم تم را فوری تغییر می‌دهد.</div>
+                </div>
+
+                <!-- Slide 7: Ready -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#22c55e,#0ea5e9)"><i class="fas fa-check-double"></i></div>
+                    <h2 class="tutorial-title">آماده‌اید!</h2>
+                    <p class="tutorial-body">FoxiMed کاملاً آفلاین کار می‌کند. می‌توانید آن را به صفحه اصلی گوشی خود اضافه کنید تا مثل یک اپلیکیشن باز شود.</p>
+                    <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> این راهنما را می‌توانید از تنظیمات دوباره مشاهده کنید.</div>
+                </div>
+
+            </div>
+
+            <!-- Navigation -->
+            <div class="tutorial-nav">
+                <button class="tutorial-btn-skip" id="tutorialSkipBtn">رد شدن</button>
+                <button class="tutorial-btn-next" id="tutorialNextBtn"><span>بعدی</span> <i class="fas fa-arrow-left"></i></button>
+            </div>
+            <label class="tutorial-dont-show">
+                <input type="checkbox" id="onboardingDontShow">
+                <span>دیگر نشان نده</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Reverse mode first-use tooltip -->
+        <!-- Reverse mode first-use tooltip -->
+    <div id="reverseTooltip" class="reverse-tooltip-overlay" style="display:none;">
+        <div class="reverse-tooltip-backdrop"></div>
+        <div class="reverse-tooltip-box">
+            <div class="reverse-tooltip-icon"><i class="fas fa-arrow-right-arrow-left"></i></div>
+            <h3 class="reverse-tooltip-title">حالت معکوس</h3>
+            <p class="reverse-tooltip-body">در محاسبه‌ی معکوس، دوز در حال انفوزیون بر اساس سرعت پمپ محاسبه می‌شود.</p>
+            <button class="reverse-tooltip-btn" id="reverseTooltipOk">متوجه شدم</button>
+        </div>
+    </div>
+
+    <script src="drugDatabase.js"></script>
+    <script src="converters.js"></script>
+    <script src="script.js"></script>
+    <script src="voice-recognition.js"></script>
+    <script src="voice-commands.js"></script>
+    <script src="voice-ui.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js');
+            });
+        }
+    </script>
+    <script>
+    // Safety timeout: force hide loading screen after 5 seconds
+    setTimeout(function() {
+        var loadingScreen = document.getElementById('loadingScreen');
+        if (loadingScreen && loadingScreen.style.display !== 'none') {
+            if (typeof window.hideLoadingScreen === 'function') {
+                window.hideLoadingScreen();
+            } else {
+                loadingScreen.classList.add('fade-out');
+                setTimeout(function() { loadingScreen.style.display = 'none'; }, 550);
+            }
+        }
+    }, 5000);
+</script>
+    <!-- Help Popover -->
+    <div class="help-popover" id="helpPopover" style="display:none;">
+        <div class="help-popover-arrow"></div>
+        <p class="help-popover-text" id="helpPopoverText"></p>
+    </div>
+
+</body>
+</html>

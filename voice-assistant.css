@@ -1,0 +1,636 @@
+/* ============================================
+   FoxiMed — Voice Assistant UI
+   ============================================
+   A focused, "ambient AI" visual language for the voice tab: a glowing,
+   theme-aware orb (rotating conic gradient + blur, à la Apple Intelligence)
+   that reacts to real microphone input, glass cards for transcript/results,
+   and a clear environment banner instead of silent failures on iOS.
+
+   Kept in its own file (split out of style.css) so the voice experience can
+   be iterated on independently of the rest of the app.
+
+   © Mohammad Mahdi Taghavi — FoxiMed
+   ============================================ */
+
+.voice-container {
+    --voice-c1: var(--primary);
+    --voice-c2: var(--secondary);
+    --audio-level: 0.15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 16px 18px;
+    max-width: 460px;
+    margin: 0 auto;
+    gap: 10px;
+    overflow-x: hidden;
+    width: 100%;
+}
+
+/* ============================================
+   ENVIRONMENT BANNER
+   ============================================ */
+.voice-env-banner {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.voice-env-banner.is-blocked {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.28);
+}
+.voice-env-icon {
+    font-size: 18px;
+    color: #f59e0b;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+.voice-env-banner.is-blocked .voice-env-icon { color: #ef4444; }
+.voice-env-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+.voice-env-text strong { font-size: 13.5px; }
+.voice-env-text span { color: var(--text-secondary); }
+.voice-env-action {
+    display: none;
+    align-self: center;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--gradient-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* ============================================
+   HEADER — a real flex row, so the TTS toggle has its own
+   reserved space and can never sit on top of the title text
+   ============================================ */
+.voice-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.voice-header-spacer {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+}
+.voice-tts-toggle {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-tertiary);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, transform 0.15s;
+}
+.voice-tts-toggle:active { transform: scale(0.9); }
+.voice-tts-toggle.is-on {
+    color: var(--voice-c1);
+    border-color: var(--voice-c1);
+}
+.voice-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.voice-title .voice-icon {
+    font-size: 17px;
+    background: linear-gradient(135deg, var(--voice-c1), var(--voice-c2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.voice-title span {
+    background: linear-gradient(135deg, var(--voice-c1), var(--voice-c2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ============================================
+   THE ORB
+   ============================================ */
+.voice-orb-zone {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 4px;
+    position: relative;
+}
+
+/* The fox mark is FoxiMed's brand mascot, not a theme-driven UI accent —
+   like Slack's hash mark staying Slack-purple regardless of dark mode, it
+   deliberately keeps its own fixed orange/gold identity across every app
+   theme, so it stays recognizable wherever you are in the app. */
+.voice-orb-container {
+    --fox-orange: #ea580c;
+    --fox-gold: #fbbf24;
+    position: relative;
+    width: 250px;
+    height: 250px;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Soft ambient room-glow behind the mark, breathing slowly, tinted by state */
+.voice-ambient-glow {
+    position: absolute;
+    inset: -60%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(234, 88, 12, calc(0.16 + var(--audio-level) * 0.22)), rgba(234, 88, 12, 0) 65%);
+    filter: blur(6px);
+    animation: voiceAmbientBreathe 6s ease-in-out infinite;
+    pointer-events: none;
+    transition: background 0.4s ease;
+}
+@keyframes voiceAmbientBreathe {
+    0%, 100% { opacity: 0.75; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* Sonar ripple rings — only animate while listening */
+.voice-ripple {
+    position: absolute;
+    inset: 28px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    opacity: 0;
+    pointer-events: none;
+}
+.voice-orb-container.is-listening .voice-ripple {
+    border-color: rgba(251, 191, 36, 0.55);
+    animation: voiceRippleOut 2.2s ease-out infinite;
+}
+.voice-orb-container.is-listening .voice-ripple:nth-of-type(2) { animation-delay: 0.7s; }
+.voice-orb-container.is-listening .voice-ripple:nth-of-type(3) { animation-delay: 1.4s; }
+@keyframes voiceRippleOut {
+    0%   { transform: scale(0.78); opacity: 0.65; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Ambient embers drifting up behind the mark — always on at low intensity,
+   a little livelier while listening/processing */
+.voice-embers {
+    position: absolute;
+    inset: -30px -6px;
+    pointer-events: none;
+    overflow: hidden;
+}
+.voice-ember {
+    position: absolute;
+    bottom: 12%;
+    width: var(--s, 4px);
+    height: var(--s, 4px);
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff7e0, var(--fox-gold) 60%, transparent 100%);
+    opacity: 0;
+    animation: voiceEmberFloat var(--dur, 5s) ease-in infinite;
+    animation-delay: var(--delay, 0s);
+}
+@keyframes voiceEmberFloat {
+    0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
+    12%  { opacity: 0.85; }
+    80%  { opacity: 0.3; }
+    100% { transform: translate(var(--dx, 10px), -150px) scale(1); opacity: 0; }
+}
+.voice-orb-container.is-listening .voice-ember,
+.voice-orb-container.is-processing .voice-ember {
+    animation-duration: calc(var(--dur, 5s) * 0.55);
+}
+
+/* Eyes lighting up through the mark's own negative-space cutouts */
+.voice-eye-spark {
+    position: absolute;
+    width: 27px;
+    height: 18px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff7e6 0%, var(--fox-gold) 55%, transparent 80%);
+    filter: blur(2px);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    top: 47%;
+}
+.voice-eye-spark.left { left: 30%; transform: translate(-50%, -50%) rotate(8deg); }
+.voice-eye-spark.right { left: 70%; transform: translate(-50%, -50%) rotate(-8deg); }
+.voice-orb-container.is-listening .voice-eye-spark,
+.voice-orb-container.is-processing .voice-eye-spark {
+    opacity: calc(0.55 + var(--audio-level) * 0.45);
+}
+
+/* The mark itself: a real image, recolored per state via mask-image so the
+   exact same silhouette can become brand-orange, success-green or error-red */
+.voice-fox-mark {
+    position: relative;
+    width: 192px;
+    height: 192px;
+    background-image: url('icons/fox-mark.png');
+    background-size: cover;
+    background-position: center;
+    -webkit-mask-image: url('icons/fox-mark-mask.png');
+    mask-image: url('icons/fox-mark-mask.png');
+    -webkit-mask-size: cover;
+    mask-size: cover;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    filter:
+        drop-shadow(0 0 calc(10px + var(--audio-level) * 14px) rgba(234, 88, 12, calc(0.5 + var(--audio-level) * 0.3)))
+        drop-shadow(0 0 calc(34px + var(--audio-level) * 26px) rgba(234, 88, 12, calc(0.3 + var(--audio-level) * 0.3)));
+    transition: filter 0.2s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-image 0.2s ease;
+    animation: voiceFoxBreathe 4.2s ease-in-out infinite;
+}
+.voice-orb-container:active .voice-fox-mark { transform: scale(0.94); }
+
+@keyframes voiceFoxBreathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.035); }
+}
+@keyframes voiceFoxBreatheFast {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+}
+
+/* ── State machine ── */
+.voice-orb-container.is-listening .voice-fox-mark,
+.voice-orb-container.is-processing .voice-fox-mark {
+    animation: voiceFoxBreatheFast 1.4s ease-in-out infinite;
+}
+.voice-orb-container.is-processing .voice-fox-mark {
+    animation-duration: 0.85s;
+}
+
+.voice-orb-container.is-success .voice-fox-mark {
+    background-image: none;
+    background: linear-gradient(150deg, #34d399, #10b981);
+    filter:
+        drop-shadow(0 0 12px rgba(34, 197, 94, 0.7))
+        drop-shadow(0 0 38px rgba(16, 185, 129, 0.5));
+}
+.voice-orb-container.is-success .voice-eye-spark {
+    opacity: 1;
+    background: radial-gradient(circle, #fff 0%, #6ee7b7 55%, transparent 80%);
+}
+.voice-orb-container.is-success .voice-ambient-glow {
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.22), rgba(16, 185, 129, 0) 65%);
+}
+
+.voice-orb-container.is-error .voice-fox-mark {
+    background-image: none;
+    background: linear-gradient(150deg, #f87171, #dc2626);
+    filter:
+        drop-shadow(0 0 12px rgba(239, 68, 68, 0.7))
+        drop-shadow(0 0 38px rgba(220, 38, 38, 0.5));
+}
+.voice-orb-container.is-error .voice-eye-spark {
+    opacity: 1;
+    background: radial-gradient(circle, #fff 0%, #fca5a5 55%, transparent 80%);
+}
+.voice-orb-container.is-error .voice-ambient-glow {
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.22), rgba(239, 68, 68, 0) 65%);
+}
+
+.voice-orb-container.is-loading-model .voice-fox-mark {
+    animation: voiceFoxBreatheFast 1.3s ease-in-out infinite;
+    opacity: 0.85;
+}
+.voice-orb-container.is-loading-model .voice-eye-spark {
+    opacity: 0.5;
+    animation: voiceEyeFlicker 1.6s ease-in-out infinite;
+}
+@keyframes voiceEyeFlicker {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.7; }
+}
+
+/* ============================================
+   STATUS
+   ============================================ */
+.voice-status {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-height: 22px;
+    text-align: center;
+    transition: color 0.2s;
+}
+.voice-status.recording { color: var(--voice-c1); font-weight: 600; }
+.voice-status.processing { color: #f59e0b; font-weight: 600; }
+.voice-status.success { color: #22c55e; font-weight: 600; }
+.voice-status.error { color: #ef4444; font-weight: 600; }
+
+/* ============================================
+   TRANSCRIPT
+   ============================================ */
+.voice-transcript-area {
+    width: 100%;
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 12px 18px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: voiceFadeSlideIn 0.25s ease;
+}
+.voice-transcript {
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    min-height: 22px;
+    direction: rtl;
+    text-align: right;
+    word-break: break-word;
+}
+.voice-transcript.active {
+    color: var(--text-primary);
+}
+
+/* ============================================
+   RESULT CARD
+   ============================================ */
+.voice-result {
+    width: 100%;
+    border-radius: var(--radius-lg);
+    padding: 14px 18px;
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    border-inline-start: 4px solid var(--voice-c1);
+    background: color-mix(in srgb, var(--voice-c1) 8%, var(--surface));
+    animation: voiceFadeSlideIn 0.25s ease;
+}
+@supports not (background: color-mix(in srgb, red, blue)) {
+    .voice-result { background: var(--surface); }
+}
+.voice-result.error {
+    border-inline-start-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+.voice-result.info {
+    border-inline-start-color: #5ac8fa;
+    background: rgba(90, 200, 250, 0.08);
+}
+.voice-tip {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+}
+@keyframes voiceFadeSlideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   TEXT FALLBACK
+   ============================================ */
+.voice-text-fallback {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px 7px 18px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.dark-mode .voice-text-fallback {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.voice-text-fallback:focus-within {
+    border-color: var(--fox-orange, var(--voice-c1));
+    box-shadow: 0 2px 16px rgba(234, 88, 12, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.voice-text-icon {
+    flex-shrink: 0;
+    font-size: 15px;
+    color: var(--text-tertiary);
+    transition: color 0.2s ease;
+}
+.voice-text-fallback:focus-within .voice-text-icon {
+    color: var(--fox-orange, var(--voice-c1));
+}
+.voice-text-fallback input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    outline: none;
+    padding: 10px 0;
+    font-size: 15px;
+    color: var(--text-primary);
+    text-align: right;
+    direction: rtl;
+}
+.voice-text-fallback input::placeholder {
+    color: var(--text-tertiary);
+}
+#voiceTextSend {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+    border: none;
+    background: linear-gradient(135deg, var(--fox-orange, var(--voice-c1)), var(--fox-gold, var(--voice-c2)));
+    color: #fff;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(234, 88, 12, 0.3);
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#voiceTextSend:active { transform: scale(0.9); }
+
+/* ============================================
+   EXAMPLE CHIPS — single-row, horizontally scrollable strip.
+   Keeps the idle view light instead of a multi-row wall of pills, and
+   costs zero vertical space beyond one row no matter how many examples
+   are added later.
+   ============================================ */
+.voice-examples {
+    width: 100%;
+    animation: voiceFadeSlideIn 0.25s ease;
+}
+.voice-chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    padding: 2px 2px 6px;
+    margin: -2px -2px -6px;
+    /* hide the scrollbar but keep it scrollable */
+    scrollbar-width: none;
+}
+.voice-chips::-webkit-scrollbar { display: none; }
+.voice-example-chip {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border-radius: 13px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+}
+.voice-example-chip .chip-emoji { font-size: 13px; }
+.voice-example-chip:active {
+    background: linear-gradient(135deg, var(--fox-orange, var(--voice-c1)), var(--fox-gold, var(--voice-c2)));
+    color: #fff;
+    border-color: transparent;
+    transform: scale(0.96);
+    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.25);
+}
+@media (hover: hover) {
+    .voice-example-chip:hover {
+        border-color: var(--fox-orange, var(--voice-c1));
+        color: var(--fox-orange, var(--voice-c1));
+        transform: translateY(-1px);
+    }
+}
+
+/* ============================================
+   HISTORY
+   ============================================ */
+.voice-history-section { width: 100%; }
+.voice-history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.voice-history-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+}
+.voice-clear-history {
+    border: none;
+    background: none;
+    color: var(--text-tertiary);
+    font-size: 11.5px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+.voice-clear-history:hover { color: #ef4444; }
+.voice-history-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.voice-history-chip {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.voice-history-chip:hover {
+    border-color: var(--voice-c1);
+    color: var(--voice-c1);
+}
+
+/* ============================================
+   DARK MODE
+   ============================================ */
+.dark-mode .voice-env-banner { background: rgba(245, 158, 11, 0.08); }
+.dark-mode .voice-ambient-glow { filter: blur(6px) brightness(1.15); }
+.dark-mode .voice-transcript-area,
+.dark-mode .voice-text-fallback,
+.dark-mode .voice-example-chip,
+.dark-mode .voice-history-chip,
+.dark-mode .voice-tts-toggle {
+    background: var(--surface);
+    border-color: #374151;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 380px) {
+    .voice-orb-container { width: 225px; height: 225px; }
+    .voice-fox-mark { width: 172px; height: 172px; }
+    .voice-title { font-size: 17px; }
+}
+
+/* Extra-short viewports (iPhone SE and similar) — shrink the chrome
+   AROUND the fox, not the fox itself, so it stays the dominant element */
+@media (max-height: 680px) {
+    .voice-orb-container { width: 222px; height: 222px; }
+    .voice-fox-mark { width: 170px; height: 170px; }
+    .voice-container { gap: 6px; padding-top: 4px; padding-bottom: 10px; }
+    .voice-orb-zone { padding: 2px 0; }
+    .voice-status { min-height: 18px; font-size: 14px; }
+    .voice-text-fallback input { padding: 8px 0; font-size: 14px; }
+    #voiceTextSend { width: 36px; height: 36px; }
+}
+
+/* ============================================
+   REDUCED MOTION
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    .voice-ambient-glow,
+    .voice-fox-mark,
+    .voice-ripple,
+    .voice-ember {
+        animation: none !important;
+    }
+}

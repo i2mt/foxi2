@@ -1,0 +1,66 @@
+{
+    "name": "FoxiMed",
+    "short_name": "FoxiMed",
+    "description": "دستیار هوشمند محاسبات برای پرستاران و پزشکان",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "orientation": "portrait",
+    "theme_color": "#ffffff",
+    "background_color": "#0f172a",
+    "icons": [
+        {
+            "src": "icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/apple-touch-icon.png",
+            "sizes": "180x180",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ],
+    "categories": [
+        "medical",
+        "health",
+        "productivity",
+        "education"
+    ],
+    "lang": "fa",
+    "dir": "rtl",
+    "scope": "./",
+    "shortcuts": [
+        {
+            "name": "محاسبه جدید",
+            "short_name": "محاسبه",
+            "description": "شروع یک محاسبه جدید",
+            "url": "./index.html?action=calculate",
+            "icons": [
+                {
+                    "src": "icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "مبدل واحدها",
+            "short_name": "مبدل",
+            "description": "تبدیل واحدهای دارویی",
+            "url": "./index.html?action=converters",
+            "icons": [
+                {
+                    "src": "icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ],
+    "version": "4.6.0"
+}
