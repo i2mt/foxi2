@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/releases/download/v1.0/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = 'https://cdn.imgurl.ir/uploads/81780_vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
@@ -501,7 +501,7 @@
         // rather than leaving the UI stuck on "preparing" forever. 53MB on
         // a slow connection legitimately needs a generous allowance.
         const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, 240000);
+            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, 360000);
         });
 
         voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
