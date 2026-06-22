@@ -46,6 +46,9 @@
             clearHistoryBtn: qs('voiceClearHistoryBtn'),
             ttsToggle: qs('voiceTtsToggle'),
             headerSpacer: document.querySelector('.voice-header-spacer'),
+            modelProgress: qs('voiceModelProgress'),
+            modelProgressFill: qs('voiceModelProgressFill'),
+            modelProgressLabel: qs('voiceModelProgressLabel'),
             examples: qs('voiceExamples')
         };
     }
@@ -317,9 +320,34 @@
         });
         window.VoiceEngine.on('model-loading', function () {
             setOrbState('loading-model');
-            setStatus('آماده‌سازی موتور آفلاین... (فقط بار اول، حدود ۵۳ مگابایت — ممکن است چند دقیقه طول بکشد)', 'processing');
+            setStatus('آماده‌سازی موتور آفلاین...', 'processing');
+            if (els.modelProgress) {
+                els.modelProgress.style.display = 'flex';
+                if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود (حدود ۵۳ مگابایت)...';
+            }
+        });
+        window.VoiceEngine.on('model-progress', function (p) {
+            if (!els.modelProgressFill) return;
+            if (p.fromCache) {
+                els.modelProgressFill.classList.remove('is-indeterminate');
+                els.modelProgressFill.style.width = '100%';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'بارگذاری از حافظه ذخیره‌شده...';
+                return;
+            }
+            if (p.percent === null || p.percent === undefined) {
+                els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressLabel) {
+                    els.modelProgressLabel.textContent = 'دانلود شده: ' + (Math.round(p.loaded / 1024 / 1024 * 10) / 10) + ' مگابایت';
+                }
+                return;
+            }
+            els.modelProgressFill.classList.remove('is-indeterminate');
+            els.modelProgressFill.style.width = Math.max(2, p.percent) + '%';
+            if (els.modelProgressLabel) els.modelProgressLabel.textContent = p.percent + '٪ دانلود شده';
         });
         window.VoiceEngine.on('model-ready', function () {
+            if (els.modelProgress) els.modelProgress.style.display = 'none';
             if (els.orbContainer && els.orbContainer.classList.contains('is-loading-model')) {
                 setOrbState('idle');
                 setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
@@ -343,6 +371,7 @@
             }
         });
         window.VoiceEngine.on('error', function (info) {
+            if (els.modelProgress) els.modelProgress.style.display = 'none';
             setOrbState('error');
             setStatus(info.title || 'خطا', 'error');
             showResult((info.title ? '<strong>' + info.title + '</strong><br>' : '') + (info.message || ''), 'error');

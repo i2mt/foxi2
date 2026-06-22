@@ -49,7 +49,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 4.6.1</div>
+            <div class="loading-version">نسخه 4.7.1</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -1686,6 +1686,12 @@
             </button>
         </div>
         <div class="voice-status" id="voiceStatus">برای شروع، دکمه را بزنید یا تایپ کنید</div>
+        <div class="voice-model-progress" id="voiceModelProgress" style="display:none;">
+            <div class="voice-model-progress-track">
+                <div class="voice-model-progress-fill" id="voiceModelProgressFill"></div>
+            </div>
+            <div class="voice-model-progress-label" id="voiceModelProgressLabel"></div>
+        </div>
 
         <!-- Transcript — only takes up space while actually listening/processing -->
         <div class="voice-transcript-area" id="voiceTranscriptArea" style="display:none;">
@@ -1851,7 +1857,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>4.6.1</span></div>
+                        <div class="about-row"><span>نسخه</span><span>4.7.1</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>

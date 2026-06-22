@@ -70,14 +70,15 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/blob/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
     // no real downside to being patient here, it only delays the *failure*
     // message on a genuinely dead connection, it doesn't block anything
     // else in the app.
-    const VOSK_MODEL_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes
+    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; the retry logic below handles ordinary stalls long before this
+    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -182,6 +183,11 @@
                 code: 'no-speech',
                 title: 'صدایی شنیده نشد',
                 message: 'چیزی متوجه نشدم. لطفاً دوباره و واضح‌تر صحبت کنید.'
+            },
+            'language-not-supported': {
+                code: 'language-not-supported',
+                title: 'زبان فارسی روی این دستگاه نصب نیست',
+                message: 'گویا بسته تشخیص گفتار فارسی روی این گوشی نصب یا به‌روزرسانی نشده. در اپ Google، تنظیمات > صدا > Offline speech recognition را بررسی کنید، یا دستور را تایپ کنید.'
             },
             'audio-capture': {
                 code: 'audio-capture',
@@ -342,7 +348,7 @@
     // ============================================
     // BACKEND 1: NATIVE WEB SPEECH API
     // ============================================
-    function startWebSpeech() {
+    function startWebSpeech(langOverride) {
         if (active) return;
 
         const support = getSupportInfo();
@@ -355,9 +361,17 @@
             return;
         }
 
+        // A ?testlang=en-US URL parameter overrides the language for quick
+        // diagnostics (e.g. checking whether a device's speech service
+        // works at all in English when Persian silently produces nothing)
+        // without needing to edit and redeploy code each time.
+        let urlTestLang = null;
+        try { urlTestLang = new URLSearchParams(window.location.search).get('testlang'); } catch (e) {}
+
+        const langToUse = langOverride || urlTestLang || 'fa-IR';
         const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognitionImpl();
-        recognition.lang = 'fa-IR';
+        recognition.lang = langToUse;
         // iOS WebKit has long-standing bugs with continuous mode (hangs /
         // never stops listening) — only enable continuous + auto-restart
         // on non-iOS platforms.
@@ -399,6 +413,17 @@
         };
 
         recognition.onerror = function (event) {
+            // Some Android speech services are picky about the exact
+            // locale tag — if "fa-IR" is reported as unsupported, silently
+            // retry once with the bare "fa" before surfacing anything to
+            // the person. This never fires more than one retry deep.
+            if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
+                active = false;
+                clearWatchdogs();
+                releaseAudioMeter();
+                startWebSpeech('fa');
+                return;
+            }
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -481,14 +506,120 @@
         return voskLibLoadPromise;
     }
 
+    // Fetches the model with real byte-level progress, and — this is the
+    // important part for unstable connections — automatically retries on
+    // a stall or dropped connection by resuming from where it left off via
+    // an HTTP Range request, instead of restarting the whole 53MB from
+    // zero. Falls back to a full restart only if the server doesn't honor
+    // Range requests. A single fixed timeout can't fix "the connection
+    // drops partway through" — this is built specifically for that case,
+    // which sounds like what's actually happening here rather than pure
+    // slowness.
+    function fetchModelWithProgress(url, onProgress) {
+        const MAX_ATTEMPTS = 6;
+        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
+        let chunks = [];
+        let loaded = 0;
+        let total = 0;
+
+        function attempt(attemptNum) {
+            const controller = new AbortController();
+            let stallTimer = null;
+            function armStall() {
+                if (stallTimer) clearTimeout(stallTimer);
+                stallTimer = setTimeout(function () { controller.abort(); }, STALL_TIMEOUT_MS);
+            }
+
+            const headers = {};
+            if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
+            armStall();
+
+            return fetch(url, { headers: headers, signal: controller.signal }).then(function (resp) {
+                if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
+                const isPartial = resp.status === 206;
+                if (loaded > 0 && !isPartial) {
+                    // We asked for a Range but the server ignored it and
+                    // sent the whole file again — restart bookkeeping.
+                    chunks = [];
+                    loaded = 0;
+                }
+                if (isPartial) {
+                    const range = resp.headers.get('content-range'); // "bytes 1000-2000/53000000"
+                    const match = range && range.match(/\/(\d+)$/);
+                    if (match) total = parseInt(match[1], 10);
+                } else {
+                    const cl = resp.headers.get('content-length');
+                    if (cl) total = parseInt(cl, 10);
+                }
+
+                const reader = resp.body.getReader();
+                function pump() {
+                    return reader.read().then(function (res) {
+                        if (res.done) { clearTimeout(stallTimer); return; }
+                        armStall();
+                        chunks.push(res.value);
+                        loaded += res.value.length;
+                        if (typeof onProgress === 'function') {
+                            onProgress({ loaded: loaded, total: total, percent: total ? Math.round(loaded / total * 100) : null });
+                        }
+                        return pump();
+                    });
+                }
+                return pump();
+            }).catch(function (err) {
+                clearTimeout(stallTimer);
+                if (attemptNum >= MAX_ATTEMPTS) throw err;
+                // Brief pause before retrying — resumes from `loaded` bytes
+                // via the Range header above, not from scratch.
+                return new Promise(function (resolve) { setTimeout(resolve, 1500); })
+                    .then(function () { return attempt(attemptNum + 1); });
+            });
+        }
+
+        return attempt(1).then(function () { return new Blob(chunks); });
+    }
+
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
         emit('model-loading');
 
+        function loadBlob() {
+            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+                return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                    if (cached) {
+                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                        return cached.blob();
+                    }
+                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                        try { cache.put(VOSK_MODEL_URL, new Response(blob)); } catch (e) { /* quota or unsupported — non-fatal */ }
+                        return blob;
+                    });
+                });
+            }).catch(function () {
+                // Cache API unavailable for some reason — fetch without it.
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            });
+        }
+        function onModelProgress(progress) { emit('model-progress', progress); }
+
         const loadChain = ensureVoskLib()
             .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(function () { return window.Vosk.createModel(VOSK_MODEL_URL); })
+            .then(loadBlob)
+            .then(function (blob) {
+                const blobUrl = URL.createObjectURL(blob);
+                return window.Vosk.createModel(blobUrl).catch(function () {
+                    // Not verifiable without a live device: some browsers'
+                    // internal Worker may be unable to resolve a blob: URL
+                    // created on the main thread. If creating the model
+                    // from our pre-fetched blob fails, fall back to letting
+                    // the library fetch the plain URL itself directly —
+                    // by now it's likely sitting in the normal browser HTTP
+                    // cache anyway from the fetch we just did.
+                    return window.Vosk.createModel(VOSK_MODEL_URL);
+                });
+            })
             .then(function (model) {
                 voskModel = model;
                 voskFailInfo = null;
@@ -501,13 +632,10 @@
                 return model;
             });
 
-        // Defensive: the library's own createModel() can in principle hang
-        // with no event at all on a bad network/CORS condition (not
-        // something verifiable without a live device), so cap the wait
-        // rather than leaving the UI stuck on "preparing" forever. 53MB on
-        // a genuinely slow/congested connection can legitimately take
-        // several minutes, not seconds — this only needs to catch a truly
-        // dead connection, not penalize a slow-but-working one.
+        // The retry logic above already handles ordinary stalls/drops —
+        // this outer cap only exists to eventually give up on something
+        // truly stuck (e.g. eight straight Range-resume cycles still going
+        // nowhere), so it's set generously rather than tuned tightly.
         const timeoutChain = new Promise(function (_, reject) {
             setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
         });
