@@ -70,8 +70,14 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/releases/download/v1.0/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
+    // How long to wait for the model download before giving up. Raise this
+    // further if your users are on consistently slow connections — there's
+    // no real downside to being patient here, it only delays the *failure*
+    // message on a genuinely dead connection, it doesn't block anything
+    // else in the app.
+    const VOSK_MODEL_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -475,78 +481,46 @@
         return voskLibLoadPromise;
     }
 
-    // Add this helper inside the vosk backend section
-function fetchModelWithProgress(url, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'arraybuffer';
-    xhr.onprogress = function (event) {
-      if (event.lengthComputable) {
-        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
-        onProgress(percent);
-      }
-    };
-    xhr.onload = function () {
-      if (xhr.status === 200) {
-        resolve(xhr.response);
-      } else {
-        reject(new Error('Download failed with status ' + xhr.status));
-      }
-    };
-    xhr.onerror = function () {
-      reject(new Error('Network error while downloading model'));
-    };
-    xhr.send();
-  });
-}
+    function ensureVoskModel() {
+        if (voskModel) return Promise.resolve(voskModel);
+        if (voskModelLoadPromise) return voskModelLoadPromise;
+        emit('model-loading');
 
-// Replace ensureVoskModel
-function ensureVoskModel() {
-  if (voskModel) return Promise.resolve(voskModel);
-  if (voskModelLoadPromise) return voskModelLoadPromise;
-  emit('model-loading');
+        const loadChain = ensureVoskLib()
+            .catch(function () { throw classifyError('vosk-lib-failed'); })
+            .then(function () { return window.Vosk.createModel(VOSK_MODEL_URL); })
+            .then(function (model) {
+                voskModel = model;
+                voskFailInfo = null;
+                // Catch errors that occur *after* the initial load too
+                // (e.g. a Worker crash mid-session), not just load failure.
+                model.on('error', function () {
+                    emit('error', classifyError('vosk-runtime'));
+                });
+                emit('model-ready');
+                return model;
+            });
 
-  const loadChain = ensureVoskLib()
-    .then(() => {
-      // Start fetch with progress
-      return fetchModelWithProgress(VOSK_MODEL_URL, function (percent) {
-        emit('model-progress', percent);
-      });
-    })
-    .then(function (arrayBuffer) {
-      // Create a blob URL from the downloaded tarball
-      const blob = new Blob([arrayBuffer], { type: 'application/gzip' });
-      const url = URL.createObjectURL(blob);
-      // Vosk will fetch this blob URL and extract the model
-      return window.Vosk.createModel(url);
-    })
-    .then(function (model) {
-      voskModel = model;
-      voskFailInfo = null;
-      model.on('error', function () {
-        emit('error', classifyError('vosk-runtime'));
-      });
-      emit('model-ready');
-      return model;
-    });
+        // Defensive: the library's own createModel() can in principle hang
+        // with no event at all on a bad network/CORS condition (not
+        // something verifiable without a live device), so cap the wait
+        // rather than leaving the UI stuck on "preparing" forever. 53MB on
+        // a genuinely slow/congested connection can legitimately take
+        // several minutes, not seconds — this only needs to catch a truly
+        // dead connection, not penalize a slow-but-working one.
+        const timeoutChain = new Promise(function (_, reject) {
+            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
+        });
 
-  // Increase timeout to 5 minutes (300 seconds)
-  const timeoutChain = new Promise(function (_, reject) {
-    setTimeout(function () {
-      reject(classifyError('vosk-model-failed'));
-    }, 300000);
-  });
-
-  voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
-    .catch(function (err) {
-      voskModelLoadPromise = null;
-      const info = (err && err.code) ? err : classifyError('vosk-model-failed');
-      voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
-      throw info;
-    });
-  return voskModelLoadPromise;
-}
+        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+            .catch(function (err) {
+                voskModelLoadPromise = null;
+                const info = (err && err.code) ? err : classifyError('vosk-model-failed');
+                voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+                throw info;
+            });
+        return voskModelLoadPromise;
+    }
 
     function startVosk() {
         if (voskActive || voskLoading) return;

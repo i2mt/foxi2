@@ -6,8 +6,6 @@
    chips, history, the text-input fallback, and the environment banner
    that explains iOS/browser limitations instead of silently failing.
 
-   Now also supports a download progress bar for the Vosk model.
-
    Talks to:
      - window.VoiceEngine    (start/stop listening, audio levels, errors)
      - window.VoiceCommands  (process a transcript into an action)
@@ -47,11 +45,8 @@
             historyList: qs('voiceHistoryList'),
             clearHistoryBtn: qs('voiceClearHistoryBtn'),
             ttsToggle: qs('voiceTtsToggle'),
-            examples: qs('voiceExamples'),
-            // New progress elements
-            modelProgress: qs('voiceModelProgress'),
-            modelProgressBar: qs('voiceModelProgressBar'),
-            modelProgressPercent: qs('voiceModelProgressPercent')
+            headerSpacer: document.querySelector('.voice-header-spacer'),
+            examples: qs('voiceExamples')
         };
     }
 
@@ -120,11 +115,19 @@
     // talk back out loud — but one tap turns it on, and it's a separate,
     // much simpler API than SpeechRecognition so it isn't affected by any
     // of the iOS limitations above.
+    //
+    // Important limitation: this only sounds decent if the device has an
+    // actual Persian (fa-IR) system voice installed. Many platforms don't
+    // ship one at all — iOS in particular appears to fall back to an
+    // Arabic-ish voice that mispronounces Persian badly. Rather than ever
+    // produce that, this checks for a real fa-* voice and simply hides the
+    // toggle (and refuses to speak) if none exists, on any platform.
     // ============================================
     let cachedVoices = [];
     function refreshVoices() {
         if (!window.speechSynthesis) return;
         cachedVoices = window.speechSynthesis.getVoices() || [];
+        updateTtsAvailability();
     }
     if (window.speechSynthesis) {
         refreshVoices();
@@ -137,24 +140,40 @@
         }
         return null;
     }
+    function updateTtsAvailability() {
+        if (!els.ttsToggle) return;
+        const available = !!pickPersianVoice();
+        els.ttsToggle.style.display = available ? '' : 'none';
+        if (els.headerSpacer) els.headerSpacer.style.display = available ? '' : 'none';
+        if (!available && window.AppState && window.AppState.settings) {
+            window.AppState.settings.voiceOutput = false;
+        }
+    }
     function stripForSpeech(html) {
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
-        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+        let text = tmp.textContent || tmp.innerText || '';
+        // Strip emoji — some TTS voices (notably on Windows) read these out
+        // loud as descriptions ("loudspeaker emoji") instead of skipping
+        // them, which is exactly as confusing as it sounds.
+        text = text.replace(/\p{Extended_Pictographic}/gu, '');
+        text = text.replace(/[\u200D\uFE0F]/g, ''); // stray joiners/variation selectors left behind
+        return text.replace(/\s+/g, ' ').trim();
     }
     function isVoiceOutputOn() {
         return typeof AppState !== 'undefined' && !!(AppState && AppState.settings && AppState.settings.voiceOutput);
     }
     function speak(message) {
         if (!window.speechSynthesis || !isVoiceOutputOn()) return;
+        const voice = pickPersianVoice();
+        if (!voice) return; // no real Persian voice on this device — stay silent rather than mispronounce
         const plain = stripForSpeech(message);
         if (!plain) return;
         try {
             window.speechSynthesis.cancel();
             const utter = new SpeechSynthesisUtterance(plain);
             utter.lang = 'fa-IR';
-            const voice = pickPersianVoice();
-            if (voice) utter.voice = voice;
+            utter.voice = voice;
             utter.rate = 1;
             window.speechSynthesis.speak(utter);
         } catch (e) {}
@@ -265,28 +284,6 @@
     }
 
     // ============================================
-    // MODEL PROGRESS UI
-    // ============================================
-    function showModelProgress(percent) {
-        if (els.modelProgress) els.modelProgress.style.display = 'flex';
-        if (els.modelProgressBar) els.modelProgressBar.style.width = percent + '%';
-        if (els.modelProgressPercent) {
-            // Use PersianNumbers if available, else fallback to plain digits
-            let text = percent + '%';
-            if (typeof PersianNumbers !== 'undefined' && PersianNumbers.toPersian) {
-                text = PersianNumbers.toPersian(String(percent)) + '%';
-            }
-            els.modelProgressPercent.textContent = text;
-        }
-    }
-
-    function hideModelProgress() {
-        if (els.modelProgress) els.modelProgress.style.display = 'none';
-        if (els.modelProgressBar) els.modelProgressBar.style.width = '0%';
-        if (els.modelProgressPercent) els.modelProgressPercent.textContent = '۰%';
-    }
-
-    // ============================================
     // MIC FLOW
     // ============================================
     function onMicClick() {
@@ -320,14 +317,9 @@
         });
         window.VoiceEngine.on('model-loading', function () {
             setOrbState('loading-model');
-            setStatus('آماده‌سازی موتور آفلاین... (دانلود مدل ۵۳ مگابایت)', 'processing');
-            showModelProgress(0);
-        });
-        window.VoiceEngine.on('model-progress', function (percent) {
-            showModelProgress(percent);
+            setStatus('آماده‌سازی موتور آفلاین... (فقط بار اول، حدود ۵۳ مگابایت — ممکن است چند دقیقه طول بکشد)', 'processing');
         });
         window.VoiceEngine.on('model-ready', function () {
-            hideModelProgress();
             if (els.orbContainer && els.orbContainer.classList.contains('is-loading-model')) {
                 setOrbState('idle');
                 setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
@@ -351,7 +343,6 @@
             }
         });
         window.VoiceEngine.on('error', function (info) {
-            hideModelProgress(); // Hide progress on error
             setOrbState('error');
             setStatus(info.title || 'خطا', 'error');
             showResult((info.title ? '<strong>' + info.title + '</strong><br>' : '') + (info.message || ''), 'error');
@@ -373,12 +364,12 @@
         setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
         setTranscript('', false);
         if (els.result) els.result.style.display = 'none';
-        hideModelProgress(); // Start hidden
 
         if (els.orbContainer) els.orbContainer.addEventListener('click', onMicClick);
 
         if (els.ttsToggle) {
             updateTtsToggleIcon();
+            updateTtsAvailability();
             els.ttsToggle.addEventListener('click', toggleVoiceOutput);
         }
 
