@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/raw/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/blob/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -517,7 +517,7 @@
     // slowness.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
+        const STALL_TIMEOUT_MS = 60000; // no new data for 25s on one attempt -> abort & retry
         let chunks = [];
         let loaded = 0;
         let total = 0;
