@@ -45,6 +45,10 @@
             historyList: qs('voiceHistoryList'),
             clearHistoryBtn: qs('voiceClearHistoryBtn'),
             ttsToggle: qs('voiceTtsToggle'),
+            headerSpacer: document.querySelector('.voice-header-spacer'),
+            modelProgress: qs('voiceModelProgress'),
+            modelProgressFill: qs('voiceModelProgressFill'),
+            modelProgressLabel: qs('voiceModelProgressLabel'),
             examples: qs('voiceExamples')
         };
     }
@@ -114,11 +118,19 @@
     // talk back out loud — but one tap turns it on, and it's a separate,
     // much simpler API than SpeechRecognition so it isn't affected by any
     // of the iOS limitations above.
+    //
+    // Important limitation: this only sounds decent if the device has an
+    // actual Persian (fa-IR) system voice installed. Many platforms don't
+    // ship one at all — iOS in particular appears to fall back to an
+    // Arabic-ish voice that mispronounces Persian badly. Rather than ever
+    // produce that, this checks for a real fa-* voice and simply hides the
+    // toggle (and refuses to speak) if none exists, on any platform.
     // ============================================
     let cachedVoices = [];
     function refreshVoices() {
         if (!window.speechSynthesis) return;
         cachedVoices = window.speechSynthesis.getVoices() || [];
+        updateTtsAvailability();
     }
     if (window.speechSynthesis) {
         refreshVoices();
@@ -131,24 +143,40 @@
         }
         return null;
     }
+    function updateTtsAvailability() {
+        if (!els.ttsToggle) return;
+        const available = !!pickPersianVoice();
+        els.ttsToggle.style.display = available ? '' : 'none';
+        if (els.headerSpacer) els.headerSpacer.style.display = available ? '' : 'none';
+        if (!available && window.AppState && window.AppState.settings) {
+            window.AppState.settings.voiceOutput = false;
+        }
+    }
     function stripForSpeech(html) {
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
-        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+        let text = tmp.textContent || tmp.innerText || '';
+        // Strip emoji — some TTS voices (notably on Windows) read these out
+        // loud as descriptions ("loudspeaker emoji") instead of skipping
+        // them, which is exactly as confusing as it sounds.
+        text = text.replace(/\p{Extended_Pictographic}/gu, '');
+        text = text.replace(/[\u200D\uFE0F]/g, ''); // stray joiners/variation selectors left behind
+        return text.replace(/\s+/g, ' ').trim();
     }
     function isVoiceOutputOn() {
         return typeof AppState !== 'undefined' && !!(AppState && AppState.settings && AppState.settings.voiceOutput);
     }
     function speak(message) {
         if (!window.speechSynthesis || !isVoiceOutputOn()) return;
+        const voice = pickPersianVoice();
+        if (!voice) return; // no real Persian voice on this device — stay silent rather than mispronounce
         const plain = stripForSpeech(message);
         if (!plain) return;
         try {
             window.speechSynthesis.cancel();
             const utter = new SpeechSynthesisUtterance(plain);
             utter.lang = 'fa-IR';
-            const voice = pickPersianVoice();
-            if (voice) utter.voice = voice;
+            utter.voice = voice;
             utter.rate = 1;
             window.speechSynthesis.speak(utter);
         } catch (e) {}
@@ -292,9 +320,34 @@
         });
         window.VoiceEngine.on('model-loading', function () {
             setOrbState('loading-model');
-            setStatus('آماده‌سازی موتور آفلاین... (فقط بار اول، حدود ۵۳ مگابایت)', 'processing');
+            setStatus('آماده‌سازی موتور آفلاین...', 'processing');
+            if (els.modelProgress) {
+                els.modelProgress.style.display = 'flex';
+                if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود (حدود ۵۳ مگابایت)...';
+            }
+        });
+        window.VoiceEngine.on('model-progress', function (p) {
+            if (!els.modelProgressFill) return;
+            if (p.fromCache) {
+                els.modelProgressFill.classList.remove('is-indeterminate');
+                els.modelProgressFill.style.width = '100%';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'بارگذاری از حافظه ذخیره‌شده...';
+                return;
+            }
+            if (p.percent === null || p.percent === undefined) {
+                els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressLabel) {
+                    els.modelProgressLabel.textContent = 'دانلود شده: ' + (Math.round(p.loaded / 1024 / 1024 * 10) / 10) + ' مگابایت';
+                }
+                return;
+            }
+            els.modelProgressFill.classList.remove('is-indeterminate');
+            els.modelProgressFill.style.width = Math.max(2, p.percent) + '%';
+            if (els.modelProgressLabel) els.modelProgressLabel.textContent = p.percent + '٪ دانلود شده';
         });
         window.VoiceEngine.on('model-ready', function () {
+            if (els.modelProgress) els.modelProgress.style.display = 'none';
             if (els.orbContainer && els.orbContainer.classList.contains('is-loading-model')) {
                 setOrbState('idle');
                 setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
@@ -318,6 +371,7 @@
             }
         });
         window.VoiceEngine.on('error', function (info) {
+            if (els.modelProgress) els.modelProgress.style.display = 'none';
             setOrbState('error');
             setStatus(info.title || 'خطا', 'error');
             showResult((info.title ? '<strong>' + info.title + '</strong><br>' : '') + (info.message || ''), 'error');
@@ -344,6 +398,7 @@
 
         if (els.ttsToggle) {
             updateTtsToggleIcon();
+            updateTtsAvailability();
             els.ttsToggle.addEventListener('click', toggleVoiceOutput);
         }
 
