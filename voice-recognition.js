@@ -517,93 +517,99 @@
     // slowness.
     function fetchModelWithProgress(url, onProgress) {
     const MAX_ATTEMPTS = 6;
-    const STALL_TIMEOUT_MS = 60000; // 60 seconds – enough for mobile
-    let chunks = [];
+    const STALL_TIMEOUT_MS = 60000; // 60 seconds
     let loaded = 0;
     let total = 0;
+    let chunks = [];
+    let attemptNum = 0;
 
-    console.log('[VOSK] fetchModelWithProgress started for URL:', url);
+    console.log('[VOSK] fetchModelWithProgress (XHR) started for URL:', url);
 
-    function attempt(attemptNum) {
-        console.log('[VOSK] Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
+    function attempt() {
+        attemptNum++;
+        console.log('[VOSK] XHR Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
 
-        const controller = new AbortController();
-        let stallTimer = null;
+        return new Promise(function (resolve, reject) {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.responseType = 'arraybuffer'; // fetch chunks as binary
 
-        function armStall() {
-            if (stallTimer) clearTimeout(stallTimer);
-            stallTimer = setTimeout(function () {
-                console.warn('[VOSK] STALL TIMEOUT triggered! Aborting fetch.');
-                controller.abort();
-            }, STALL_TIMEOUT_MS);
-        }
+            // Set Range header if resuming
+            if (loaded > 0) {
+                xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+            }
 
-        const headers = {};
-        if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
-        armStall();
+            // CORS and credentials
+            xhr.withCredentials = false; // omit credentials
 
-        return fetch(url, { headers: headers, signal: controller.signal })
-            .then(function (resp) {
-                console.log('[VOSK] Response status:', resp.status, ' - OK:', resp.ok);
+            // Progress events
+            xhr.onprogress = function (event) {
+                if (event.total > 0) total = event.total;
+                // Note: event.loaded is the total loaded so far (including previous chunks)
+                // but we only care about the newly downloaded part.
+                // However, to avoid confusion, we use the loaded variable.
+                // We'll update loaded in onload.
+            };
 
-                if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
-                const isPartial = resp.status === 206;
-                console.log('[VOSK] Is partial (Range supported)?', isPartial);
-
-                if (loaded > 0 && !isPartial) {
-                    // Server ignored Range – restart from scratch
-                    chunks = [];
-                    loaded = 0;
-                }
-                if (isPartial) {
-                    const range = resp.headers.get('content-range');
-                    const match = range && range.match(/\/(\d+)$/);
-                    if (match) total = parseInt(match[1], 10);
-                } else {
-                    const cl = resp.headers.get('content-length');
-                    if (cl) total = parseInt(cl, 10);
-                }
-
-                const reader = resp.body.getReader();
-
-                function pump() {
-                    return reader.read().then(function (res) {
-                        if (res.done) {
-                            clearTimeout(stallTimer);
-                            console.log('[VOSK] Stream done. Total loaded:', loaded);
-                            return;
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    // Success
+                    const responseData = xhr.response;
+                    if (responseData) {
+                        // If we resumed, the response is only the new part; we must append to chunks.
+                        // But XHR with arraybuffer gives the entire response (or partial if Range).
+                        // We'll treat it as the whole thing if no Range, else append.
+                        if (loaded > 0 && xhr.getResponseHeader('Content-Range')) {
+                            // Partial response – append to existing chunks
+                            const newData = new Uint8Array(responseData);
+                            chunks.push(newData);
+                            loaded += newData.length;
+                        } else {
+                            // Full response (no Range, or server ignored Range)
+                            chunks = [new Uint8Array(responseData)];
+                            loaded = responseData.byteLength;
+                            total = loaded;
                         }
-                        armStall();
-                        chunks.push(res.value);
-                        loaded += res.value.length;
-
-                        const percent = total ? Math.round(loaded / total * 100) : null;
-                        if (percent !== null && percent % 10 === 0) {
-                            console.log('[VOSK] Progress:', percent + '% (' + loaded + ' / ' + total + ' bytes)');
-                        }
+                        // Fire progress with 100% to update UI
                         if (typeof onProgress === 'function') {
-                            onProgress({ loaded: loaded, total: total, percent: percent });
+                            onProgress({ loaded: loaded, total: total, percent: 100 });
                         }
-                        return pump();
-                    });
+                        console.log('[VOSK] XHR download complete. Total loaded:', loaded, 'bytes');
+                        resolve(new Blob(chunks));
+                    } else {
+                        reject(new Error('Empty response'));
+                    }
+                } else {
+                    reject(new Error('HTTP ' + xhr.status));
                 }
-                return pump();
-            })
-            .catch(function (err) {
-                clearTimeout(stallTimer);
-                console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
+            };
 
-                if (attemptNum >= MAX_ATTEMPTS) {
-                    console.error('[VOSK] Max attempts reached. Giving up.');
-                    throw err;
-                }
-                // Wait 1.5s and retry (resumes via Range if server supports it)
-                return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                    .then(function () { return attempt(attemptNum + 1); });
-            });
+            xhr.onerror = function () {
+                console.error('[VOSK] XHR network error');
+                reject(new Error('XHR network error'));
+            };
+
+            xhr.ontimeout = function () {
+                console.error('[VOSK] XHR timeout');
+                reject(new Error('XHR timeout'));
+            };
+
+            xhr.timeout = STALL_TIMEOUT_MS;
+
+            // Start request
+            xhr.send();
+        }).catch(function (err) {
+            console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
+            if (attemptNum >= MAX_ATTEMPTS) {
+                console.error('[VOSK] Max attempts reached. Giving up.');
+                throw err;
+            }
+            // Wait 1.5s and retry (resumes via Range if server supports it)
+            return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(attempt);
+        });
     }
 
-    return attempt(1).then(function () { return new Blob(chunks); });
+    return attempt();
 }
 
     function ensureVoskModel() {
