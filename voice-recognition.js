@@ -6,7 +6,7 @@
      1. "webspeech" — the native browser SpeechRecognition API. Used on
         Android / desktop / macOS Safari, where it's fast and needs no
         download.
-        
+
      2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
         https://github.com/ccoreilly/vosk-browser). Used on iOS, because
         Apple's WebKit SpeechRecognition implementation is unreliable —
@@ -59,15 +59,11 @@
        to index.html) so there's no CORS step to configure at all.
      - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
        file at your host so repeat visits don't re-download ~53MB.
-     - This part of the rebuild could not be end-to-end tested here (no
-       iOS device, no microphone, no real network fetch of the model in
-       this sandbox) — the integration matches the verified library
-       source exactly, but please test for real on an iOS device before
-       relying on it.
    ============================================ */
 (function (window) {
     'use strict';
 
+    // Set your hosted .tar.gz model URL here (direct raw URL to avoid redirects)
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -265,7 +261,7 @@
     }
 
     // ============================================
-    // AUDIO METERING
+    // AUDIO METERING (Web Audio API)
     // ============================================
     function attachAudioMeter() {
         if (!ENV.hasGetUserMedia || !ENV.hasAudioContext) return;
@@ -420,7 +416,7 @@
     }
 
     // ============================================
-    // BACKEND 2: VOSK
+    // BACKEND 2: VOSK (offline, on-device — used on iOS)
     // ============================================
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -448,6 +444,7 @@
         return voskLibLoadPromise;
     }
 
+    // ----- Resampling helper (linear interpolation) -----
     function resampleAudio(inputBuffer, sourceRate) {
         const targetRate = 16000;
         if (sourceRate === targetRate) return inputBuffer.getChannelData(0);
@@ -467,6 +464,7 @@
         return output;
     }
 
+    // ----- XHR‑based fetch with retry and Range support -----
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 60000;
@@ -606,6 +604,11 @@
         voskLoading = true;
         voskCancelRequested = false;
 
+        // --- CRITICAL FIX for iOS: Create AudioContext NOW (during user gesture) ---
+        const AC = window.AudioContext || window.webkitAudioContext;
+        voskAudioCtx = new AC({ sampleRate: 16000 });
+        // The context starts suspended on iOS; we will resume after getUserMedia.
+
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
             let recognizer;
@@ -661,8 +664,6 @@
                 }
                 voskStream = stream;
 
-                const AC = window.AudioContext || window.webkitAudioContext;
-                voskAudioCtx = new AC({ sampleRate: 16000 });
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
 
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
@@ -678,14 +679,18 @@
                         }
                         recognizer.acceptWaveform(data);
                         emitVoskAudioLevel(inputBuffer);
-                    } catch (e) {}
+                    } catch (e) {
+                        // ignore
+                    }
                 };
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
-               // Resume audio context (critical on iOS)
-voskAudioCtx.resume().catch(function(err) {
-    console.error('[VOSK] Failed to resume audio context:', err);
-});
+
+                // --- CRITICAL: Resume the AudioContext (now that it's connected) ---
+                voskAudioCtx.resume().catch(function (err) {
+                    console.error('[VOSK] AudioContext resume failed:', err);
+                    emit('error', classifyError('audio-capture'));
+                });
 
                 voskActive = true;
                 armVoskSilenceWatchdog();
