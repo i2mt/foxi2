@@ -427,6 +427,35 @@
     }
 
     // ============================================
+    // SAFE AUDIO LEVEL EXTRACTOR (fixes "not a function")
+    // ============================================
+    function emitVoskAudioLevel(buffer) {
+        let data;
+        // Check if it's an AudioBuffer with getChannelData
+        if (buffer && typeof buffer.getChannelData === 'function') {
+            data = buffer.getChannelData(0);
+        } else if (buffer && buffer.constructor === Float32Array) {
+            data = buffer;
+        } else {
+            // If we can't get data, just return silently (no visual level)
+            return;
+        }
+
+        const bars = 12;
+        const chunk = Math.floor(data.length / bars) || 1;
+        const bins = [];
+        let levelSum = 0;
+        for (let i = 0; i < bars; i++) {
+            let sum = 0;
+            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
+            const avg = Math.min(1, (sum / chunk) * 4);
+            bins.push(avg);
+            levelSum += avg;
+        }
+        emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
+    }
+
+    // ============================================
     // START VOSK — WITH ENHANCED ERROR LOGGING
     // ============================================
     function startVosk() {
@@ -508,7 +537,7 @@
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
 
-                // --- ENHANCED ONAUDIOPROCESS WITH DETAILED LOGGING ---
+                // --- ONAUDIOPROCESS WITH SAFE LEVEL EXTRACTION ---
                 voskProcessor.onaudioprocess = function (event) {
                     try {
                         if (!recognizer) {
@@ -522,9 +551,11 @@
                         }
 
                         const sourceRate = voskAudioCtx.sampleRate;
-                        // Log the source rate once every 100 calls (to avoid spam)
+                        // Log occasionally
                         if (Math.random() < 0.01) {
                             console.log('[VOICE] sourceRate:', sourceRate);
+                            console.log('[VOICE] inputBuffer type:', inputBuffer.constructor.name);
+                            console.log('[VOICE] has getChannelData?', typeof inputBuffer.getChannelData);
                         }
 
                         let data;
@@ -536,16 +567,11 @@
                             data = resampleAudio(inputBuffer, sourceRate);
                         }
 
-                        // Log data type occasionally
-                        if (Math.random() < 0.01) {
-                            console.log('[VOICE] data type:', data.constructor.name, 'length:', data.length || 'N/A');
-                        }
-
                         // Pass to Vosk
                         recognizer.acceptWaveform(data);
+                        // Visual feedback – now safely handles both types
                         emitVoskAudioLevel(inputBuffer);
                     } catch (e) {
-                        // --- CRITICAL: Log full error details ---
                         console.error('[VOICE] onaudioprocess error:');
                         console.error('  message:', e.message);
                         console.error('  stack:', e.stack);
@@ -590,22 +616,6 @@
     // ============================================
     // HELPER FUNCTIONS FOR VOSK
     // ============================================
-    function emitVoskAudioLevel(buffer) {
-        const data = buffer.getChannelData(0);
-        const bars = 12;
-        const chunk = Math.floor(data.length / bars) || 1;
-        const bins = [];
-        let levelSum = 0;
-        for (let i = 0; i < bars; i++) {
-            let sum = 0;
-            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            const avg = Math.min(1, (sum / chunk) * 4);
-            bins.push(avg);
-            levelSum += avg;
-        }
-        emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
-    }
-
     function armVoskSilenceWatchdog() {
         if (voskSilenceWatchdog) clearTimeout(voskSilenceWatchdog);
         voskSilenceWatchdog = setTimeout(function () {
