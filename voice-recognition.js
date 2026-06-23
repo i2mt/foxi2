@@ -6,7 +6,7 @@
      1. "webspeech" — the native browser SpeechRecognition API. Used on
         Android / desktop / macOS Safari, where it's fast and needs no
         download.
-
+        
      2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
         https://github.com/ccoreilly/vosk-browser). Used on iOS, because
         Apple's WebKit SpeechRecognition implementation is unreliable —
