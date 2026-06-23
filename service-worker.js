@@ -3,7 +3,11 @@
 // Always tries to fetch the latest version.
 // Falls back to cache only when offline.
 
+<<<<<<< HEAD
 const CACHE_NAME = 'FoxiMed_v4.7.2';
+=======
+const CACHE_NAME = 'FoxiMed_v4.7.2.1';
+>>>>>>> 00751b365a109795390596c1ad6adf24f1c81c39
 
 const urlsToCache = [
     './',
