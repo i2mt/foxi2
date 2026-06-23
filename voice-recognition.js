@@ -682,6 +682,10 @@
                 };
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
+               // Resume audio context (critical on iOS)
+voskAudioCtx.resume().catch(function(err) {
+    console.error('[VOSK] Failed to resume audio context:', err);
+});
 
                 voskActive = true;
                 armVoskSilenceWatchdog();
