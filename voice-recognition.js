@@ -1,9 +1,7 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Low-level speech capture layer with TWO interchangeable backends:
-     1. "webspeech" — native browser SpeechRecognition API.
-     2. "vosk" — offline, on-device WASM speech engine.
+   Optimized for iOS performance.
    ============================================ */
 (function (window) {
     'use strict';
@@ -125,7 +123,7 @@
     }
 
     // ============================================
-    // AUDIO METERING (Web Audio API)
+    // AUDIO METERING (Web Audio API) – for UI orb
     // ============================================
     function attachAudioMeter() {
         if (!ENV.hasGetUserMedia || !ENV.hasAudioContext) return;
@@ -268,7 +266,7 @@
     }
 
     // ============================================
-    // BACKEND 2: VOSK (offline, on-device — used on iOS)
+    // BACKEND 2: VOSK (offline, on-device)
     // ============================================
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -427,39 +425,39 @@
     }
 
     // ============================================
-    // SAFE AUDIO LEVEL EXTRACTOR (fixes "not a function")
+    // SAFE AUDIO LEVEL EXTRACTOR (no errors)
     // ============================================
+    let _levelCounter = 0;
     function emitVoskAudioLevel(buffer) {
+        // Only compute level once every 4 frames to reduce CPU
+        _levelCounter++;
+        if (_levelCounter % 4 !== 0) return;
+
         let data;
-        // Check if it's an AudioBuffer with getChannelData
         if (buffer && typeof buffer.getChannelData === 'function') {
             data = buffer.getChannelData(0);
         } else if (buffer && buffer.constructor === Float32Array) {
             data = buffer;
         } else {
-            // If we can't get data, just return silently (no visual level)
             return;
         }
 
         const bars = 12;
         const chunk = Math.floor(data.length / bars) || 1;
-        const bins = [];
         let levelSum = 0;
         for (let i = 0; i < bars; i++) {
             let sum = 0;
             for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            const avg = Math.min(1, (sum / chunk) * 4);
-            bins.push(avg);
-            levelSum += avg;
+            levelSum += sum / chunk;
         }
-        emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
+        const level = Math.min(1, (levelSum / bars) * 4);
+        emit('audio', { bins: [], level: level });
     }
 
     // ============================================
-    // START VOSK — WITH ENHANCED ERROR LOGGING
+    // START VOSK — Performance-optimized
     // ============================================
     function startVosk() {
-        console.log('[VOICE] startVosk called');
         if (voskActive || voskLoading) return;
         if (!voskConfigured()) {
             emit('error', classifyError('vosk-not-configured'));
@@ -469,13 +467,11 @@
         voskLoading = true;
         voskCancelRequested = false;
 
-        // --- CRITICAL: Create AudioContext NOW (during user gesture) ---
+        // Create AudioContext NOW (during user gesture)
         const AC = window.AudioContext || window.webkitAudioContext;
         voskAudioCtx = new AC({ sampleRate: 16000 });
-        console.log('[VOICE] AudioContext created, state:', voskAudioCtx.state);
 
         ensureVoskModel().then(function (model) {
-            console.log('[VOICE] Model loaded');
             if (voskCancelRequested) { voskLoading = false; return; }
 
             let recognizer;
@@ -498,7 +494,6 @@
                 }
             }
             voskRecognizer = recognizer;
-            console.log('[VOICE] Recognizer created');
 
             recognizer.on('partialresult', function (message) {
                 const partial = message && message.result && message.result.partial;
@@ -519,12 +514,10 @@
                 finishVosk();
             });
 
-            console.log('[VOICE] Requesting microphone...');
             navigator.mediaDevices.getUserMedia({
                 video: false,
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 16000 }
             }).then(function (stream) {
-                console.log('[VOICE] getUserMedia success');
                 voskLoading = false;
                 if (voskCancelRequested || voskRecognizer !== recognizer) {
                     try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
@@ -535,60 +528,35 @@
                 voskStream = stream;
 
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
-                voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
+                voskProcessor = voskAudioCtx.createScriptProcessor(2048, 1, 1); // smaller buffer
 
-                // --- ONAUDIOPROCESS WITH SAFE LEVEL EXTRACTION ---
                 voskProcessor.onaudioprocess = function (event) {
                     try {
-                        if (!recognizer) {
-                            console.warn('[VOICE] recognizer is null');
-                            return;
-                        }
+                        if (!recognizer) return;
                         const inputBuffer = event.inputBuffer;
-                        if (!inputBuffer) {
-                            console.warn('[VOICE] inputBuffer is null');
-                            return;
-                        }
+                        if (!inputBuffer) return;
 
                         const sourceRate = voskAudioCtx.sampleRate;
-                        // Log occasionally
-                        if (Math.random() < 0.01) {
-                            console.log('[VOICE] sourceRate:', sourceRate);
-                            console.log('[VOICE] inputBuffer type:', inputBuffer.constructor.name);
-                            console.log('[VOICE] has getChannelData?', typeof inputBuffer.getChannelData);
-                        }
-
                         let data;
                         if (sourceRate === 16000) {
-                            // Original method – pass the whole AudioBuffer
                             data = inputBuffer;
                         } else {
-                            // Resample to Float32Array
                             data = resampleAudio(inputBuffer, sourceRate);
                         }
-
-                        // Pass to Vosk
                         recognizer.acceptWaveform(data);
-                        // Visual feedback – now safely handles both types
                         emitVoskAudioLevel(inputBuffer);
                     } catch (e) {
-                        console.error('[VOICE] onaudioprocess error:');
-                        console.error('  message:', e.message);
-                        console.error('  stack:', e.stack);
-                        console.error('  name:', e.name);
-                        console.error('  data type:', typeof data, 'constructor:', data ? data.constructor.name : 'null');
-                        console.error('  sourceRate:', sourceRate);
+                        // Log once per second to avoid spam
+                        if (Math.random() < 0.01) {
+                            console.error('[VOICE] onaudioprocess error:', e.message);
+                        }
                     }
                 };
-                // --- END OF ONAUDIOPROCESS ---
 
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
-                console.log('[VOICE] Audio nodes connected');
 
-                voskAudioCtx.resume().then(function() {
-                    console.log('[VOICE] AudioContext resumed, state:', voskAudioCtx.state);
-                }).catch(function (err) {
+                voskAudioCtx.resume().catch(function (err) {
                     console.error('[VOICE] AudioContext resume failed:', err);
                     emit('error', classifyError('audio-capture'));
                 });
@@ -596,10 +564,8 @@
                 voskActive = true;
                 armVoskSilenceWatchdog();
                 emit('start');
-                console.log('[VOICE] start event emitted');
             }).catch(function (err) {
                 voskLoading = false;
-                console.error('[VOICE] getUserMedia error:', err);
                 const code = (err && err.name === 'NotAllowedError') ? 'not-allowed'
                     : (err && err.name === 'NotFoundError') ? 'audio-capture' : 'vosk-runtime';
                 emit('error', classifyError(code));
@@ -608,7 +574,6 @@
             });
         }).catch(function (info) {
             voskLoading = false;
-            console.error('[VOICE] Model loading error:', info);
             emit('error', info && info.code ? info : classifyError('vosk-model-failed'));
         });
     }
