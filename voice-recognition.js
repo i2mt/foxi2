@@ -427,7 +427,7 @@
     }
 
     // ============================================
-    // START VOSK — THE FIXED VERSION
+    // START VOSK — WITH ENHANCED ERROR LOGGING
     // ============================================
     function startVosk() {
         console.log('[VOICE] startVosk called');
@@ -508,12 +508,11 @@
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
 
-                // --- THE FIXED ONAUDIOPROCESS ---
+                // --- ENHANCED ONAUDIOPROCESS WITH DETAILED LOGGING ---
                 voskProcessor.onaudioprocess = function (event) {
                     try {
-                        // Safety checks
                         if (!recognizer) {
-                            console.warn('[VOICE] recognizer is null in onaudioprocess');
+                            console.warn('[VOICE] recognizer is null');
                             return;
                         }
                         const inputBuffer = event.inputBuffer;
@@ -523,24 +522,36 @@
                         }
 
                         const sourceRate = voskAudioCtx.sampleRate;
-
-                        // --- THIS IS THE IMPORTANT PART ---
-                        // If the sample rate is already 16kHz, use the ORIGINAL WORKING METHOD:
-                        // pass the whole AudioBuffer directly. Vosk can handle it.
-                        // If not, resample to a Float32Array.
-                        if (sourceRate === 16000) {
-                            // THIS is how the original working version did it.
-                            recognizer.acceptWaveform(inputBuffer);
-                        } else {
-                            // Fallback: resample and pass as Float32Array.
-                            const data = resampleAudio(inputBuffer, sourceRate);
-                            recognizer.acceptWaveform(data);
+                        // Log the source rate once every 100 calls (to avoid spam)
+                        if (Math.random() < 0.01) {
+                            console.log('[VOICE] sourceRate:', sourceRate);
                         }
 
-                        // Visual feedback (metering)
+                        let data;
+                        if (sourceRate === 16000) {
+                            // Original method – pass the whole AudioBuffer
+                            data = inputBuffer;
+                        } else {
+                            // Resample to Float32Array
+                            data = resampleAudio(inputBuffer, sourceRate);
+                        }
+
+                        // Log data type occasionally
+                        if (Math.random() < 0.01) {
+                            console.log('[VOICE] data type:', data.constructor.name, 'length:', data.length || 'N/A');
+                        }
+
+                        // Pass to Vosk
+                        recognizer.acceptWaveform(data);
                         emitVoskAudioLevel(inputBuffer);
                     } catch (e) {
-                        console.error('[VOICE] onaudioprocess error:', e.message || e);
+                        // --- CRITICAL: Log full error details ---
+                        console.error('[VOICE] onaudioprocess error:');
+                        console.error('  message:', e.message);
+                        console.error('  stack:', e.stack);
+                        console.error('  name:', e.name);
+                        console.error('  data type:', typeof data, 'constructor:', data ? data.constructor.name : 'null');
+                        console.error('  sourceRate:', sourceRate);
                     }
                 };
                 // --- END OF ONAUDIOPROCESS ---
