@@ -516,51 +516,47 @@
     // which sounds like what's actually happening here rather than pure
     // slowness.
     function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 60000; // no new data for 25s on one attempt -> abort & retry
-        let chunks = [];
-        let loaded = 0;
-        let total = 0;
-        // 🟢 ADD THIS LOG
+    const MAX_ATTEMPTS = 6;
+    const STALL_TIMEOUT_MS = 60000; // 60 seconds – enough for mobile
+    let chunks = [];
+    let loaded = 0;
+    let total = 0;
+
     console.log('[VOSK] fetchModelWithProgress started for URL:', url);
 
     function attempt(attemptNum) {
-        // 🟢 ADD THIS LOG
         console.log('[VOSK] Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
 
         const controller = new AbortController();
+        let stallTimer = null;
 
-        function attempt(attemptNum) {
-            const controller = new AbortController();
-            let stallTimer = null;
-            function armStall() {
-                if (stallTimer) clearTimeout(stallTimer);
-                stallTimer = setTimeout(function () {
-                   // 🟢 ADD THIS LOG
-        console.warn('[VOSK] STALL TIMEOUT triggered! Aborting fetch.'); 
-                   controller.abort(); }, STALL_TIMEOUT_MS);
-            }
+        function armStall() {
+            if (stallTimer) clearTimeout(stallTimer);
+            stallTimer = setTimeout(function () {
+                console.warn('[VOSK] STALL TIMEOUT triggered! Aborting fetch.');
+                controller.abort();
+            }, STALL_TIMEOUT_MS);
+        }
 
-            const headers = {};
-            if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
-            armStall();
+        const headers = {};
+        if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
+        armStall();
 
-            return fetch(url, { headers: headers, signal: controller.signal }).then(function (resp) {
-               // 🟢 ADD THIS LOG
-    console.log('[VOSK] Response status:', resp.status, ' - OK:', resp.ok);
+        return fetch(url, { headers: headers, signal: controller.signal })
+            .then(function (resp) {
+                console.log('[VOSK] Response status:', resp.status, ' - OK:', resp.ok);
+
                 if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
                 const isPartial = resp.status === 206;
-                 // 🟢 ADD THIS LOG
-    console.log('[VOSK] Is partial (Range supported)?', isPartial);
-               
+                console.log('[VOSK] Is partial (Range supported)?', isPartial);
+
                 if (loaded > 0 && !isPartial) {
-                    // We asked for a Range but the server ignored it and
-                    // sent the whole file again — restart bookkeeping.
+                    // Server ignored Range – restart from scratch
                     chunks = [];
                     loaded = 0;
                 }
                 if (isPartial) {
-                    const range = resp.headers.get('content-range'); // "bytes 1000-2000/53000000"
+                    const range = resp.headers.get('content-range');
                     const match = range && range.match(/\/(\d+)$/);
                     if (match) total = parseInt(match[1], 10);
                 } else {
@@ -569,46 +565,46 @@
                 }
 
                 const reader = resp.body.getReader();
+
                 function pump() {
                     return reader.read().then(function (res) {
-                        if (res.done) { clearTimeout(stallTimer);
-            / 🟢 ADD THIS LOG
-            console.log('[VOSK] Stream done. Total loaded:', loaded);
-                        return; 
+                        if (res.done) {
+                            clearTimeout(stallTimer);
+                            console.log('[VOSK] Stream done. Total loaded:', loaded);
+                            return;
+                        }
                         armStall();
                         chunks.push(res.value);
                         loaded += res.value.length;
-                                       // 🟢 ADD THIS LOG (only log every 10% to avoid spamming)
-        const percent = total ? Math.round(loaded / total * 100) : null;
-        if (percent !== null && percent % 10 === 0) {
-            console.log('[VOSK] Progress:', percent + '% (' + loaded + ' / ' + total + ' bytes)');
-        }
+
+                        const percent = total ? Math.round(loaded / total * 100) : null;
+                        if (percent !== null && percent % 10 === 0) {
+                            console.log('[VOSK] Progress:', percent + '% (' + loaded + ' / ' + total + ' bytes)');
+                        }
                         if (typeof onProgress === 'function') {
-                            onProgress({ loaded: loaded, total: total, percent: total ? Math.round(loaded / total * 100) : null });
+                            onProgress({ loaded: loaded, total: total, percent: percent });
                         }
                         return pump();
                     });
                 }
                 return pump();
-            }).catch(function (err) {
+            })
+            .catch(function (err) {
                 clearTimeout(stallTimer);
-               // 🟢 ADD THIS LOG
-    console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
+                console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
 
-    if (attemptNum >= MAX_ATTEMPTS) {
-        console.error('[VOSK] Max attempts reached. Giving up.');
-        throw err;
-    }
-                if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Brief pause before retrying — resumes from `loaded` bytes
-                // via the Range header above, not from scratch.
+                if (attemptNum >= MAX_ATTEMPTS) {
+                    console.error('[VOSK] Max attempts reached. Giving up.');
+                    throw err;
+                }
+                // Wait 1.5s and retry (resumes via Range if server supports it)
                 return new Promise(function (resolve) { setTimeout(resolve, 1500); })
                     .then(function () { return attempt(attemptNum + 1); });
             });
-        }
-
-        return attempt(1).then(function () { return new Blob(chunks); });
     }
+
+    return attempt(1).then(function () { return new Blob(chunks); });
+}
 
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
