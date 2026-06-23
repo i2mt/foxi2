@@ -1,83 +1,12 @@
 /* ============================================
-   FoxiMed — Voice Engine
-   ============================================
-   Low-level speech capture layer with TWO interchangeable backends:
-
-     1. "webspeech" — the native browser SpeechRecognition API. Used on
-        Android / desktop / macOS Safari, where it's fast and needs no
-        download.
-
-     2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
-        https://github.com/ccoreilly/vosk-browser). Used on iOS, because
-        Apple's WebKit SpeechRecognition implementation is unreliable —
-        especially once the PWA is installed to the Home Screen, where it
-        frequently fails outright. Vosk never touches that API at all, so
-        it works the same whether the app is in a Safari tab or installed.
-
-   Both backends are driven through the exact same public, event-driven
-   API, so neither voice-commands.js nor voice-ui.js need to know which
-   one is active:
-
-       window.VoiceEngine.getSupportInfo()
-       window.VoiceEngine.start()
-       window.VoiceEngine.stop()
-       window.VoiceEngine.isActive()
-       window.VoiceEngine.on(event, handler)
-
-   Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
-                    'model-loading', 'model-ready'
-
-   --- SETUP REQUIRED FOR THE VOSK (iOS) BACKEND ---
-   Set VOSK_MODEL_URL below to your own hosted `.tar.gz` Persian Vosk
-   model. Until that's set, iOS falls back to the native API + the
-   existing "open in Safari / type instead" guidance, so nothing breaks
-   if you deploy before the model is ready.
-
-   WHICH MODEL: use vosk-model-small-fa-0.42 (53MB), not -0.5 (60MB).
-   Despite the lower version number, alphacephei's own published word
-   error rates show 0.42 is the noticeably better-trained generation —
-   roughly 25-45% fewer word errors than 0.5 on their own benchmarks
-   (CV17: 23.4 vs 31.2 / Fleurs: 14.0 vs 26.2) — while also being a
-   smaller download. There's no real reason to use 0.5 instead.
-   (A non-"small" vosk-model-fa-0.42 also exists with even better
-   accuracy, but at 1.6GB it's impractical for a web app — skip it.)
-   Get it from https://alphacephei.com/vosk/models.
-
-   Gotchas worth knowing (verified against the actual vosk-browser v0.0.8
-   source, not just its README, since the README example is slightly
-   out of date):
-     - The model file MUST be `.tar.gz`, not the `.zip` alphacephei.com
-       distributes. Unzip it, rename the folder to exactly `model`, then:
-           tar -czf vosk-model-small-fa-0.42.tar.gz model
-       (the library's virtual filesystem expects the top-level folder to
-       be literally named "model" — keeping the original folder name is
-       a common silent-failure cause).
-     - `new model.KaldiRecognizer(sampleRate)` requires the sample rate
-       argument — the README's own snippet omits it, but the published
-       type definitions and compiled source both require it.
-     - Host the file on the SAME origin as the rest of FoxiMed (e.g. next
-       to index.html) so there's no CORS step to configure at all.
-     - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
-       file at your host so repeat visits don't re-download ~53MB.
-     - This part of the rebuild could not be end-to-end tested here (no
-       iOS device, no microphone, no real network fetch of the model in
-       this sandbox) — the integration matches the verified library
-       source exactly, but please test for real on an iOS device before
-       relying on it.
+   FoxiMed — Voice Engine (Production Clean)
    ============================================ */
 (function (window) {
     'use strict';
 
-    // Mehdi: put your hosted, same-origin .tar.gz model URL here.
-    // Leave empty to keep the current native-API/banner behavior on iOS.
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
-    // How long to wait for the model download before giving up. Raise this
-    // further if your users are on consistently slow connections — there's
-    // no real downside to being patient here, it only delays the *failure*
-    // message on a genuinely dead connection, it doesn't block anything
-    // else in the app.
-    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; the retry logic below handles ordinary stalls long before this
+    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
     const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
@@ -88,7 +17,6 @@
     function detectIOS() {
         const ua = navigator.userAgent || '';
         const isClassicIOS = /iPad|iPhone|iPod/.test(ua);
-        // iPadOS 13+ identifies as "Macintosh" but exposes multi-touch
         const isModernIPad = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
         return isClassicIOS || isModernIPad;
     }
@@ -114,12 +42,6 @@
     // ============================================
     // SUPPORT / LIMITATION REPORT
     // ============================================
-    // status: 'ok'        -> everything should work normally
-    //         'limited'    -> API exists but is known to be unreliable here
-    //                         (iOS Home Screen app) — we still allow trying,
-    //                         but the UI should show a persistent notice and
-    //                         lead with the text fallback.
-    //         'blocked'    -> no point attempting (no API / insecure context)
     function getSupportInfo() {
         if (!ENV.isSecureContext) {
             return {
@@ -131,8 +53,6 @@
         }
         if (ENV.isIOS && voskConfigured()) {
             if (voskFailInfo) return voskFailInfo;
-            // Vosk doesn't touch WebKit's SpeechRecognition at all, so the
-            // standalone-PWA restriction simply doesn't apply here.
             return { status: 'ok', code: 'ios-vosk', title: null, message: null };
         }
         if (!ENV.hasSpeechRecognition) {
@@ -152,12 +72,7 @@
             };
         }
         if (ENV.isIOS) {
-            return {
-                status: 'ok',
-                code: 'ios-safari',
-                title: null,
-                message: null
-            };
+            return { status: 'ok', code: 'ios-safari', title: null, message: null };
         }
         return { status: 'ok', code: 'ok', title: null, message: null };
     }
@@ -244,22 +159,21 @@
     // ============================================
     let recognition = null;
     let active = false;
-    let startWatchdog = null;   // fires if `onstart` never happens (silent iOS hang)
-    let silenceWatchdog = null; // fires if no interim/final result for too long
+    let startWatchdog = null;
+    let silenceWatchdog = null;
     let micStream = null;
     let audioCtx = null;
     let analyser = null;
     let rafId = null;
     const listeners = {};
 
-    // --- Vosk backend state ---
     let voskActive = false;
     let voskLoading = false;
     let voskCancelRequested = false;
     let voskLibLoadPromise = null;
     let voskModel = null;
     let voskModelLoadPromise = null;
-    let voskFailInfo = null;     // set if model/lib failed to load this session
+    let voskFailInfo = null;
     let voskRecognizer = null;
     let voskAudioCtx = null;
     let voskSource = null;
@@ -287,8 +201,7 @@
     }
 
     // ============================================
-    // AUDIO METERING (Web Audio API)
-    // Purely cosmetic/feedback — independent of SpeechRecognition working.
+    // AUDIO METERING
     // ============================================
     function attachAudioMeter() {
         if (!ENV.hasGetUserMedia || !ENV.hasAudioContext) return;
@@ -304,18 +217,13 @@
                 source.connect(analyser);
                 pumpAudioFrames();
             })
-            .catch(function () {
-                // No mic stream for visualization — UI falls back to a
-                // gentle decorative animation. Not a fatal problem.
-            });
+            .catch(function () {});
     }
 
     function pumpAudioFrames() {
         if (!analyser || !active) return;
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
-
-        // Down-sample the frequency bins into 12 bars for the UI.
         const bars = 12;
         const bins = [];
         const chunk = Math.floor(data.length / bars) || 1;
@@ -323,7 +231,7 @@
         for (let i = 0; i < bars; i++) {
             let sum = 0;
             for (let j = 0; j < chunk; j++) sum += data[i * chunk + j] || 0;
-            const avg = sum / chunk / 255; // 0..1
+            const avg = sum / chunk / 255;
             bins.push(avg);
             levelSum += avg;
         }
@@ -361,10 +269,6 @@
             return;
         }
 
-        // A ?testlang=en-US URL parameter overrides the language for quick
-        // diagnostics (e.g. checking whether a device's speech service
-        // works at all in English when Persian silently produces nothing)
-        // without needing to edit and redeploy code each time.
         let urlTestLang = null;
         try { urlTestLang = new URLSearchParams(window.location.search).get('testlang'); } catch (e) {}
 
@@ -372,9 +276,6 @@
         const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognitionImpl();
         recognition.lang = langToUse;
-        // iOS WebKit has long-standing bugs with continuous mode (hangs /
-        // never stops listening) — only enable continuous + auto-restart
-        // on non-iOS platforms.
         recognition.continuous = !ENV.isIOS;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
@@ -384,19 +285,11 @@
             if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = null; }
             armSilenceWatchdog();
             emit('start');
-            // Microphone level metering for the UI — requested only now,
-            // after the recognition engine itself has confirmed it has the
-            // mic. Some older Android/WebView combinations appear to
-            // mis-arbitrate two near-simultaneous mic permission requests
-            // (one implicit inside SpeechRecognition, one explicit from a
-            // separate getUserMedia call), reporting the recognition's own
-            // permission as denied even though the user never saw a second
-            // prompt. Waiting for onstart removes that race entirely.
             attachAudioMeter();
         };
 
         recognition.onresult = function (event) {
-            armSilenceWatchdog(); // we're getting signal — push the timeout back
+            armSilenceWatchdog();
             let interim = '';
             let final = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -413,10 +306,6 @@
         };
 
         recognition.onerror = function (event) {
-            // Some Android speech services are picky about the exact
-            // locale tag — if "fa-IR" is reported as unsupported, silently
-            // retry once with the bare "fa" before surfacing anything to
-            // the person. This never fires more than one retry deep.
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
                 active = false;
                 clearWatchdogs();
@@ -431,23 +320,14 @@
 
         recognition.onend = function () {
             clearWatchdogs();
-            // Android/Chrome sometimes ends a "continuous" session on its
-            // own (e.g. brief silence) — restart transparently. iOS must
-            // never auto-restart on its own (it can re-trigger permission
-            // prompts and hang).
             if (active && !ENV.isIOS) {
-                try { recognition.start(); return; } catch (e) { /* fall through */ }
+                try { recognition.start(); return; } catch (e) {}
             }
             active = false;
             releaseAudioMeter();
             emit('end');
         };
 
-        // --- Critical for iOS: call start() synchronously, directly from
-        // the user-gesture call stack. Do NOT await getUserMedia or any
-        // other promise before this call — iOS WebKit only honors the
-        // "real user activation" required by SpeechRecognition.start()
-        // when nothing asynchronous has happened first. ---
         try {
             recognition.start();
         } catch (e) {
@@ -455,8 +335,6 @@
             return;
         }
 
-        // Safety net: if onstart never fires (a known silent-hang on some
-        // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
                 emit('error', classifyError('timeout'));
@@ -478,7 +356,7 @@
     }
 
     // ============================================
-    // BACKEND 2: VOSK (offline, on-device — used on iOS)
+    // BACKEND 2: VOSK
     // ============================================
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -506,7 +384,6 @@
         return voskLibLoadPromise;
     }
 
-    // ----- Resampling helper (linear interpolation) -----
     function resampleAudio(inputBuffer, sourceRate) {
         const targetRate = 16000;
         if (sourceRate === targetRate) return inputBuffer.getChannelData(0);
@@ -526,7 +403,6 @@
         return output;
     }
 
-    // ----- XHR‑based fetch with retry and Range support -----
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 60000;
@@ -535,12 +411,8 @@
         let chunks = [];
         let attemptNum = 0;
 
-        console.log('[VOSK] fetchModelWithProgress (XHR) started for URL:', url);
-
         function attempt() {
             attemptNum++;
-            console.log('[VOSK] XHR Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
-
             return new Promise(function (resolve, reject) {
                 const xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
@@ -553,9 +425,6 @@
                 xhr.withCredentials = false;
 
                 xhr.onload = function () {
-                    console.log('[VOSK] XHR onload. Status:', xhr.status, 'StatusText:', xhr.statusText);
-                    console.log('[VOSK] XHR response headers:', xhr.getAllResponseHeaders());
-
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const responseData = xhr.response;
                         if (responseData) {
@@ -571,46 +440,27 @@
                             if (typeof onProgress === 'function') {
                                 onProgress({ loaded: loaded, total: total, percent: 100 });
                             }
-                            console.log('[VOSK] XHR download complete. Total loaded:', loaded, 'bytes');
                             resolve(new Blob(chunks));
                         } else {
                             reject(new Error('Empty response'));
                         }
                     } else {
-                        reject(new Error('HTTP ' + xhr.status + ' - ' + xhr.statusText));
+                        reject(new Error('HTTP ' + xhr.status));
                     }
                 };
 
                 xhr.onerror = function () {
-                    console.error('[VOSK] XHR network error. ReadyState:', xhr.readyState, 'Status:', xhr.status);
-                    reject(new Error('XHR network error (status ' + xhr.status + ')'));
+                    reject(new Error('XHR network error'));
                 };
 
                 xhr.ontimeout = function () {
-                    console.error('[VOSK] XHR timeout');
                     reject(new Error('XHR timeout'));
                 };
 
-                xhr.onprogress = function (event) {
-                    if (event.total > 0) total = event.total;
-                    if (event.loaded > 0 && event.total > 0) {
-                        const pct = Math.round((event.loaded / event.total) * 100);
-                        if (pct % 10 === 0) {
-                            console.log('[VOSK] XHR progress:', pct + '% (' + event.loaded + ' / ' + event.total + ' bytes)');
-                        }
-                    }
-                };
-
                 xhr.timeout = STALL_TIMEOUT_MS;
-
-                console.log('[VOSK] XHR sending request...');
                 xhr.send();
             }).catch(function (err) {
-                console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
-                if (attemptNum >= MAX_ATTEMPTS) {
-                    console.error('[VOSK] Max attempts reached. Giving up.');
-                    throw err;
-                }
+                if (attemptNum >= MAX_ATTEMPTS) throw err;
                 return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(attempt);
             });
         }
@@ -622,7 +472,6 @@
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
 
-        console.log('[VOSK] ensureVoskModel called - starting load process');
         emit('model-loading');
 
         function loadBlob() {
@@ -637,32 +486,29 @@
                         try {
                             const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
                             if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal, model still works this session */ });
+                                putPromise.catch(function () {});
                             }
-                        } catch (e) { /* synchronous failure — also non-fatal */ }
+                        } catch (e) {}
                         return blob;
                     });
                 });
             }).catch(function () {
-                // Cache API unavailable for some reason — fetch without it.
                 return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
             });
         }
+
         function onModelProgress(progress) { emit('model-progress', progress); }
 
         const loadChain = ensureVoskLib()
             .catch(function () { throw classifyError('vosk-lib-failed'); })
             .then(loadBlob)
             .then(function (blob) {
-                console.log('[VOSK] Blob downloaded. Size:', blob.size, 'bytes. Creating model...');
                 const blobUrl = URL.createObjectURL(blob);
                 return window.Vosk.createModel(blobUrl).catch(function () {
-                    // Fallback: let the library fetch the URL directly
                     return window.Vosk.createModel(VOSK_MODEL_URL);
                 });
             })
             .then(function (model) {
-                console.log('[VOSK] Model loaded SUCCESSFULLY!');
                 voskModel = model;
                 voskFailInfo = null;
                 model.on('error', function () {
@@ -678,7 +524,6 @@
 
         voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
             .catch(function (err) {
-                console.error('[VOSK] Model loading chain failed:', err);
                 voskModelLoadPromise = null;
                 const info = (err && err.code) ? err : classifyError('vosk-model-failed');
                 voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
@@ -752,7 +597,6 @@
                 }
                 voskStream = stream;
 
-                // Create AudioContext with a hint for 16kHz (fallback handled by resampler)
                 const AC = window.AudioContext || window.webkitAudioContext;
                 voskAudioCtx = new AC({ sampleRate: 16000 });
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
@@ -770,9 +614,7 @@
                         }
                         recognizer.acceptWaveform(data);
                         emitVoskAudioLevel(inputBuffer);
-                    } catch (e) {
-                        // ignore
-                    }
+                    } catch (e) {}
                 };
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
