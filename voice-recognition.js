@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/raw/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -538,9 +538,9 @@
                 xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
             }
 
-            xhr.withCredentials = false;
+            // Try with credentials to see if it helps (unlikely but worth a try)
+            xhr.withCredentials = false; // Keep false for CORS simple requests
 
-            // --- VERBOSE LOGGING ---
             xhr.onload = function () {
                 console.log('[VOSK] XHR onload. Status:', xhr.status, 'StatusText:', xhr.statusText);
                 console.log('[VOSK] XHR response headers:', xhr.getAllResponseHeaders());
@@ -566,13 +566,11 @@
                         reject(new Error('Empty response'));
                     }
                 } else {
-                    // If we get a 404 or other HTTP error, log it clearly
                     reject(new Error('HTTP ' + xhr.status + ' - ' + xhr.statusText));
                 }
             };
 
             xhr.onerror = function () {
-                // This fires for network-level failures (DNS, connection refused, etc.)
                 console.error('[VOSK] XHR network error. ReadyState:', xhr.readyState, 'Status:', xhr.status);
                 reject(new Error('XHR network error (status ' + xhr.status + ')'));
             };
@@ -584,7 +582,6 @@
 
             xhr.onprogress = function (event) {
                 if (event.total > 0) total = event.total;
-                // Log progress every 10% to see if we get any data at all
                 if (event.loaded > 0 && event.total > 0) {
                     const pct = Math.round((event.loaded / event.total) * 100);
                     if (pct % 10 === 0) {
@@ -595,7 +592,6 @@
 
             xhr.timeout = STALL_TIMEOUT_MS;
 
-            // Log just before sending
             console.log('[VOSK] XHR sending request...');
             xhr.send();
         }).catch(function (err) {
