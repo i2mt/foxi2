@@ -517,7 +517,7 @@
     // slowness.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
+        const STALL_TIMEOUT_MS = 60000; // no new data for 25s on one attempt -> abort & retry
         let chunks = [];
         let loaded = 0;
         let total = 0;
