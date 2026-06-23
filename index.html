@@ -27,12 +27,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="voice-assistant.css">
-    <script src="https://cdn.jsdelivr.net/npm/vconsole@latest/dist/vconsole.min.js"></script>
-    <!-- Add this right after the last <link> tag, before </head> -->
-<script src="https://cdn.jsdelivr.net/npm/vconsole@latest/dist/vconsole.min.js"></script>
-<script>
-  var vConsole = new VConsole();
-</script>
 </head>
 <body>
 
@@ -55,7 +49,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 4.7.2</div>
+            <div class="loading-version">نسخه 4.7.4</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -1863,7 +1857,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>4.7.2</span></div>
+                        <div class="about-row"><span>نسخه</span><span>4.7.4</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -1994,7 +1988,7 @@
     <script src="voice-ui.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
-           window.addEventListener('load', () => {
+            window.addEventListener('load', () => {
                 navigator.serviceWorker.register('service-worker.js');
             });
         }
