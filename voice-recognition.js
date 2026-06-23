@@ -521,13 +521,24 @@
         let chunks = [];
         let loaded = 0;
         let total = 0;
+        // 🟢 ADD THIS LOG
+    console.log('[VOSK] fetchModelWithProgress started for URL:', url);
+
+    function attempt(attemptNum) {
+        // 🟢 ADD THIS LOG
+        console.log('[VOSK] Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
+
+        const controller = new AbortController();
 
         function attempt(attemptNum) {
             const controller = new AbortController();
             let stallTimer = null;
             function armStall() {
                 if (stallTimer) clearTimeout(stallTimer);
-                stallTimer = setTimeout(function () { controller.abort(); }, STALL_TIMEOUT_MS);
+                stallTimer = setTimeout(function () {
+                   // 🟢 ADD THIS LOG
+        console.warn('[VOSK] STALL TIMEOUT triggered! Aborting fetch.'); 
+                   controller.abort(); }, STALL_TIMEOUT_MS);
             }
 
             const headers = {};
@@ -535,8 +546,13 @@
             armStall();
 
             return fetch(url, { headers: headers, signal: controller.signal }).then(function (resp) {
+               // 🟢 ADD THIS LOG
+    console.log('[VOSK] Response status:', resp.status, ' - OK:', resp.ok);
                 if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
                 const isPartial = resp.status === 206;
+                 // 🟢 ADD THIS LOG
+    console.log('[VOSK] Is partial (Range supported)?', isPartial);
+               
                 if (loaded > 0 && !isPartial) {
                     // We asked for a Range but the server ignored it and
                     // sent the whole file again — restart bookkeeping.
@@ -555,10 +571,18 @@
                 const reader = resp.body.getReader();
                 function pump() {
                     return reader.read().then(function (res) {
-                        if (res.done) { clearTimeout(stallTimer); return; }
+                        if (res.done) { clearTimeout(stallTimer);
+            / 🟢 ADD THIS LOG
+            console.log('[VOSK] Stream done. Total loaded:', loaded);
+                        return; 
                         armStall();
                         chunks.push(res.value);
                         loaded += res.value.length;
+                                       // 🟢 ADD THIS LOG (only log every 10% to avoid spamming)
+        const percent = total ? Math.round(loaded / total * 100) : null;
+        if (percent !== null && percent % 10 === 0) {
+            console.log('[VOSK] Progress:', percent + '% (' + loaded + ' / ' + total + ' bytes)');
+        }
                         if (typeof onProgress === 'function') {
                             onProgress({ loaded: loaded, total: total, percent: total ? Math.round(loaded / total * 100) : null });
                         }
@@ -568,6 +592,13 @@
                 return pump();
             }).catch(function (err) {
                 clearTimeout(stallTimer);
+               // 🟢 ADD THIS LOG
+    console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
+
+    if (attemptNum >= MAX_ATTEMPTS) {
+        console.error('[VOSK] Max attempts reached. Giving up.');
+        throw err;
+    }
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
                 // Brief pause before retrying — resumes from `loaded` bytes
                 // via the Range header above, not from scratch.
@@ -582,6 +613,8 @@
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
+         // 🟢 ADD THIS LOG
+    console.log('[VOSK] ensureVoskModel called - starting load process');
         emit('model-loading');
 
         function loadBlob() {
@@ -613,6 +646,8 @@
             .catch(function () { throw classifyError('vosk-lib-failed'); })
             .then(loadBlob)
             .then(function (blob) {
+                // 🟢 ADD THIS LOG
+            console.log('[VOSK] Blob downloaded. Size:', blob.size, 'bytes. Creating model...');
                 const blobUrl = URL.createObjectURL(blob);
                 return window.Vosk.createModel(blobUrl).catch(function () {
                     // Not verifiable without a live device: some browsers'
@@ -626,6 +661,8 @@
                 });
             })
             .then(function (model) {
+                // 🟢 ADD THIS LOG
+            console.log('[VOSK] Model loaded SUCCESSFULLY!');
                 voskModel = model;
                 voskFailInfo = null;
                 // Catch errors that occur *after* the initial load too
@@ -647,6 +684,8 @@
 
         voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
             .catch(function (err) {
+                // 🟢 ADD THIS LOG
+            console.error('[VOSK] Model loading chain failed:', err);
                 voskModelLoadPromise = null;
                 const info = (err && err.code) ? err : classifyError('vosk-model-failed');
                 voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
