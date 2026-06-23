@@ -1,5 +1,69 @@
 /* ============================================
-   FoxiMed — Voice Engine (Production Clean)
+   FoxiMed — Voice Engine
+   ============================================
+   Low-level speech capture layer with TWO interchangeable backends:
+
+     1. "webspeech" — the native browser SpeechRecognition API. Used on
+        Android / desktop / macOS Safari, where it's fast and needs no
+        download.
+
+     2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
+        https://github.com/ccoreilly/vosk-browser). Used on iOS, because
+        Apple's WebKit SpeechRecognition implementation is unreliable —
+        especially once the PWA is installed to the Home Screen, where it
+        frequently fails outright. Vosk never touches that API at all, so
+        it works the same whether the app is in a Safari tab or installed.
+
+   Both backends are driven through the exact same public, event-driven
+   API, so neither voice-commands.js nor voice-ui.js need to know which
+   one is active:
+
+       window.VoiceEngine.getSupportInfo()
+       window.VoiceEngine.start()
+       window.VoiceEngine.stop()
+       window.VoiceEngine.isActive()
+       window.VoiceEngine.on(event, handler)
+
+   Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
+                    'model-loading', 'model-ready'
+
+   --- SETUP REQUIRED FOR THE VOSK (iOS) BACKEND ---
+   Set VOSK_MODEL_URL below to your own hosted `.tar.gz` Persian Vosk
+   model. Until that's set, iOS falls back to the native API + the
+   existing "open in Safari / type instead" guidance, so nothing breaks
+   if you deploy before the model is ready.
+
+   WHICH MODEL: use vosk-model-small-fa-0.42 (53MB), not -0.5 (60MB).
+   Despite the lower version number, alphacephei's own published word
+   error rates show 0.42 is the noticeably better-trained generation —
+   roughly 25-45% fewer word errors than 0.5 on their own benchmarks
+   (CV17: 23.4 vs 31.2 / Fleurs: 14.0 vs 26.2) — while also being a
+   smaller download. There's no real reason to use 0.5 instead.
+   (A non-"small" vosk-model-fa-0.42 also exists with even better
+   accuracy, but at 1.6GB it's impractical for a web app — skip it.)
+   Get it from https://alphacephei.com/vosk/models.
+
+   Gotchas worth knowing (verified against the actual vosk-browser v0.0.8
+   source, not just its README, since the README example is slightly
+   out of date):
+     - The model file MUST be `.tar.gz`, not the `.zip` alphacephei.com
+       distributes. Unzip it, rename the folder to exactly `model`, then:
+           tar -czf vosk-model-small-fa-0.42.tar.gz model
+       (the library's virtual filesystem expects the top-level folder to
+       be literally named "model" — keeping the original folder name is
+       a common silent-failure cause).
+     - `new model.KaldiRecognizer(sampleRate)` requires the sample rate
+       argument — the README's own snippet omits it, but the published
+       type definitions and compiled source both require it.
+     - Host the file on the SAME origin as the rest of FoxiMed (e.g. next
+       to index.html) so there's no CORS step to configure at all.
+     - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
+       file at your host so repeat visits don't re-download ~53MB.
+     - This part of the rebuild could not be end-to-end tested here (no
+       iOS device, no microphone, no real network fetch of the model in
+       this sandbox) — the integration matches the verified library
+       source exactly, but please test for real on an iOS device before
+       relying on it.
    ============================================ */
 (function (window) {
     'use strict';
