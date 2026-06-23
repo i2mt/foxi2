@@ -3,7 +3,7 @@
 // Always tries to fetch the latest version.
 // Falls back to cache only when offline.
 
-const CACHE_NAME = 'FoxiMed_v4.7.1.2';
+const CACHE_NAME = 'FoxiMed_v4.7.2';
 
 const urlsToCache = [
     './',
@@ -51,10 +51,28 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Fetch - Network First for EVERYTHING
+// Fetch - Network First for EVERYTHING, EXCEPT large model/data files,
+// which pass through untouched.
+//
+// Why: this handler clones every successful response to cache it. Cloning
+// a streamed response means the browser buffers BOTH copies at once (one
+// for the page, one for the cache) — fine for small app-shell files, but
+// for something like a 53MB Vosk model, that's a real memory spike. iOS
+// Safari in particular can respond to that by killing the service worker's
+// background process mid-transfer, which breaks the fetch from the page's
+// point of view even though a plain direct navigation to the same URL
+// (which never goes through this handler at all) works fine. The model
+// file already has its own, separate, deliberate caching strategy in
+// voice-recognition.js — it doesn't need (or want) this handler's help too.
+const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i];
+
 self.addEventListener('fetch', event => {
 
     if (event.request.method !== 'GET') return;
+
+    if (SW_SKIP_PATTERNS.some(re => re.test(event.request.url))) {
+        return; // let the browser handle it as a completely normal, uncontrolled fetch
+    }
 
     event.respondWith(
         fetch(event.request)
