@@ -598,106 +598,50 @@
 }
 
     function ensureVoskModel() {
-        if (voskModel) return Promise.resolve(voskModel);
-        if (voskModelLoadPromise) return voskModelLoadPromise;
-        console.log('[VOICE] model loading started');
-        emit('model-loading');
+    if (voskModel) return Promise.resolve(voskModel);
+    if (voskModelLoadPromise) return voskModelLoadPromise;
 
-        function loadBlob() {
-            // Use Cache API for persistent storage; if not available, fall back to direct fetch.
-            if (!window.caches) {
-                console.log('[VOICE] Cache API not available, fetching directly');
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            }
-            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
-                return cache.match(VOSK_MODEL_URL).then(function (cached) {
-                    if (cached) {
-                        console.log('[VOICE] model found in cache');
-                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
-                        return cached.blob();
-                    }
-                    console.log('[VOICE] model not in cache, fetching...');
-                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
-                        // Store in cache for next time (non-blocking)
-                        try {
-                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
-                            if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal */ });
-                            }
-                        } catch (e) { /* synchronous failure — also non-fatal */ }
-                        return blob;
-                    });
-                });
-            }).catch(function (err) {
-                console.log('[VOICE] Cache API error, falling back to direct fetch:', err);
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+    console.log('[VOICE] model loading started (direct URL)');
+    emit('model-loading');
+
+    const loadChain = ensureVoskLib()
+        .catch(function (err) {
+            console.error('[VOICE] vosk lib load failed:', err);
+            throw classifyError('vosk-lib-failed');
+        })
+        .then(function () {
+            // Let Vosk fetch and extract the model directly – no extra memory copy.
+            console.log('[VOICE] calling Vosk.createModel with URL:', VOSK_MODEL_URL);
+            return window.Vosk.createModel(VOSK_MODEL_URL);
+        })
+        .then(function (model) {
+            voskModel = model;
+            voskFailInfo = null;
+            model.on('error', function () {
+                emit('error', classifyError('vosk-runtime'));
             });
-        }
-
-        function onModelProgress(progress) {
-            console.log('[VOICE] model fetch progress:', progress.percent + '%');
-            emit('model-progress', progress);
-        }
-
-        const loadChain = ensureVoskLib()
-            .catch(function (err) {
-                console.error('[VOICE] vosk lib load failed:', err);
-                throw classifyError('vosk-lib-failed');
-            })
-            .then(loadBlob)
-            .then(function (blob) {
-                console.log('[VOICE] model blob size:', blob.size, 'bytes');
-                const blobUrl = URL.createObjectURL(blob);
-                console.log('[VOICE] creating model from blob URL');
-                return window.Vosk.createModel(blobUrl)
-                    .then(function (model) {
-                        console.log('[VOICE] model creation succeeded');
-                        // Revoke the blob URL immediately to free the large blob from memory.
-                        URL.revokeObjectURL(blobUrl);
-                        return model;
-                    })
-                    .catch(function (err) {
-                        console.error('[VOICE] model creation from blob URL failed:', err);
-                        URL.revokeObjectURL(blobUrl);
-                        // Fallback: let the library fetch the URL directly
-                        console.log('[VOICE] falling back to direct URL fetch');
-                        return window.Vosk.createModel(VOSK_MODEL_URL);
-                    });
-            })
-            .then(function (model) {
-                voskModel = model;
-                voskFailInfo = null;
-                // Catch errors that occur *after* the initial load too
-                // (e.g. a Worker crash mid-session), not just load failure.
-                model.on('error', function () {
-                    emit('error', classifyError('vosk-runtime'));
-                });
-                console.log('[VOICE] model ready');
-                emit('model-ready');
-                return model;
-            });
-
-        // The retry logic above already handles ordinary stalls/drops —
-        // this outer cap only exists to eventually give up on something
-        // truly stuck (e.g. eight straight Range-resume cycles still going
-        // nowhere), so it's set generously rather than tuned tightly.
-        const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () {
-                console.error('[VOICE] model load timeout');
-                reject(classifyError('vosk-model-failed'));
-            }, VOSK_MODEL_TIMEOUT_MS);
+            console.log('[VOICE] model ready');
+            emit('model-ready');
+            return model;
         });
 
-        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
-            .catch(function (err) {
-                voskModelLoadPromise = null;
-                const info = (err && err.code) ? err : classifyError('vosk-model-failed');
-                console.error('[VOICE] model load failed:', info);
-                voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
-                throw info;
-            });
-        return voskModelLoadPromise;
-    }
+    const timeoutChain = new Promise(function (_, reject) {
+        setTimeout(function () {
+            console.error('[VOICE] model load timeout');
+            reject(classifyError('vosk-model-failed'));
+        }, VOSK_MODEL_TIMEOUT_MS);
+    });
+
+    voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+        .catch(function (err) {
+            voskModelLoadPromise = null;
+            const info = (err && err.code) ? err : classifyError('vosk-model-failed');
+            console.error('[VOICE] model load failed:', info);
+            voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+            throw info;
+        });
+    return voskModelLoadPromise;
+}
 
     // ============================================
     // SAFE AUDIO LEVEL EXTRACTOR (no errors, reduced frequency)
