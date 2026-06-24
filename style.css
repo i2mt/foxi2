@@ -940,6 +940,16 @@ select {
 
 .tab-pane.active {
     display: block;
+    animation: tabPaneIn 0.22s ease;
+}
+
+@keyframes tabPaneIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-pane.active { animation: none; }
 }
 
 .tab-bar {
@@ -997,6 +1007,17 @@ select {
     color: white;
     background: var(--gradient-primary);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    animation: tabItemPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tabItemPop {
+    0% { transform: scale(0.88); }
+    60% { transform: scale(1.06); }
+    100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-item.active { animation: none; }
 }
 
 .tab-item i {
@@ -7185,24 +7206,29 @@ html {
 
 .theme-swatches {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     direction: rtl;
+    padding-bottom: 2px;
 }
+.theme-swatches::-webkit-scrollbar { display: none; }
 
 .theme-swatch {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
-    padding: 8px 10px;
+    gap: 4px;
+    padding: 7px 5px;
     border-radius: 12px;
     border: 2px solid var(--border);
     background: var(--surface-elevated);
     cursor: pointer;
     transition: all 0.2s ease;
-    flex: 1;
-    min-width: 52px;
+    flex: 0 0 auto;
+    min-width: 48px;
 }
 
 .theme-swatch:hover {
@@ -7217,8 +7243,8 @@ html {
 }
 
 .swatch-dot {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     display: block;
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
@@ -7226,7 +7252,7 @@ html {
 
 .swatch-name {
     font-family: var(--font-persian);
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: var(--text-secondary);
     text-align: center;
     white-space: nowrap;

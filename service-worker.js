@@ -3,7 +3,7 @@
 // Always tries to fetch the latest version.
 // Falls back to cache only when offline.
 
-const CACHE_NAME = 'FoxiMed_v4.7.4';
+const CACHE_NAME = 'FoxiMed_v4.8.0';
 
 const urlsToCache = [
     './',
@@ -28,8 +28,14 @@ const urlsToCache = [
 
 // Install
 self.addEventListener('install', event => {
-    self.skipWaiting();
-
+    // Deliberately NOT calling self.skipWaiting() here. The app already has
+    // a proper "update available" banner (script.js: setupUpdateDetection /
+    // showUpdateBanner) that waits for the person to tap a button before
+    // sending a SKIP_WAITING message — see the message handler below.
+    // Calling skipWaiting() unconditionally here bypassed that entirely:
+    // every deploy would activate immediately and force a page reload
+    // ~300ms later (via the controllerchange listener in script.js),
+    // regardless of what the person was in the middle of doing.
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(urlsToCache))

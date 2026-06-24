@@ -3281,6 +3281,22 @@ const THEMES = {
             '--gradient-primary': 'linear-gradient(135deg,#4ade80 0%,#2dd4bf 100%)',
             '--secondary':        '#86efac',
         }
+    },
+    dreamfire: {
+        light: {
+            '--primary':          '#9f1239',
+            '--primary-dark':     '#7f0f2e',
+            '--primary-light':    'rgba(159,18,57,0.1)',
+            '--gradient-primary': 'linear-gradient(135deg,#be123c 0%,#4c0519 100%)',
+            '--secondary':        '#d4af7a',
+        },
+        dark: {
+            '--primary':          '#e0447e',
+            '--primary-dark':     '#c2255f',
+            '--primary-light':    'rgba(224,68,126,0.15)',
+            '--gradient-primary': 'linear-gradient(135deg,#e0447e 0%,#7c2d5e 100%)',
+            '--secondary':        '#e8c98a',
+        }
     }
 };
 

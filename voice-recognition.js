@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -267,6 +267,7 @@
     let voskStream = null;
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
+    let triedVoskFallback = false; // reset at the start of each fresh start() call
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -276,10 +277,33 @@
         if (silenceWatchdog) { clearTimeout(silenceWatchdog); silenceWatchdog = null; }
     }
 
+    // If native recognition shows a clear sign of being broken on this
+    // device — not just "didn't hear anything" — silently switch to the
+    // Vosk backend instead of just reporting an error, IF it's configured.
+    // This is what actually makes voice "certainly work" across the wide
+    // variety of Android devices/OEM browsers out there: native speech
+    // recognition quality and availability varies a lot by device (missing
+    // language packs, OEM browser quirks, etc.), but Vosk doesn't depend on
+    // any of that — it ships its own model, so it works the same way
+    // everywhere once downloaded. Only one fallback attempt per start() —
+    // this never ping-pongs between backends.
+    function maybeFallbackToVosk(errorCode) {
+        if (triedVoskFallback) return false;
+        if (!voskConfigured()) return false;
+        if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
+        const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
+        if (!FALLBACK_CODES[errorCode]) return false;
+        triedVoskFallback = true;
+        stopWebSpeech();
+        startVosk();
+        return true;
+    }
+
     function armSilenceWatchdog() {
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
             if (active) {
+                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -415,8 +439,8 @@
         recognition.onerror = function (event) {
             // Some Android speech services are picky about the exact
             // locale tag — if "fa-IR" is reported as unsupported, silently
-            // retry once with the bare "fa" before surfacing anything to
-            // the person. This never fires more than one retry deep.
+            // retry once with the bare "fa" before giving up on native
+            // recognition entirely (and falling back further, below).
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
                 active = false;
                 clearWatchdogs();
@@ -424,6 +448,7 @@
                 startWebSpeech('fa');
                 return;
             }
+            if (maybeFallbackToVosk(event.error)) return;
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -459,6 +484,7 @@
         // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
+                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -512,62 +538,79 @@
     // an HTTP Range request, instead of restarting the whole 53MB from
     // zero. Falls back to a full restart only if the server doesn't honor
     // Range requests. A single fixed timeout can't fix "the connection
-    // drops partway through" — this is built specifically for that case,
-    // which sounds like what's actually happening here rather than pure
-    // slowness.
+    // drops partway through" — this is built specifically for that case.
+    //
+    // Uses XMLHttpRequest rather than fetch()+ReadableStream on purpose:
+    // XHR's `progress` event is a much older, simpler mechanism that
+    // doesn't depend on the Streams API being fully supported — fetch's
+    // streaming response body (`response.body.getReader()`) has a less
+    // consistent track record across Safari versions, which matters here
+    // given everything else we've already run into on iOS specifically.
+    // XHR's native `responseType: 'blob'` also lets the browser assemble
+    // the file itself instead of holding every chunk in a JS array until
+    // the end, which is one less thing competing for memory on a
+    // constrained device.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
-        let chunks = [];
+        let assembledBlob = null;
         let loaded = 0;
         let total = 0;
 
+        function parseRangeTotal(rangeHeader) {
+            const match = rangeHeader && rangeHeader.match(/\/(\d+)$/);
+            return match ? parseInt(match[1], 10) : null;
+        }
+
         function attempt(attemptNum) {
-            const controller = new AbortController();
-            let stallTimer = null;
-            function armStall() {
-                if (stallTimer) clearTimeout(stallTimer);
-                stallTimer = setTimeout(function () { controller.abort(); }, STALL_TIMEOUT_MS);
-            }
+            return new Promise(function (resolve, reject) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.responseType = 'blob';
+                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
 
-            const headers = {};
-            if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
-            armStall();
+                let stallTimer = null;
+                function armStall() {
+                    if (stallTimer) clearTimeout(stallTimer);
+                    stallTimer = setTimeout(function () { xhr.abort(); }, STALL_TIMEOUT_MS);
+                }
+                armStall();
 
-            return fetch(url, { headers: headers, signal: controller.signal }).then(function (resp) {
-                if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
-                const isPartial = resp.status === 206;
-                if (loaded > 0 && !isPartial) {
-                    // We asked for a Range but the server ignored it and
-                    // sent the whole file again — restart bookkeeping.
-                    chunks = [];
-                    loaded = 0;
-                }
-                if (isPartial) {
-                    const range = resp.headers.get('content-range'); // "bytes 1000-2000/53000000"
-                    const match = range && range.match(/\/(\d+)$/);
-                    if (match) total = parseInt(match[1], 10);
-                } else {
-                    const cl = resp.headers.get('content-length');
-                    if (cl) total = parseInt(cl, 10);
-                }
+                xhr.onprogress = function (e) {
+                    armStall();
+                    if (!total) {
+                        const isPartial = xhr.status === 206;
+                        total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
+                    }
+                    const currentLoaded = loaded + e.loaded;
+                    if (typeof onProgress === 'function') {
+                        onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
+                    }
+                };
 
-                const reader = resp.body.getReader();
-                function pump() {
-                    return reader.read().then(function (res) {
-                        if (res.done) { clearTimeout(stallTimer); return; }
-                        armStall();
-                        chunks.push(res.value);
-                        loaded += res.value.length;
-                        if (typeof onProgress === 'function') {
-                            onProgress({ loaded: loaded, total: total, percent: total ? Math.round(loaded / total * 100) : null });
-                        }
-                        return pump();
-                    });
-                }
-                return pump();
+                xhr.onload = function () {
+                    clearTimeout(stallTimer);
+                    if (xhr.status !== 200 && xhr.status !== 206) {
+                        reject(new Error('http-' + xhr.status));
+                        return;
+                    }
+                    const newBlob = xhr.response;
+                    if (xhr.status === 206 && assembledBlob) {
+                        assembledBlob = new Blob([assembledBlob, newBlob]);
+                    } else {
+                        // Either the first attempt, or the server ignored
+                        // our Range request and sent the whole file again.
+                        assembledBlob = newBlob;
+                    }
+                    loaded = assembledBlob.size;
+                    total = total || loaded;
+                    resolve();
+                };
+                xhr.onerror = function () { clearTimeout(stallTimer); reject(new Error('xhr-network-error')); };
+                xhr.onabort = function () { clearTimeout(stallTimer); reject(new Error('xhr-stalled')); };
+
+                xhr.send();
             }).catch(function (err) {
-                clearTimeout(stallTimer);
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
                 // Brief pause before retrying — resumes from `loaded` bytes
                 // via the Range header above, not from scratch.
@@ -576,7 +619,7 @@
             });
         }
 
-        return attempt(1).then(function () { return new Blob(chunks); });
+        return attempt(1).then(function () { return assembledBlob; });
     }
 
     function ensureVoskModel() {
@@ -841,10 +884,18 @@
 
     function start() {
         if (active || voskActive || voskLoading) return;
+        triedVoskFallback = false;
         if (pickBackend() === 'vosk') startVosk(); else startWebSpeech();
     }
 
     function stop() {
+        // Check actual runtime state rather than just the static platform
+        // choice — a session that fell back from webspeech to Vosk mid-
+        // flight (see maybeFallbackToVosk) is now genuinely running Vosk
+        // even on a platform where pickBackend() would normally say
+        // "webspeech", so stopping the wrong one would leave it running.
+        if (voskActive || voskLoading) { stopVosk(); return; }
+        if (active) { stopWebSpeech(); return; }
         if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 

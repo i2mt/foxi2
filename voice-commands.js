@@ -298,7 +298,7 @@
         ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'دارو', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
 
         settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
-        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش‌فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'هدو', 'سایرن', 'لینکس', 'ویکسن'], scoreWeight: 0.9 },
+        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش‌فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
 
         help: { triggers: ['help', 'راهنما', 'کمک', 'راهنمایی', 'نمونه', 'example', 'چه کارایی', 'چطور کار کنم', 'راهنمای صوتی', 'چه کار کنم'], scoreWeight: 0.6 }
     };
@@ -817,6 +817,7 @@
                     'ocean': 'ocean', 'اقیانوس': 'ocean', 'سایرن': 'ocean',
                     'rose': 'rose', 'رز': 'rose', 'ویکسن': 'rose',
                     'forest': 'forest', 'جنگل': 'forest', 'لینکس': 'forest',
+                    'dreamfire': 'dreamfire', 'شرابی': 'dreamfire', 'زرشکی': 'dreamfire', 'گیلاسی': 'dreamfire',
                     'default': 'default', 'پیش‌فرض': 'default', 'هدو': 'default'
                 };
                 const lowerText = text.toLowerCase();
