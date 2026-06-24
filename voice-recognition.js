@@ -546,80 +546,55 @@
     // the end, which is one less thing competing for memory on a
     // constrained device.
     function fetchModelWithProgress(url, onProgress) {
-    const MAX_ATTEMPTS = 6;
-    const STALL_TIMEOUT_MS = 60000; // 60s per attempt
-    let loaded = 0;
-    let total = 0;
-    let chunks = [];
-    let attemptNum = 0;
+    const MAX_ATTEMPTS = 3;
+    const TIMEOUT_MS = 120000; // 2 minutes per attempt
 
-    function attempt() {
-        attemptNum++;
-        return new Promise(function (resolve, reject) {
+    function attempt(attemptNum) {
+        return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('GET', url, true);
-            xhr.responseType = 'arraybuffer';
-            xhr.timeout = STALL_TIMEOUT_MS;
+            xhr.responseType = 'blob'; // 🟢 CRITICAL: no JS memory copy
+            xhr.timeout = TIMEOUT_MS;
 
-            if (loaded > 0) {
-                xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
-            }
+            xhr.onprogress = function (event) {
+                if (event.total > 0 && typeof onProgress === 'function') {
+                    onProgress({
+                        loaded: event.loaded,
+                        total: event.total,
+                        percent: Math.round((event.loaded / event.total) * 100)
+                    });
+                }
+            };
 
             xhr.onload = function () {
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    const responseData = xhr.response;
-                    if (!responseData) {
+                    const blob = xhr.response;
+                    if (!blob || blob.size === 0) {
                         reject(new Error('Empty response'));
                         return;
                     }
-                    const newData = new Uint8Array(responseData);
-                    // If this is a full response (200) or the first chunk,
-                    // reset chunks; otherwise append.
-                    if (xhr.status === 206 && loaded > 0) {
-                        chunks.push(newData);
-                    } else {
-                        chunks = [newData];
-                    }
-                    loaded += newData.length;
-                    total = Math.max(total, loaded);
-
                     if (typeof onProgress === 'function') {
-                        onProgress({ loaded: loaded, total: total, percent: 100 });
+                        onProgress({ loaded: blob.size, total: blob.size, percent: 100 });
                     }
-                    resolve(new Blob(chunks));
+                    resolve(blob);
                 } else {
                     reject(new Error('HTTP ' + xhr.status));
                 }
             };
 
-            xhr.onerror = function () {
-                reject(new Error('Network error'));
-            };
-
-            xhr.ontimeout = function () {
-                reject(new Error('Timeout'));
-            };
-
-            xhr.onprogress = function (event) {
-                if (event.total > 0) total = event.total;
-                const currentLoaded = loaded + event.loaded;
-                if (typeof onProgress === 'function') {
-                    const percent = total ? Math.round((currentLoaded / total) * 100) : null;
-                    onProgress({ loaded: currentLoaded, total: total, percent: percent });
-                }
-            };
+            xhr.onerror = function () { reject(new Error('Network error')); };
+            xhr.ontimeout = function () { reject(new Error('Timeout')); };
 
             xhr.send();
         }).catch(function (err) {
             if (attemptNum >= MAX_ATTEMPTS) throw err;
-            // Wait 1.5s, then retry – `loaded` and `chunks` already contain
-            // whatever was successfully downloaded so far.
-            return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                .then(attempt);
+            // Wait 2s, then retry from scratch (no Range headers, no leftover state)
+            return new Promise(resolve => setTimeout(resolve, 2000))
+                .then(() => attempt(attemptNum + 1));
         });
     }
 
-    return attempt();
+    return attempt(1);
 }
 
     function ensureVoskModel() {
