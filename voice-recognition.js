@@ -1,10 +1,9 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Optimized for iOS performance: uses XHR for downloading the
-   Vosk model with resumable Range requests, stores it in the
-   Cache API, and carefully manages blob memory to avoid
-   iOS tab-kill during "preparing from memory".
+   Uses XHR with resumable Range requests and live
+   progress reporting. Model is cached in the Cache API
+   for subsequent visits, but progress is always shown.
    ============================================ */
 (function (window) {
     'use strict';
@@ -128,7 +127,7 @@
     }
 
     // ============================================
-    // AUDIO METERING (Web Audio API) – for UI orb
+    // AUDIO METERING (Web Audio API)
     // ============================================
     function attachAudioMeter() {
         if (!ENV.hasGetUserMedia || !ENV.hasAudioContext) return;
@@ -319,7 +318,7 @@
         return output;
     }
 
-    // ----- XHR‑based fetch with retry and Range support -----
+    // ----- XHR‑based fetch with live progress and Range support -----
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 60000;
@@ -331,28 +330,53 @@
                 const xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
                 xhr.responseType = 'arraybuffer';
-                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+                if (loaded > 0) {
+                    xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+                }
                 xhr.withCredentials = false;
+
+                // ---- LIVE PROGRESS ----
+                xhr.onprogress = function (e) {
+                    let currentLoaded = loaded + e.loaded;
+                    let currentTotal = total > 0 ? total : (e.total > 0 ? e.total + loaded : 0);
+                    if (currentTotal === 0) currentTotal = 1; // avoid division by zero
+                    const percent = Math.min(100, Math.round((currentLoaded / currentTotal) * 100));
+                    if (typeof onProgress === 'function') {
+                        onProgress({ loaded: currentLoaded, total: currentTotal, percent: percent });
+                    }
+                };
 
                 xhr.onload = function () {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const responseData = xhr.response;
                         if (responseData) {
-                            if (loaded > 0 && xhr.getResponseHeader('Content-Range')) {
+                            // If range request (206), append; else (200) start fresh
+                            if (xhr.status === 206 && xhr.getResponseHeader('Content-Range')) {
                                 const newData = new Uint8Array(responseData);
                                 chunks.push(newData);
                                 loaded += newData.length;
+                                // Try to get total from Content-Range
+                                const rangeHeader = xhr.getResponseHeader('Content-Range');
+                                if (rangeHeader) {
+                                    const match = rangeHeader.match(/\/(\d+)$/);
+                                    if (match) total = parseInt(match[1], 10);
+                                }
                             } else {
                                 chunks = [new Uint8Array(responseData)];
                                 loaded = responseData.byteLength;
                                 total = loaded;
                             }
+                            // Final 100% progress
                             if (typeof onProgress === 'function') {
                                 onProgress({ loaded: loaded, total: total, percent: 100 });
                             }
                             resolve(new Blob(chunks));
-                        } else { reject(new Error('Empty response')); }
-                    } else { reject(new Error('HTTP ' + xhr.status)); }
+                        } else {
+                            reject(new Error('Empty response'));
+                        }
+                    } else {
+                        reject(new Error('HTTP ' + xhr.status));
+                    }
                 };
 
                 xhr.onerror = function () { reject(new Error('XHR network error')); };
@@ -367,7 +391,7 @@
         return attempt();
     }
 
-    // ----- Model loading with careful memory management -----
+    // ----- Model loading with caching and memory cleanup -----
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
@@ -384,7 +408,6 @@
                     }
                     return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
                         try {
-                            // Store in cache for future use
                             const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
                             if (putPromise && typeof putPromise.catch === 'function') {
                                 putPromise.catch(function () {});
@@ -404,22 +427,17 @@
             .catch(function () { throw classifyError('vosk-lib-failed'); })
             .then(loadBlob)
             .then(function (blob) {
-                // Create a blob URL, but we will revoke it after model loads
                 const blobUrl = URL.createObjectURL(blob);
-                // We keep a reference to revoke later
-                let modelPromise = window.Vosk.createModel(blobUrl).catch(function () {
-                    // Fallback to direct URL if blob fails
-                    return window.Vosk.createModel(VOSK_MODEL_URL);
-                });
-                // After model is created (or fails), revoke the blob URL
-                // and release the blob reference to free memory
-                return modelPromise.then(function (model) {
-                    URL.revokeObjectURL(blobUrl);
-                    return model;
-                }).catch(function (err) {
-                    URL.revokeObjectURL(blobUrl);
-                    throw err;
-                });
+                // Attempt to create model from blob, fallback to direct URL
+                return window.Vosk.createModel(blobUrl)
+                    .then(function (model) {
+                        URL.revokeObjectURL(blobUrl);
+                        return model;
+                    })
+                    .catch(function () {
+                        URL.revokeObjectURL(blobUrl);
+                        return window.Vosk.createModel(VOSK_MODEL_URL);
+                    });
             })
             .then(function (model) {
                 voskModel = model;
@@ -444,11 +462,10 @@
     }
 
     // ============================================
-    // SAFE AUDIO LEVEL EXTRACTOR (no errors)
+    // SAFE AUDIO LEVEL EXTRACTOR
     // ============================================
     let _levelCounter = 0;
     function emitVoskAudioLevel(buffer) {
-        // Only compute level once every 4 frames to reduce CPU
         _levelCounter++;
         if (_levelCounter % 4 !== 0) return;
 
@@ -547,7 +564,7 @@
                 voskStream = stream;
 
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
-                voskProcessor = voskAudioCtx.createScriptProcessor(2048, 1, 1); // smaller buffer
+                voskProcessor = voskAudioCtx.createScriptProcessor(2048, 1, 1);
 
                 voskProcessor.onaudioprocess = function (event) {
                     try {
@@ -565,7 +582,6 @@
                         recognizer.acceptWaveform(data);
                         emitVoskAudioLevel(inputBuffer);
                     } catch (e) {
-                        // Log once per second to avoid spam
                         if (Math.random() < 0.01) {
                             console.error('[VOICE] onaudioprocess error:', e.message);
                         }
