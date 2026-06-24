@@ -318,11 +318,32 @@
         return output;
     }
 
-    // ----- XHR‑based fetch with live progress and Range support -----
+        // ----- XHR‑based fetch with live progress, Range support, and retry -----
     function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 60000;
-        let loaded = 0, total = 0, chunks = [], attemptNum = 0;
+        const MAX_ATTEMPTS = 8;
+        const STALL_TIMEOUT_MS = 120000; // 2 minutes per attempt
+        let loaded = 0;
+        let total = 0;
+        let chunks = [];
+        let attemptNum = 0;
+        let supportsRange = false;
+        let useRange = false;
+
+        // First, check if server supports Range requests
+        function checkRangeSupport() {
+            return new Promise(function (resolve) {
+                const headXhr = new XMLHttpRequest();
+                headXhr.open('HEAD', url, true);
+                headXhr.onload = function () {
+                    const acceptRanges = headXhr.getResponseHeader('Accept-Ranges');
+                    supportsRange = acceptRanges === 'bytes';
+                    resolve();
+                };
+                headXhr.onerror = function () { resolve(); }; // assume no range
+                headXhr.timeout = 10000;
+                headXhr.send();
+            });
+        }
 
         function attempt() {
             attemptNum++;
@@ -330,49 +351,80 @@
                 const xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
                 xhr.responseType = 'arraybuffer';
-                if (loaded > 0) {
+                if (useRange && loaded > 0) {
                     xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
                 }
                 xhr.withCredentials = false;
+                xhr.timeout = STALL_TIMEOUT_MS;
 
-                // ---- LIVE PROGRESS ----
+                let lastProgressTime = Date.now();
+                let lastLoaded = loaded;
+
                 xhr.onprogress = function (e) {
+                    // Throttle progress emits to 500ms
+                    const now = Date.now();
+                    if (now - lastProgressTime < 500) return;
+                    lastProgressTime = now;
+
                     let currentLoaded = loaded + e.loaded;
                     let currentTotal = total > 0 ? total : (e.total > 0 ? e.total + loaded : 0);
-                    if (currentTotal === 0) currentTotal = 1; // avoid division by zero
+                    // If we don't know total, use 1 to avoid division by zero
+                    if (currentTotal === 0) currentTotal = 1;
                     const percent = Math.min(100, Math.round((currentLoaded / currentTotal) * 100));
                     if (typeof onProgress === 'function') {
                         onProgress({ loaded: currentLoaded, total: currentTotal, percent: percent });
                     }
+                    // Update lastLoaded to detect stalls
+                    lastLoaded = currentLoaded;
                 };
 
                 xhr.onload = function () {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const responseData = xhr.response;
-                        if (responseData) {
-                            // If range request (206), append; else (200) start fresh
-                            if (xhr.status === 206 && xhr.getResponseHeader('Content-Range')) {
-                                const newData = new Uint8Array(responseData);
-                                chunks.push(newData);
-                                loaded += newData.length;
-                                // Try to get total from Content-Range
-                                const rangeHeader = xhr.getResponseHeader('Content-Range');
-                                if (rangeHeader) {
-                                    const match = rangeHeader.match(/\/(\d+)$/);
-                                    if (match) total = parseInt(match[1], 10);
-                                }
-                            } else {
-                                chunks = [new Uint8Array(responseData)];
-                                loaded = responseData.byteLength;
-                                total = loaded;
+                        if (!responseData) {
+                            reject(new Error('Empty response'));
+                            return;
+                        }
+
+                        // Determine if we got a partial or full response
+                        const isPartial = (xhr.status === 206);
+                        if (isPartial && useRange) {
+                            // Append the new chunk
+                            const newData = new Uint8Array(responseData);
+                            chunks.push(newData);
+                            loaded += newData.length;
+                            // Try to get total from Content-Range
+                            const rangeHeader = xhr.getResponseHeader('Content-Range');
+                            if (rangeHeader) {
+                                const match = rangeHeader.match(/\/(\d+)$/);
+                                if (match) total = parseInt(match[1], 10);
                             }
-                            // Final 100% progress
-                            if (typeof onProgress === 'function') {
-                                onProgress({ loaded: loaded, total: total, percent: 100 });
-                            }
+                        } else {
+                            // Full response (200) or Range not supported
+                            chunks = [new Uint8Array(responseData)];
+                            loaded = responseData.byteLength;
+                            total = loaded;
+                            // If we were using Range but got 200, server ignored it; fallback to normal
+                            useRange = false;
+                        }
+
+                        // Final progress (100%)
+                        if (typeof onProgress === 'function') {
+                            onProgress({ loaded: loaded, total: total || loaded, percent: 100 });
+                        }
+
+                        // Check if we have all data
+                        if (total > 0 && loaded >= total) {
+                            resolve(new Blob(chunks));
+                        } else if (!useRange && loaded === total) {
                             resolve(new Blob(chunks));
                         } else {
-                            reject(new Error('Empty response'));
+                            // We might have partial data with no total known; if we have data, assume complete
+                            if (chunks.length > 0 && loaded > 0) {
+                                resolve(new Blob(chunks));
+                            } else {
+                                reject(new Error('Incomplete download'));
+                            }
                         }
                     } else {
                         reject(new Error('HTTP ' + xhr.status));
@@ -381,14 +433,20 @@
 
                 xhr.onerror = function () { reject(new Error('XHR network error')); };
                 xhr.ontimeout = function () { reject(new Error('XHR timeout')); };
-                xhr.timeout = STALL_TIMEOUT_MS;
                 xhr.send();
             }).catch(function (err) {
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
-                return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(attempt);
+                // Exponential backoff: wait 2^attemptNum seconds
+                const delay = Math.min(30000, 1000 * Math.pow(2, attemptNum));
+                return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(attempt);
             });
         }
-        return attempt();
+
+        return checkRangeSupport().then(function () {
+            // Decide if we can use Range
+            useRange = supportsRange;
+            return attempt();
+        });
     }
 
     // ----- Model loading with caching and memory cleanup -----
