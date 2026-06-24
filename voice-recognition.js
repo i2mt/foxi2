@@ -1,9 +1,9 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Original base (stable voice detection) with improved
-   XHR download: HEAD check, exponential backoff,
-   live progress, and memory cleanup.
+   Based on the original working version (voice detection intact).
+   Model is loaded directly via URL – no Blob, no Cache API,
+   no memory pressure. iOS reload fixed.
    ============================================ */
 (function (window) {
     'use strict';
@@ -11,8 +11,6 @@
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
-    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
-    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -430,171 +428,21 @@
         return output;
     }
 
-    // ----- IMPROVED XHR fetch with HEAD check, retry, and live progress -----
-    function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 8;
-        const STALL_TIMEOUT_MS = 120000; // 2 minutes per attempt
-        let loaded = 0, total = 0, chunks = [], attemptNum = 0;
-        let supportsRange = false;
-        let useRange = false;
-
-        // Check if server supports Range requests
-        function checkRangeSupport() {
-            return new Promise(function (resolve) {
-                const headXhr = new XMLHttpRequest();
-                headXhr.open('HEAD', url, true);
-                headXhr.onload = function () {
-                    const acceptRanges = headXhr.getResponseHeader('Accept-Ranges');
-                    supportsRange = acceptRanges === 'bytes';
-                    resolve();
-                };
-                headXhr.onerror = function () { resolve(); };
-                headXhr.timeout = 10000;
-                headXhr.send();
-            });
-        }
-
-        function attempt() {
-            attemptNum++;
-            return new Promise(function (resolve, reject) {
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', url, true);
-                xhr.responseType = 'arraybuffer';
-                if (useRange && loaded > 0) {
-                    xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
-                }
-                xhr.withCredentials = false;
-                xhr.timeout = STALL_TIMEOUT_MS;
-
-                let lastProgressTime = 0;
-
-                xhr.onprogress = function (e) {
-                    const now = Date.now();
-                    if (now - lastProgressTime < 300) return;
-                    lastProgressTime = now;
-
-                    let currentLoaded = loaded + e.loaded;
-                    let currentTotal = total > 0 ? total : (e.total > 0 ? e.total + loaded : 0);
-                    if (currentTotal === 0) currentTotal = 1;
-                    const percent = Math.min(100, Math.round((currentLoaded / currentTotal) * 100));
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: currentLoaded, total: currentTotal, percent: percent });
-                    }
-                };
-
-                xhr.onload = function () {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        const responseData = xhr.response;
-                        if (!responseData) {
-                            reject(new Error('Empty response'));
-                            return;
-                        }
-
-                        const isPartial = (xhr.status === 206);
-                        if (isPartial && useRange) {
-                            const newData = new Uint8Array(responseData);
-                            chunks.push(newData);
-                            loaded += newData.length;
-                            const rangeHeader = xhr.getResponseHeader('Content-Range');
-                            if (rangeHeader) {
-                                const match = rangeHeader.match(/\/(\d+)$/);
-                                if (match) total = parseInt(match[1], 10);
-                            }
-                        } else {
-                            // Full response (200) – server ignored Range
-                            chunks = [new Uint8Array(responseData)];
-                            loaded = responseData.byteLength;
-                            total = loaded;
-                            useRange = false; // don't try Range again
-                        }
-
-                        // Final progress
-                        if (typeof onProgress === 'function') {
-                            onProgress({ loaded: loaded, total: total || loaded, percent: 100 });
-                        }
-
-                        // Check if we have all data
-                        if (total > 0 && loaded >= total) {
-                            resolve(new Blob(chunks));
-                        } else if (!useRange && loaded === total) {
-                            resolve(new Blob(chunks));
-                        } else {
-                            // If we have data and no total known, assume complete
-                            if (chunks.length > 0 && loaded > 0) {
-                                resolve(new Blob(chunks));
-                            } else {
-                                reject(new Error('Incomplete download'));
-                            }
-                        }
-                    } else {
-                        reject(new Error('HTTP ' + xhr.status));
-                    }
-                };
-
-                xhr.onerror = function () { reject(new Error('XHR network error')); };
-                xhr.ontimeout = function () { reject(new Error('XHR timeout')); };
-                xhr.send();
-            }).catch(function (err) {
-                if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Exponential backoff: 2^attemptNum seconds, max 30s
-                const delay = Math.min(30000, 1000 * Math.pow(2, attemptNum));
-                return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(attempt);
-            });
-        }
-
-        return checkRangeSupport().then(function () {
-            useRange = supportsRange;
-            return attempt();
-        });
-    }
-
-    // ----- Model loading with Cache API and memory cleanup -----
+    // ============================================
+    // ★★★ THE FIX: no Blob, no Cache API – URL only ★★★
+    // ============================================
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
 
         emit('model-loading');
 
-        function loadBlob() {
-            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
-                return cache.match(VOSK_MODEL_URL).then(function (cached) {
-                    if (cached) {
-                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
-                        return cached.blob();
-                    }
-                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
-                        try {
-                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
-                            if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () {});
-                            }
-                        } catch (e) {}
-                        return blob;
-                    });
-                });
-            }).catch(function () {
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            });
-        }
-
-        function onModelProgress(progress) { emit('model-progress', progress); }
-
-        const loadChain = ensureVoskLib()
+        voskModelLoadPromise = ensureVoskLib()
             .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(loadBlob)
-            .then(function (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                // Attempt to create model from blob, fallback to direct URL
-                return window.Vosk.createModel(blobUrl)
-                    .then(function (model) {
-                        URL.revokeObjectURL(blobUrl);
-                        return model;
-                    })
-                    .catch(function () {
-                        URL.revokeObjectURL(blobUrl);
-                        return window.Vosk.createModel(VOSK_MODEL_URL);
-                    });
+            .then(function () {
+                // Pass the URL directly – the library fetches it.
+                // The browser's HTTP cache will store it on disk.
+                return window.Vosk.createModel(VOSK_MODEL_URL);
             })
             .then(function (model) {
                 voskModel = model;
@@ -604,19 +452,14 @@
                 });
                 emit('model-ready');
                 return model;
-            });
-
-        const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
-        });
-
-        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+            })
             .catch(function (err) {
                 voskModelLoadPromise = null;
                 const info = (err && err.code) ? err : classifyError('vosk-model-failed');
                 voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 throw info;
             });
+
         return voskModelLoadPromise;
     }
 
@@ -650,7 +493,7 @@
     }
 
     // ============================================
-    // START VOSK — Performance-optimized
+    // START VOSK — Performance-optimized (unchanged)
     // ============================================
     function startVosk() {
         if (voskActive || voskLoading) return;
