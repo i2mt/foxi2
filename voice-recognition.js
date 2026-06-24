@@ -59,13 +59,18 @@
        to index.html) so there's no CORS step to configure at all.
      - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
        file at your host so repeat visits don't re-download ~53MB.
+     - This part of the rebuild could not be end-to-end tested here (no
+       iOS device, no microphone, no real network fetch of the model in
+       this sandbox) — the integration matches the verified library
+       source exactly, but please test for real on an iOS device before
+       relying on it.
    ============================================ */
 (function (window) {
     'use strict';
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -262,7 +267,6 @@
     let voskStream = null;
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
-    let triedVoskFallback = false; // reset at the start of each fresh start() call
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -272,33 +276,10 @@
         if (silenceWatchdog) { clearTimeout(silenceWatchdog); silenceWatchdog = null; }
     }
 
-    // If native recognition shows a clear sign of being broken on this
-    // device — not just "didn't hear anything" — silently switch to the
-    // Vosk backend instead of just reporting an error, IF it's configured.
-    // This is what actually makes voice "certainly work" across the wide
-    // variety of Android devices/OEM browsers out there: native speech
-    // recognition quality and availability varies a lot by device (missing
-    // language packs, OEM browser quirks, etc.), but Vosk doesn't depend on
-    // any of that — it ships its own model, so it works the same way
-    // everywhere once downloaded. Only one fallback attempt per start() —
-    // this never ping-pongs between backends.
-    function maybeFallbackToVosk(errorCode) {
-        if (triedVoskFallback) return false;
-        if (!voskConfigured()) return false;
-        if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
-        const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
-        if (!FALLBACK_CODES[errorCode]) return false;
-        triedVoskFallback = true;
-        stopWebSpeech();
-        startVosk();
-        return true;
-    }
-
     function armSilenceWatchdog() {
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
             if (active) {
-                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -434,8 +415,8 @@
         recognition.onerror = function (event) {
             // Some Android speech services are picky about the exact
             // locale tag — if "fa-IR" is reported as unsupported, silently
-            // retry once with the bare "fa" before giving up on native
-            // recognition entirely (and falling back further, below).
+            // retry once with the bare "fa" before surfacing anything to
+            // the person. This never fires more than one retry deep.
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
                 active = false;
                 clearWatchdogs();
@@ -443,7 +424,6 @@
                 startWebSpeech('fa');
                 return;
             }
-            if (maybeFallbackToVosk(event.error)) return;
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -479,7 +459,6 @@
         // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
-                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -533,18 +512,9 @@
     // an HTTP Range request, instead of restarting the whole 53MB from
     // zero. Falls back to a full restart only if the server doesn't honor
     // Range requests. A single fixed timeout can't fix "the connection
-    // drops partway through" — this is built specifically for that case.
-    //
-    // Uses XMLHttpRequest rather than fetch()+ReadableStream on purpose:
-    // XHR's `progress` event is a much older, simpler mechanism that
-    // doesn't depend on the Streams API being fully supported — fetch's
-    // streaming response body (`response.body.getReader()`) has a less
-    // consistent track record across Safari versions, which matters here
-    // given everything else we've already run into on iOS specifically.
-    // XHR's native `responseType: 'blob'` also lets the browser assemble
-    // the file itself instead of holding every chunk in a JS array until
-    // the end, which is one less thing competing for memory on a
-    // constrained device.
+    // drops partway through" — this is built specifically for that case,
+    // which sounds like what's actually happening here rather than pure
+    // slowness.
     function fetchModelWithProgress(url, onProgress) {
     const MAX_ATTEMPTS = 6;
     const STALL_TIMEOUT_MS = 60000;
@@ -553,60 +523,84 @@
     let chunks = [];
     let attemptNum = 0;
 
+    console.log('[VOSK] fetchModelWithProgress (XHR) started for URL:', url);
+
     function attempt() {
         attemptNum++;
+        console.log('[VOSK] XHR Attempt #' + attemptNum + ' starting, loaded so far:', loaded, 'bytes');
+
         return new Promise(function (resolve, reject) {
             const xhr = new XMLHttpRequest();
             xhr.open('GET', url, true);
             xhr.responseType = 'arraybuffer';
-            xhr.timeout = STALL_TIMEOUT_MS;
 
             if (loaded > 0) {
                 xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
             }
 
+            // Try with credentials to see if it helps (unlikely but worth a try)
+            xhr.withCredentials = false; // Keep false for CORS simple requests
+
             xhr.onload = function () {
+                console.log('[VOSK] XHR onload. Status:', xhr.status, 'StatusText:', xhr.statusText);
+                console.log('[VOSK] XHR response headers:', xhr.getAllResponseHeaders());
+
                 if (xhr.status >= 200 && xhr.status < 300) {
                     const responseData = xhr.response;
-                    if (!responseData) {
-                        reject(new Error('Empty response'));
-                        return;
-                    }
-                    const newData = new Uint8Array(responseData);
-                    if (xhr.status === 206 && loaded > 0) {
-                        chunks.push(newData);
+                    if (responseData) {
+                        if (loaded > 0 && xhr.getResponseHeader('Content-Range')) {
+                            const newData = new Uint8Array(responseData);
+                            chunks.push(newData);
+                            loaded += newData.length;
+                        } else {
+                            chunks = [new Uint8Array(responseData)];
+                            loaded = responseData.byteLength;
+                            total = loaded;
+                        }
+                        if (typeof onProgress === 'function') {
+                            onProgress({ loaded: loaded, total: total, percent: 100 });
+                        }
+                        console.log('[VOSK] XHR download complete. Total loaded:', loaded, 'bytes');
+                        resolve(new Blob(chunks));
                     } else {
-                        chunks = [newData];
+                        reject(new Error('Empty response'));
                     }
-                    loaded += newData.length;
-                    total = Math.max(total, loaded);
-
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: loaded, total: total, percent: 100 });
-                    }
-                    resolve(new Blob(chunks));
                 } else {
-                    reject(new Error('HTTP ' + xhr.status));
+                    reject(new Error('HTTP ' + xhr.status + ' - ' + xhr.statusText));
                 }
             };
 
-            xhr.onerror = function () { reject(new Error('Network error')); };
-            xhr.ontimeout = function () { reject(new Error('Timeout')); };
+            xhr.onerror = function () {
+                console.error('[VOSK] XHR network error. ReadyState:', xhr.readyState, 'Status:', xhr.status);
+                reject(new Error('XHR network error (status ' + xhr.status + ')'));
+            };
+
+            xhr.ontimeout = function () {
+                console.error('[VOSK] XHR timeout');
+                reject(new Error('XHR timeout'));
+            };
 
             xhr.onprogress = function (event) {
                 if (event.total > 0) total = event.total;
-                const currentLoaded = loaded + event.loaded;
-                if (typeof onProgress === 'function') {
-                    const percent = total ? Math.round((currentLoaded / total) * 100) : null;
-                    onProgress({ loaded: currentLoaded, total: total, percent: percent });
+                if (event.loaded > 0 && event.total > 0) {
+                    const pct = Math.round((event.loaded / event.total) * 100);
+                    if (pct % 10 === 0) {
+                        console.log('[VOSK] XHR progress:', pct + '% (' + event.loaded + ' / ' + event.total + ' bytes)');
+                    }
                 }
             };
 
+            xhr.timeout = STALL_TIMEOUT_MS;
+
+            console.log('[VOSK] XHR sending request...');
             xhr.send();
         }).catch(function (err) {
-            if (attemptNum >= MAX_ATTEMPTS) throw err;
-            return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                .then(attempt);
+            console.error('[VOSK] Attempt #' + attemptNum + ' failed with error:', err.message || err);
+            if (attemptNum >= MAX_ATTEMPTS) {
+                console.error('[VOSK] Max attempts reached. Giving up.');
+                throw err;
+            }
+            return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(attempt);
         });
     }
 
@@ -614,120 +608,89 @@
 }
 
     function ensureVoskModel() {
-    if (voskModel) return Promise.resolve(voskModel);
-    if (voskModelLoadPromise) return voskModelLoadPromise;
-    console.log('[VOICE] model loading started');
-    emit('model-loading');
+        if (voskModel) return Promise.resolve(voskModel);
+        if (voskModelLoadPromise) return voskModelLoadPromise;
+         // 🟢 ADD THIS LOG
+    console.log('[VOSK] ensureVoskModel called - starting load process');
+        emit('model-loading');
 
-    function loadBlob() {
-        if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-        return caches.open(VOSK_CACHE_NAME).then(function (cache) {
-            return cache.match(VOSK_MODEL_URL).then(function (cached) {
-                if (cached) {
-                    console.log('[VOICE] model found in cache');
-                    emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
-                    return cached.blob();
-                }
-                console.log('[VOICE] model not in cache, fetching...');
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
-                    try {
-                        const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
-                        if (putPromise && typeof putPromise.catch === 'function') {
-                            putPromise.catch(function () { /* non-fatal */ });
-                        }
-                    } catch (e) { /* non-fatal */ }
-                    return blob;
+        function loadBlob() {
+            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+                return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                    if (cached) {
+                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                        return cached.blob();
+                    }
+                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                        try {
+                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
+                            if (putPromise && typeof putPromise.catch === 'function') {
+                                putPromise.catch(function () { /* quota or unsupported — non-fatal, model still works this session */ });
+                            }
+                        } catch (e) { /* synchronous failure — also non-fatal */ }
+                        return blob;
+                    });
                 });
+            }).catch(function () {
+                // Cache API unavailable for some reason — fetch without it.
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
             });
-        }).catch(function (err) {
-            console.log('[VOICE] Cache API error, falling back to direct fetch:', err);
-            return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-        });
-    }
-
-    function onModelProgress(progress) {
-        console.log('[VOICE] model fetch progress:', progress.percent + '%');
-        emit('model-progress', progress);
-    }
-
-    const loadChain = ensureVoskLib()
-        .catch(function (err) {
-            console.error('[VOICE] vosk lib load failed:', err);
-            throw classifyError('vosk-lib-failed');
-        })
-        .then(loadBlob)
-        .then(function (blob) {
-            console.log('[VOICE] model blob size:', blob.size, 'bytes');
-            const blobUrl = URL.createObjectURL(blob);
-            console.log('[VOICE] creating model from blob URL');
-            // Try blob URL first, fall back to direct URL if it fails
-            return window.Vosk.createModel(blobUrl).catch(function (err) {
-                console.error('[VOICE] model creation from blob URL failed:', err);
-                // Fallback to direct URL (may already be cached by browser)
-                return window.Vosk.createModel(VOSK_MODEL_URL);
-            });
-        })
-        .then(function (model) {
-            voskModel = model;
-            voskFailInfo = null;
-            model.on('error', function () {
-                emit('error', classifyError('vosk-runtime'));
-            });
-            console.log('[VOICE] model ready');
-            emit('model-ready');
-            return model;
-        });
-
-    const timeoutChain = new Promise(function (_, reject) {
-        setTimeout(function () {
-            console.error('[VOICE] model load timeout');
-            reject(classifyError('vosk-model-failed'));
-        }, VOSK_MODEL_TIMEOUT_MS);
-    });
-
-    voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
-        .catch(function (err) {
-            voskModelLoadPromise = null;
-            const info = (err && err.code) ? err : classifyError('vosk-model-failed');
-            console.error('[VOICE] model load failed:', info);
-            voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
-            throw info;
-        });
-    return voskModelLoadPromise;
-}
-    // ============================================
-    // SAFE AUDIO LEVEL EXTRACTOR (no errors, reduced frequency)
-    // ============================================
-    let _levelCounter = 0;
-    function emitVoskAudioLevel(buffer) {
-        // Only compute level once every 4 frames to reduce CPU
-        _levelCounter++;
-        if (_levelCounter % 4 !== 0) return;
-
-        let data;
-        if (buffer && typeof buffer.getChannelData === 'function') {
-            data = buffer.getChannelData(0);
-        } else if (buffer && buffer.constructor === Float32Array) {
-            data = buffer;
-        } else {
-            return;
         }
+        function onModelProgress(progress) { emit('model-progress', progress); }
 
-        const bars = 12;
-        const chunk = Math.floor(data.length / bars) || 1;
-        let levelSum = 0;
-        for (let i = 0; i < bars; i++) {
-            let sum = 0;
-            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            levelSum += sum / chunk;
-        }
-        const level = Math.min(1, (levelSum / bars) * 4);
-        emit('audio', { bins: [], level: level });
+        const loadChain = ensureVoskLib()
+            .catch(function () { throw classifyError('vosk-lib-failed'); })
+            .then(loadBlob)
+            .then(function (blob) {
+                // 🟢 ADD THIS LOG
+            console.log('[VOSK] Blob downloaded. Size:', blob.size, 'bytes. Creating model...');
+                const blobUrl = URL.createObjectURL(blob);
+                return window.Vosk.createModel(blobUrl).catch(function () {
+                    // Not verifiable without a live device: some browsers'
+                    // internal Worker may be unable to resolve a blob: URL
+                    // created on the main thread. If creating the model
+                    // from our pre-fetched blob fails, fall back to letting
+                    // the library fetch the plain URL itself directly —
+                    // by now it's likely sitting in the normal browser HTTP
+                    // cache anyway from the fetch we just did.
+                    return window.Vosk.createModel(VOSK_MODEL_URL);
+                });
+            })
+            .then(function (model) {
+                // 🟢 ADD THIS LOG
+            console.log('[VOSK] Model loaded SUCCESSFULLY!');
+                voskModel = model;
+                voskFailInfo = null;
+                // Catch errors that occur *after* the initial load too
+                // (e.g. a Worker crash mid-session), not just load failure.
+                model.on('error', function () {
+                    emit('error', classifyError('vosk-runtime'));
+                });
+                emit('model-ready');
+                return model;
+            });
+
+        // The retry logic above already handles ordinary stalls/drops —
+        // this outer cap only exists to eventually give up on something
+        // truly stuck (e.g. eight straight Range-resume cycles still going
+        // nowhere), so it's set generously rather than tuned tightly.
+        const timeoutChain = new Promise(function (_, reject) {
+            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
+        });
+
+        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+            .catch(function (err) {
+                // 🟢 ADD THIS LOG
+            console.error('[VOSK] Model loading chain failed:', err);
+                voskModelLoadPromise = null;
+                const info = (err && err.code) ? err : classifyError('vosk-model-failed');
+                voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+                throw info;
+            });
+        return voskModelLoadPromise;
     }
 
-    // ============================================
-    // START VOSK — Performance-optimized
-    // ============================================
     function startVosk() {
         if (voskActive || voskLoading) return;
         if (!voskConfigured()) {
@@ -740,39 +703,22 @@
 
         voskLoading = true;
         voskCancelRequested = false;
-        console.log('[VOICE] startVosk called');
 
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
-            console.log('[VOICE] model ready, requesting microphone');
-
             let recognizer;
             // Bias the decoder toward FoxiMed's actual vocabulary (drug
-            // names, command words, numbers, units) — it can still freely
-            // combine these in whatever order someone speaks them, it's
-            // not limited to exact pre-written phrases.
-            //
-            // OFF BY DEFAULT as of this version: real testing showed it
-            // can force wrong output for anything outside the list rather
-            // than just biasing toward known words — e.g. saying "سلام"
-            // (not in the vocabulary at all) was heard as "صد تا", which
-            // *is* built entirely from two words that ARE in the list
-            // ("صد" and "تا"). That's the constrained grammar forcing a
-            // best-fit substitution instead of recognizing normal speech.
-            // Add ?grammar=1 to the URL to opt back in and experiment —
-            // worth retrying once the vocabulary list covers more of what
-            // people actually say, including casual speech, not just
-            // clinical terms.
+            // names, command words, numbers, units) when available — it
+            // can still freely combine these in whatever order someone
+            // speaks them, it's not limited to exact pre-written phrases.
+            // Experimental: not every Vosk model build supports a runtime
+            // grammar, so this falls back to plain recognition if it does.
             let grammar = null;
-            let forceGrammarOn = false;
-            try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
-            if (forceGrammarOn) {
-                try {
-                    if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                        grammar = window.VoiceCommands.getGrammar();
-                    }
-                } catch (e) { grammar = null; }
-            }
+            try {
+                if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
+                    grammar = window.VoiceCommands.getGrammar();
+                }
+            } catch (e) { grammar = null; }
 
             try {
                 recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
@@ -781,13 +727,11 @@
                     recognizer = new model.KaldiRecognizer(16000); // retry without grammar
                 } catch (e2) {
                     voskLoading = false;
-                    console.error('[VOICE] recognizer creation failed:', e2);
                     emit('error', classifyError('vosk-runtime'));
                     return;
                 }
             }
             voskRecognizer = recognizer;
-            console.log('[VOICE] recognizer created');
 
             recognizer.on('partialresult', function (message) {
                 const partial = message && message.result && message.result.partial;
@@ -799,13 +743,11 @@
             recognizer.on('result', function (message) {
                 const text = message && message.result && message.result.text;
                 if (text && text.trim()) {
-                    console.log('[VOICE] final result:', text);
                     emit('final', text.trim());
                 }
                 finishVosk();
             });
-            recognizer.on('error', function (err) {
-                console.error('[VOICE] recognizer error:', err);
+            recognizer.on('error', function () {
                 emit('error', classifyError('vosk-runtime'));
                 finishVosk();
             });
@@ -822,7 +764,6 @@
                     if (voskRecognizer === recognizer) voskRecognizer = null;
                     return;
                 }
-                console.log('[VOICE] microphone granted');
                 voskStream = stream;
                 const AC = window.AudioContext || window.webkitAudioContext;
                 voskAudioCtx = new AC();
@@ -835,28 +776,17 @@
                 // echoCancellation is on) connection below.
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
                 voskProcessor.onaudioprocess = function (event) {
-                    try {
-                        const inputBuffer = event.inputBuffer;
-                        if (!inputBuffer) return;
-                        recognizer.acceptWaveform(inputBuffer);
-                        emitVoskAudioLevel(inputBuffer);
-                    } catch (e) {
-                        // Log occasionally to avoid spam
-                        if (Math.random() < 0.01) {
-                            console.error('[VOICE] onaudioprocess error:', e);
-                        }
-                    }
+                    try { recognizer.acceptWaveform(event.inputBuffer); } catch (e) {}
+                    emitVoskAudioLevel(event.inputBuffer);
                 };
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
 
                 voskActive = true;
                 armVoskSilenceWatchdog();
-                console.log('[VOICE] recognizer started');
                 emit('start');
             }).catch(function (err) {
                 voskLoading = false;
-                console.error('[VOICE] getUserMedia error:', err);
                 const code = (err && err.name === 'NotAllowedError') ? 'not-allowed'
                     : (err && err.name === 'NotFoundError') ? 'audio-capture' : 'vosk-runtime';
                 emit('error', classifyError(code));
@@ -865,16 +795,30 @@
             });
         }).catch(function (info) {
             voskLoading = false;
-            console.error('[VOICE] startVosk model error:', info);
             emit('error', info && info.code ? info : classifyError('vosk-model-failed'));
         });
+    }
+
+    function emitVoskAudioLevel(buffer) {
+        const data = buffer.getChannelData(0);
+        const bars = 12;
+        const chunk = Math.floor(data.length / bars) || 1;
+        const bins = [];
+        let levelSum = 0;
+        for (let i = 0; i < bars; i++) {
+            let sum = 0;
+            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
+            const avg = Math.min(1, (sum / chunk) * 4); // crude gain so quiet speech still animates
+            bins.push(avg);
+            levelSum += avg;
+        }
+        emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
     }
 
     function armVoskSilenceWatchdog() {
         if (voskSilenceWatchdog) clearTimeout(voskSilenceWatchdog);
         voskSilenceWatchdog = setTimeout(function () {
             if (voskActive) {
-                console.log('[VOICE] silence watchdog triggered');
                 emit('error', classifyError('timeout'));
                 stopVosk();
             }
@@ -907,7 +851,6 @@
         if (voskAudioCtx) { try { voskAudioCtx.close(); } catch (e) {} voskAudioCtx = null; }
         if (voskStream) { try { voskStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} voskStream = null; }
         if (voskRecognizer) { try { voskRecognizer.remove(); } catch (e) {} voskRecognizer = null; }
-        console.log('[VOICE] Vosk session ended');
         if (wasActive) emit('end');
     }
 
@@ -920,18 +863,10 @@
 
     function start() {
         if (active || voskActive || voskLoading) return;
-        triedVoskFallback = false;
         if (pickBackend() === 'vosk') startVosk(); else startWebSpeech();
     }
 
     function stop() {
-        // Check actual runtime state rather than just the static platform
-        // choice — a session that fell back from webspeech to Vosk mid-
-        // flight (see maybeFallbackToVosk) is now genuinely running Vosk
-        // even on a platform where pickBackend() would normally say
-        // "webspeech", so stopping the wrong one would leave it running.
-        if (voskActive || voskLoading) { stopVosk(); return; }
-        if (active) { stopWebSpeech(); return; }
         if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 
