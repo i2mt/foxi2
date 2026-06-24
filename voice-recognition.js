@@ -1,8 +1,9 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   iOS: WebSpeech always (no Vosk, no reload).
+   iOS: WebSpeech only (no Vosk, no reload).
    Android: Vosk (offline, reliable).
+   Includes robust error handling and retry.
    ============================================ */
 (function (window) {
     'use strict';
@@ -64,6 +65,15 @@
                     message: 'اپل تشخیص صدا را در اپ‌های نصب‌شده روی صفحه اصلی iOS پشتیبانی نمی‌کند. برای استفاده کامل از دستیار صوتی، این صفحه را در Safari باز کنید — یا همینجا دستور را تایپ کنید.'
                 };
             }
+            // In Safari, WebSpeech should work if microphone is allowed
+            if (!ENV.hasSpeechRecognition) {
+                return {
+                    status: 'blocked',
+                    code: 'unsupported',
+                    title: 'مرورگر شما از تشخیص صدا پشتیبانی نمی‌کند',
+                    message: 'لطفاً از Safari در iOS استفاده کنید یا دستور را تایپ کنید.'
+                };
+            }
             return {
                 status: 'ok',
                 code: 'ios-safari',
@@ -95,7 +105,7 @@
             'not-allowed': {
                 code: 'not-allowed',
                 title: 'دسترسی میکروفون رد شد',
-                message: 'لطفاً در تنظیمات مرورگر، دسترسی میکروفون را برای این سایت فعال کنید.'
+                message: 'لطفاً در تنظیمات مرورگر، دسترسی میکروفون را برای این سایت فعال کنید. سپس روی دکمه زیر کلیک کنید.'
             },
             'service-not-allowed': {
                 code: 'service-not-allowed',
@@ -281,6 +291,10 @@
 
         const langToUse = langOverride || urlTestLang || 'fa-IR';
         const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognitionImpl) {
+            emit('error', classifyError('unsupported'));
+            return;
+        }
         recognition = new SpeechRecognitionImpl();
         recognition.lang = langToUse;
         recognition.continuous = !ENV.isIOS;
@@ -314,7 +328,18 @@
                 return;
             }
             const info = classifyError(event.error);
-            if (!info.silent) emit('error', info);
+            // For 'not-allowed' and 'service-not-allowed', we want to show a retry button
+            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                // Emit a special error with a retry action
+                emit('error', { 
+                    code: event.error, 
+                    title: info.title, 
+                    message: info.message,
+                    retry: true 
+                });
+            } else {
+                if (!info.silent) emit('error', info);
+            }
             stop();
         };
 
