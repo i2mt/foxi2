@@ -714,11 +714,15 @@
             // Experimental: not every Vosk model build supports a runtime
             // grammar, so this falls back to plain recognition if it does.
             let grammar = null;
-            try {
-                if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                    grammar = window.VoiceCommands.getGrammar();
-                }
-            } catch (e) { grammar = null; }
+let forceGrammarOn = false;
+try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
+if (forceGrammarOn) {
+    try {
+        if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
+            grammar = window.VoiceCommands.getGrammar();
+        }
+    } catch (e) { grammar = null; }
+}
 
             try {
                 recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
