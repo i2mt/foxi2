@@ -1,7 +1,10 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Optimized for iOS performance.
+   Optimized for iOS performance: uses XHR for downloading the
+   Vosk model with resumable Range requests, stores it in the
+   Cache API, and carefully manages blob memory to avoid
+   iOS tab-kill during "preparing from memory".
    ============================================ */
 (function (window) {
     'use strict';
@@ -19,12 +22,14 @@
     // ============================================
     function detectIOS() {
         const ua = navigator.userAgent || '';
-        return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        return /iPad|iPhone|iPod/.test(ua) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
     function detectStandalonePWA() {
         return !!(window.navigator && window.navigator.standalone === true) ||
-               !!(window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches));
+               !!(window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches ||
+                                        window.matchMedia('(display-mode: fullscreen)').matches));
     }
 
     const ENV = {
@@ -362,6 +367,7 @@
         return attempt();
     }
 
+    // ----- Model loading with careful memory management -----
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
@@ -378,6 +384,7 @@
                     }
                     return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
                         try {
+                            // Store in cache for future use
                             const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
                             if (putPromise && typeof putPromise.catch === 'function') {
                                 putPromise.catch(function () {});
@@ -397,9 +404,21 @@
             .catch(function () { throw classifyError('vosk-lib-failed'); })
             .then(loadBlob)
             .then(function (blob) {
+                // Create a blob URL, but we will revoke it after model loads
                 const blobUrl = URL.createObjectURL(blob);
-                return window.Vosk.createModel(blobUrl).catch(function () {
+                // We keep a reference to revoke later
+                let modelPromise = window.Vosk.createModel(blobUrl).catch(function () {
+                    // Fallback to direct URL if blob fails
                     return window.Vosk.createModel(VOSK_MODEL_URL);
+                });
+                // After model is created (or fails), revoke the blob URL
+                // and release the blob reference to free memory
+                return modelPromise.then(function (model) {
+                    URL.revokeObjectURL(blobUrl);
+                    return model;
+                }).catch(function (err) {
+                    URL.revokeObjectURL(blobUrl);
+                    throw err;
                 });
             })
             .then(function (model) {
