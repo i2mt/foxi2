@@ -546,76 +546,81 @@
     // the end, which is one less thing competing for memory on a
     // constrained device.
     function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
-        let assembledBlob = null;
-        let loaded = 0;
-        let total = 0;
+    const MAX_ATTEMPTS = 6;
+    const STALL_TIMEOUT_MS = 60000; // 60s per attempt
+    let loaded = 0;
+    let total = 0;
+    let chunks = [];
+    let attemptNum = 0;
 
-        function parseRangeTotal(rangeHeader) {
-            const match = rangeHeader && rangeHeader.match(/\/(\d+)$/);
-            return match ? parseInt(match[1], 10) : null;
-        }
+    function attempt() {
+        attemptNum++;
+        return new Promise(function (resolve, reject) {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.responseType = 'arraybuffer';
+            xhr.timeout = STALL_TIMEOUT_MS;
 
-        function attempt(attemptNum) {
-            return new Promise(function (resolve, reject) {
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', url, true);
-                xhr.responseType = 'blob';
-                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+            if (loaded > 0) {
+                xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+            }
 
-                let stallTimer = null;
-                function armStall() {
-                    if (stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(function () { xhr.abort(); }, STALL_TIMEOUT_MS);
-                }
-                armStall();
-
-                xhr.onprogress = function (e) {
-                    armStall();
-                    if (!total) {
-                        const isPartial = xhr.status === 206;
-                        total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
-                    }
-                    const currentLoaded = loaded + e.loaded;
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
-                    }
-                };
-
-                xhr.onload = function () {
-                    clearTimeout(stallTimer);
-                    if (xhr.status !== 200 && xhr.status !== 206) {
-                        reject(new Error('http-' + xhr.status));
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    const responseData = xhr.response;
+                    if (!responseData) {
+                        reject(new Error('Empty response'));
                         return;
                     }
-                    const newBlob = xhr.response;
-                    if (xhr.status === 206 && assembledBlob) {
-                        assembledBlob = new Blob([assembledBlob, newBlob]);
+                    const newData = new Uint8Array(responseData);
+                    // If this is a full response (200) or the first chunk,
+                    // reset chunks; otherwise append.
+                    if (xhr.status === 206 && loaded > 0) {
+                        chunks.push(newData);
                     } else {
-                        // Either the first attempt, or the server ignored
-                        // our Range request and sent the whole file again.
-                        assembledBlob = newBlob;
+                        chunks = [newData];
                     }
-                    loaded = assembledBlob.size;
-                    total = total || loaded;
-                    resolve();
-                };
-                xhr.onerror = function () { clearTimeout(stallTimer); reject(new Error('xhr-network-error')); };
-                xhr.onabort = function () { clearTimeout(stallTimer); reject(new Error('xhr-stalled')); };
+                    loaded += newData.length;
+                    total = Math.max(total, loaded);
 
-                xhr.send();
-            }).catch(function (err) {
-                if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Brief pause before retrying — resumes from `loaded` bytes
-                // via the Range header above, not from scratch.
-                return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                    .then(function () { return attempt(attemptNum + 1); });
-            });
-        }
+                    if (typeof onProgress === 'function') {
+                        onProgress({ loaded: loaded, total: total, percent: 100 });
+                    }
+                    resolve(new Blob(chunks));
+                } else {
+                    reject(new Error('HTTP ' + xhr.status));
+                }
+            };
 
-        return attempt(1).then(function () { return assembledBlob; });
+            xhr.onerror = function () {
+                reject(new Error('Network error'));
+            };
+
+            xhr.ontimeout = function () {
+                reject(new Error('Timeout'));
+            };
+
+            xhr.onprogress = function (event) {
+                if (event.total > 0) total = event.total;
+                const currentLoaded = loaded + event.loaded;
+                if (typeof onProgress === 'function') {
+                    const percent = total ? Math.round((currentLoaded / total) * 100) : null;
+                    onProgress({ loaded: currentLoaded, total: total, percent: percent });
+                }
+            };
+
+            xhr.send();
+        }).catch(function (err) {
+            if (attemptNum >= MAX_ATTEMPTS) throw err;
+            // Wait 1.5s, then retry – `loaded` and `chunks` already contain
+            // whatever was successfully downloaded so far.
+            return new Promise(function (resolve) { setTimeout(resolve, 1500); })
+                .then(attempt);
+        });
     }
+
+    return attempt();
+}
 
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
