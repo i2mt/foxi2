@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = '';
+    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -550,153 +550,52 @@
     // the file itself instead of holding every chunk in a JS array until
     // the end, which is one less thing competing for memory on a
     // constrained device.
-    function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
-        let assembledBlob = null;
-        let loaded = 0;
-        let total = 0;
-
-        function parseRangeTotal(rangeHeader) {
-            const match = rangeHeader && rangeHeader.match(/\/(\d+)$/);
-            return match ? parseInt(match[1], 10) : null;
-        }
-
-        function attempt(attemptNum) {
-            return new Promise(function (resolve, reject) {
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', url, true);
-                xhr.responseType = 'blob';
-                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
-
-                let stallTimer = null;
-                function armStall() {
-                    if (stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(function () { xhr.abort(); }, STALL_TIMEOUT_MS);
-                }
-                armStall();
-
-                xhr.onprogress = function (e) {
-                    armStall();
-                    if (!total) {
-                        const isPartial = xhr.status === 206;
-                        total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
-                    }
-                    const currentLoaded = loaded + e.loaded;
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
-                    }
-                };
-
-                xhr.onload = function () {
-                    clearTimeout(stallTimer);
-                    if (xhr.status !== 200 && xhr.status !== 206) {
-                        reject(new Error('http-' + xhr.status));
-                        return;
-                    }
-                    const newBlob = xhr.response;
-                    if (xhr.status === 206 && assembledBlob) {
-                        assembledBlob = new Blob([assembledBlob, newBlob]);
-                    } else {
-                        // Either the first attempt, or the server ignored
-                        // our Range request and sent the whole file again.
-                        assembledBlob = newBlob;
-                    }
-                    loaded = assembledBlob.size;
-                    total = total || loaded;
-                    resolve();
-                };
-                xhr.onerror = function () { clearTimeout(stallTimer); reject(new Error('xhr-network-error')); };
-                xhr.onabort = function () { clearTimeout(stallTimer); reject(new Error('xhr-stalled')); };
-
-                xhr.send();
-            }).catch(function (err) {
-                if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Brief pause before retrying — resumes from `loaded` bytes
-                // via the Range header above, not from scratch.
-                return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                    .then(function () { return attempt(attemptNum + 1); });
-            });
-        }
-
-        return attempt(1).then(function () { return assembledBlob; });
-    }
 
     function ensureVoskModel() {
-        if (voskModel) return Promise.resolve(voskModel);
-        if (voskModelLoadPromise) return voskModelLoadPromise;
-        emit('model-loading');
+    if (voskModel) return Promise.resolve(voskModel);
+    if (voskModelLoadPromise) return voskModelLoadPromise;
 
-        function loadBlob() {
-            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
-                return cache.match(VOSK_MODEL_URL).then(function (cached) {
-                    if (cached) {
-                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
-                        return cached.blob();
-                    }
-                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
-                        try {
-                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
-                            if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal, model still works this session */ });
-                            }
-                        } catch (e) { /* synchronous failure — also non-fatal */ }
-                        return blob;
-                    });
-                });
-            }).catch(function () {
-                // Cache API unavailable for some reason — fetch without it.
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+    console.log('[VOICE] model loading started (direct URL)');
+    emit('model-loading');
+
+    const loadChain = ensureVoskLib()
+        .catch(function (err) {
+            console.error('[VOICE] vosk lib load failed:', err);
+            throw classifyError('vosk-lib-failed');
+        })
+        .then(function () {
+            // Let Vosk fetch and extract the model directly – no extra memory copy.
+            console.log('[VOICE] calling Vosk.createModel with URL:', VOSK_MODEL_URL);
+            return window.Vosk.createModel(VOSK_MODEL_URL);
+        })
+        .then(function (model) {
+            voskModel = model;
+            voskFailInfo = null;
+            model.on('error', function () {
+                emit('error', classifyError('vosk-runtime'));
             });
-        }
-        function onModelProgress(progress) { emit('model-progress', progress); }
-
-        const loadChain = ensureVoskLib()
-            .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(loadBlob)
-            .then(function (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                return window.Vosk.createModel(blobUrl).catch(function () {
-                    // Not verifiable without a live device: some browsers'
-                    // internal Worker may be unable to resolve a blob: URL
-                    // created on the main thread. If creating the model
-                    // from our pre-fetched blob fails, fall back to letting
-                    // the library fetch the plain URL itself directly —
-                    // by now it's likely sitting in the normal browser HTTP
-                    // cache anyway from the fetch we just did.
-                    return window.Vosk.createModel(VOSK_MODEL_URL);
-                });
-            })
-            .then(function (model) {
-                voskModel = model;
-                voskFailInfo = null;
-                // Catch errors that occur *after* the initial load too
-                // (e.g. a Worker crash mid-session), not just load failure.
-                model.on('error', function () {
-                    emit('error', classifyError('vosk-runtime'));
-                });
-                emit('model-ready');
-                return model;
-            });
-
-        // The retry logic above already handles ordinary stalls/drops —
-        // this outer cap only exists to eventually give up on something
-        // truly stuck (e.g. eight straight Range-resume cycles still going
-        // nowhere), so it's set generously rather than tuned tightly.
-        const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
+            console.log('[VOICE] model ready');
+            emit('model-ready');
+            return model;
         });
 
-        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
-            .catch(function (err) {
-                voskModelLoadPromise = null;
-                const info = (err && err.code) ? err : classifyError('vosk-model-failed');
-                voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
-                throw info;
-            });
-        return voskModelLoadPromise;
-    }
+    const timeoutChain = new Promise(function (_, reject) {
+        setTimeout(function () {
+            console.error('[VOICE] model load timeout');
+            reject(classifyError('vosk-model-failed'));
+        }, VOSK_MODEL_TIMEOUT_MS);
+    });
+
+    voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+        .catch(function (err) {
+            voskModelLoadPromise = null;
+            const info = (err && err.code) ? err : classifyError('vosk-model-failed');
+            console.error('[VOICE] model load failed:', info);
+            voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+            throw info;
+        });
+    return voskModelLoadPromise;
+}
 
     function startVosk() {
         if (voskActive || voskLoading) return;
