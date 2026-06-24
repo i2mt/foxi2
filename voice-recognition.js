@@ -546,37 +546,45 @@
     // the end, which is one less thing competing for memory on a
     // constrained device.
     function fetchModelWithProgress(url, onProgress) {
-    const MAX_ATTEMPTS = 3;
-    const TIMEOUT_MS = 120000; // 2 minutes per attempt
+    const MAX_ATTEMPTS = 6;
+    const STALL_TIMEOUT_MS = 60000;
+    let loaded = 0;
+    let total = 0;
+    let chunks = [];
+    let attemptNum = 0;
 
-    function attempt(attemptNum) {
-        return new Promise((resolve, reject) => {
+    function attempt() {
+        attemptNum++;
+        return new Promise(function (resolve, reject) {
             const xhr = new XMLHttpRequest();
             xhr.open('GET', url, true);
-            xhr.responseType = 'blob'; // 🟢 CRITICAL: no JS memory copy
-            xhr.timeout = TIMEOUT_MS;
+            xhr.responseType = 'arraybuffer';
+            xhr.timeout = STALL_TIMEOUT_MS;
 
-            xhr.onprogress = function (event) {
-                if (event.total > 0 && typeof onProgress === 'function') {
-                    onProgress({
-                        loaded: event.loaded,
-                        total: event.total,
-                        percent: Math.round((event.loaded / event.total) * 100)
-                    });
-                }
-            };
+            if (loaded > 0) {
+                xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+            }
 
             xhr.onload = function () {
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    const blob = xhr.response;
-                    if (!blob || blob.size === 0) {
+                    const responseData = xhr.response;
+                    if (!responseData) {
                         reject(new Error('Empty response'));
                         return;
                     }
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: blob.size, total: blob.size, percent: 100 });
+                    const newData = new Uint8Array(responseData);
+                    if (xhr.status === 206 && loaded > 0) {
+                        chunks.push(newData);
+                    } else {
+                        chunks = [newData];
                     }
-                    resolve(blob);
+                    loaded += newData.length;
+                    total = Math.max(total, loaded);
+
+                    if (typeof onProgress === 'function') {
+                        onProgress({ loaded: loaded, total: total, percent: 100 });
+                    }
+                    resolve(new Blob(chunks));
                 } else {
                     reject(new Error('HTTP ' + xhr.status));
                 }
@@ -585,34 +593,79 @@
             xhr.onerror = function () { reject(new Error('Network error')); };
             xhr.ontimeout = function () { reject(new Error('Timeout')); };
 
+            xhr.onprogress = function (event) {
+                if (event.total > 0) total = event.total;
+                const currentLoaded = loaded + event.loaded;
+                if (typeof onProgress === 'function') {
+                    const percent = total ? Math.round((currentLoaded / total) * 100) : null;
+                    onProgress({ loaded: currentLoaded, total: total, percent: percent });
+                }
+            };
+
             xhr.send();
         }).catch(function (err) {
             if (attemptNum >= MAX_ATTEMPTS) throw err;
-            // Wait 2s, then retry from scratch (no Range headers, no leftover state)
-            return new Promise(resolve => setTimeout(resolve, 2000))
-                .then(() => attempt(attemptNum + 1));
+            return new Promise(function (resolve) { setTimeout(resolve, 1500); })
+                .then(attempt);
         });
     }
 
-    return attempt(1);
+    return attempt();
 }
 
     function ensureVoskModel() {
     if (voskModel) return Promise.resolve(voskModel);
     if (voskModelLoadPromise) return voskModelLoadPromise;
-
-    console.log('[VOICE] model loading started (direct URL)');
+    console.log('[VOICE] model loading started');
     emit('model-loading');
+
+    function loadBlob() {
+        if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+        return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+            return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                if (cached) {
+                    console.log('[VOICE] model found in cache');
+                    emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                    return cached.blob();
+                }
+                console.log('[VOICE] model not in cache, fetching...');
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                    try {
+                        const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
+                        if (putPromise && typeof putPromise.catch === 'function') {
+                            putPromise.catch(function () { /* non-fatal */ });
+                        }
+                    } catch (e) { /* non-fatal */ }
+                    return blob;
+                });
+            });
+        }).catch(function (err) {
+            console.log('[VOICE] Cache API error, falling back to direct fetch:', err);
+            return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+        });
+    }
+
+    function onModelProgress(progress) {
+        console.log('[VOICE] model fetch progress:', progress.percent + '%');
+        emit('model-progress', progress);
+    }
 
     const loadChain = ensureVoskLib()
         .catch(function (err) {
             console.error('[VOICE] vosk lib load failed:', err);
             throw classifyError('vosk-lib-failed');
         })
-        .then(function () {
-            // Let Vosk fetch and extract the model directly – no extra memory copy.
-            console.log('[VOICE] calling Vosk.createModel with URL:', VOSK_MODEL_URL);
-            return window.Vosk.createModel(VOSK_MODEL_URL);
+        .then(loadBlob)
+        .then(function (blob) {
+            console.log('[VOICE] model blob size:', blob.size, 'bytes');
+            const blobUrl = URL.createObjectURL(blob);
+            console.log('[VOICE] creating model from blob URL');
+            // Try blob URL first, fall back to direct URL if it fails
+            return window.Vosk.createModel(blobUrl).catch(function (err) {
+                console.error('[VOICE] model creation from blob URL failed:', err);
+                // Fallback to direct URL (may already be cached by browser)
+                return window.Vosk.createModel(VOSK_MODEL_URL);
+            });
         })
         .then(function (model) {
             voskModel = model;
@@ -642,7 +695,6 @@
         });
     return voskModelLoadPromise;
 }
-
     // ============================================
     // SAFE AUDIO LEVEL EXTRACTOR (no errors, reduced frequency)
     // ============================================
