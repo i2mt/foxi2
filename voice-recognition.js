@@ -1,16 +1,18 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Stable iOS version: model is never materialised as a Blob.
-   The library fetches directly from the URL; HTTP cache handles re‑use.
-   Progress is shown as indeterminate during first download.
+   Original base (stable voice detection) with improved
+   XHR download: HEAD check, exponential backoff,
+   live progress, and memory cleanup.
    ============================================ */
 (function (window) {
     'use strict';
 
-    // --- CONFIGURATION ---
+    // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
+    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
+    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -19,14 +21,17 @@
     // ============================================
     function detectIOS() {
         const ua = navigator.userAgent || '';
-        return /iPad|iPhone|iPod/.test(ua) ||
-               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isClassicIOS = /iPad|iPhone|iPod/.test(ua);
+        const isModernIPad = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+        return isClassicIOS || isModernIPad;
     }
 
     function detectStandalonePWA() {
-        return !!(window.navigator && window.navigator.standalone === true) ||
-               !!(window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches ||
-                                        window.matchMedia('(display-mode: fullscreen)').matches));
+        const iosStandalone = window.navigator && window.navigator.standalone === true;
+        const displayModeStandalone = window.matchMedia &&
+            (window.matchMedia('(display-mode: standalone)').matches ||
+             window.matchMedia('(display-mode: fullscreen)').matches);
+        return !!(iosStandalone || displayModeStandalone);
     }
 
     const ENV = {
@@ -40,23 +45,45 @@
     };
 
     // ============================================
-    // SUPPORT INFO
+    // SUPPORT / LIMITATION REPORT
     // ============================================
     function getSupportInfo() {
         if (!ENV.isSecureContext) {
-            return { status: 'blocked', code: 'insecure', title: 'اتصال امن لازم است', message: 'دسترسی به میکروفون فقط روی HTTPS کار می‌کند.' };
+            return {
+                status: 'blocked',
+                code: 'insecure',
+                title: 'اتصال امن لازم است',
+                message: 'دسترسی به میکروفون فقط روی HTTPS کار می‌کند. آدرس سایت را بررسی کنید.'
+            };
         }
         if (ENV.isIOS && voskConfigured()) {
             if (voskFailInfo) return voskFailInfo;
             return { status: 'ok', code: 'ios-vosk', title: null, message: null };
         }
         if (!ENV.hasSpeechRecognition) {
-            return { status: 'blocked', code: 'unsupported', title: 'تشخیص گفتار در دسترس نیست', message: 'این مرورگر از تشخیص صدا پشتیبانی نمی‌کند. می‌توانید دستورات را تایپ کنید.' };
+            return {
+                status: 'blocked',
+                code: 'unsupported',
+                title: 'تشخیص گفتار در دسترس نیست',
+                message: 'این مرورگر از تشخیص صدا پشتیبانی نمی‌کند. می‌توانید دستورات را تایپ کنید — همه قابلیت‌ها از طریق متن هم در دسترس‌اند.'
+            };
         }
         if (ENV.isIOS && ENV.isStandalone) {
-            return { status: 'limited', code: 'ios-standalone', title: 'محدودیت اپل در حالت نصب‌شده', message: 'برای استفاده کامل از دستیار صوتی، این صفحه را در Safari باز کنید — یا همینجا دستور را تایپ کنید.' };
+            return {
+                status: 'limited',
+                code: 'ios-standalone',
+                title: 'محدودیت اپل در حالت نصب‌شده',
+                message: 'اپل تشخیص صدا را در اپ‌های نصب‌شده روی صفحه اصلی iOS به‌طور کامل پشتیبانی نمی‌کند. برای استفاده کامل از دستیار صوتی، این صفحه را در Safari باز کنید — یا همینجا دستور را تایپ کنید.'
+            };
         }
-        if (ENV.isIOS) { return { status: 'ok', code: 'ios-safari', title: null, message: null }; }
+        if (ENV.isIOS) {
+            return {
+                status: 'ok',
+                code: 'ios-safari',
+                title: null,
+                message: null
+            };
+        }
         return { status: 'ok', code: 'ok', title: null, message: null };
     }
 
@@ -65,20 +92,76 @@
     // ============================================
     function classifyError(rawCode) {
         const map = {
-            'not-allowed': { code: 'not-allowed', title: 'دسترسی میکروفون رد شد', message: 'لطفاً در تنظیمات مرورگر، دسترسی میکروفون را برای این سایت فعال کنید.' },
-            'service-not-allowed': { code: 'service-not-allowed', title: 'سرویس تشخیص صدا در دسترس نیست', message: ENV.isIOS ? 'در iOS مطمئن شوید از Safari استفاده می‌کنید.' : 'سرویس تشخیص صدای مرورگر شما در دسترس نیست.' },
-            'no-speech': { code: 'no-speech', title: 'صدایی شنیده نشد', message: 'چیزی متوجه نشدم. لطفاً دوباره و واضح‌تر صحبت کنید.' },
-            'language-not-supported': { code: 'language-not-supported', title: 'زبان فارسی روی این دستگاه نصب نیست', message: 'بسته تشخیص گفتار فارسی نصب نیست.' },
-            'audio-capture': { code: 'audio-capture', title: 'میکروفون در دسترس نیست', message: 'مطمئن شوید میکروفون به دستگاه متصل است.' },
-            'network': { code: 'network', title: 'اتصال اینترنت لازم است', message: 'اتصال خود را بررسی کنید یا دستور را تایپ کنید.' },
-            'aborted': { code: 'aborted', title: null, message: null, silent: true },
-            'timeout': { code: 'timeout', title: 'پاسخی دریافت نشد', message: 'به‌نظر می‌رسد تشخیص صدا پاسخ نداد.' },
-            'vosk-lib-failed': { code: 'vosk-lib-failed', title: 'بارگذاری موتور صوتی ناموفق بود', message: 'کتابخانه تشخیص گفتار آفلاین بارگذاری نشد.' },
-            'vosk-model-failed': { code: 'vosk-model-failed', title: 'مدل صوتی آفلاین بارگذاری نشد', message: 'دانلود یا بارگذاری مدل تشخیص گفتار ناموفق بود.' },
-            'vosk-not-configured': { code: 'vosk-not-configured', title: null, message: null, silent: true },
-            'vosk-runtime': { code: 'vosk-runtime', title: 'خطا در تشخیص گفتار آفلاین', message: 'مشکلی در پردازش صدا رخ داد.' }
+            'not-allowed': {
+                code: 'not-allowed',
+                title: 'دسترسی میکروفون رد شد',
+                message: 'لطفاً در تنظیمات مرورگر، دسترسی میکروفون را برای این سایت فعال کنید.'
+            },
+            'service-not-allowed': {
+                code: 'service-not-allowed',
+                title: 'سرویس تشخیص صدا در دسترس نیست',
+                message: ENV.isIOS
+                    ? 'در iOS مطمئن شوید از Safari استفاده می‌کنید (نه اپ نصب‌شده) و دسترسی میکروفون در تنظیمات فعال است.'
+                    : 'سرویس تشخیص صدای مرورگر شما در دسترس نیست.'
+            },
+            'no-speech': {
+                code: 'no-speech',
+                title: 'صدایی شنیده نشد',
+                message: 'چیزی متوجه نشدم. لطفاً دوباره و واضح‌تر صحبت کنید.'
+            },
+            'language-not-supported': {
+                code: 'language-not-supported',
+                title: 'زبان فارسی روی این دستگاه نصب نیست',
+                message: 'گویا بسته تشخیص گفتار فارسی روی این گوشی نصب یا به‌روزرسانی نشده. در اپ Google، تنظیمات > صدا > Offline speech recognition را بررسی کنید، یا دستور را تایپ کنید.'
+            },
+            'audio-capture': {
+                code: 'audio-capture',
+                title: 'میکروفون در دسترس نیست',
+                message: 'مطمئن شوید میکروفون به دستگاه متصل و توسط برنامه دیگری اشغال نشده است.'
+            },
+            'network': {
+                code: 'network',
+                title: 'اتصال اینترنت لازم است',
+                message: 'تشخیص صدا برخلاف بقیه FoxiMed به اینترنت نیاز دارد. لطفاً اتصال خود را بررسی کنید یا دستور را تایپ کنید.'
+            },
+            'aborted': {
+                code: 'aborted',
+                title: null,
+                message: null,
+                silent: true
+            },
+            'timeout': {
+                code: 'timeout',
+                title: 'پاسخی دریافت نشد',
+                message: 'به‌نظر می‌رسد تشخیص صدا پاسخ نداد. دوباره تلاش کنید یا دستور را تایپ کنید.'
+            },
+            'vosk-lib-failed': {
+                code: 'vosk-lib-failed',
+                title: 'بارگذاری موتور صوتی ناموفق بود',
+                message: 'کتابخانه تشخیص گفتار آفلاین بارگذاری نشد. اتصال اینترنت را برای اولین بارگذاری بررسی کنید یا دستور را تایپ کنید.'
+            },
+            'vosk-model-failed': {
+                code: 'vosk-model-failed',
+                title: 'مدل صوتی آفلاین بارگذاری نشد',
+                message: 'دانلود یا بارگذاری مدل تشخیص گفتار ناموفق بود. اتصال اینترنت را بررسی کنید یا دستور را تایپ کنید.'
+            },
+            'vosk-not-configured': {
+                code: 'vosk-not-configured',
+                title: null,
+                message: null,
+                silent: true
+            },
+            'vosk-runtime': {
+                code: 'vosk-runtime',
+                title: 'خطا در تشخیص گفتار آفلاین',
+                message: 'مشکلی در پردازش صدا رخ داد. دوباره تلاش کنید یا دستور را تایپ کنید.'
+            }
         };
-        return map[rawCode] || { code: rawCode || 'unknown', title: 'خطا در تشخیص صدا', message: 'یک خطای ناشناخته رخ داد.' };
+        return map[rawCode] || {
+            code: rawCode || 'unknown',
+            title: 'خطا در تشخیص صدا',
+            message: 'یک خطای ناشناخته رخ داد. می‌توانید دستور را تایپ کنید.'
+        };
     }
 
     // ============================================
@@ -108,6 +191,7 @@
     let voskStream = null;
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
+    let triedVoskFallback = false;
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -117,10 +201,26 @@
         if (silenceWatchdog) { clearTimeout(silenceWatchdog); silenceWatchdog = null; }
     }
 
+    function maybeFallbackToVosk(errorCode) {
+        if (triedVoskFallback) return false;
+        if (!voskConfigured()) return false;
+        if (errorCode === 'network' && !voskModel) return false;
+        const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
+        if (!FALLBACK_CODES[errorCode]) return false;
+        triedVoskFallback = true;
+        stopWebSpeech();
+        startVosk();
+        return true;
+    }
+
     function armSilenceWatchdog() {
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
-            if (active) { emit('error', classifyError('timeout')); stopWebSpeech(); }
+            if (active) {
+                if (maybeFallbackToVosk('timeout')) return;
+                emit('error', classifyError('timeout'));
+                stopWebSpeech();
+            }
         }, 8000);
     }
 
@@ -140,7 +240,8 @@
                 analyser.smoothingTimeConstant = 0.7;
                 source.connect(analyser);
                 pumpAudioFrames();
-            }).catch(function () {});
+            })
+            .catch(function () { /* no mic stream for visualization */ });
     }
 
     function pumpAudioFrames() {
@@ -148,9 +249,9 @@
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
         const bars = 12;
-        const bins = [];
         const chunk = Math.floor(data.length / bars) || 1;
         let levelSum = 0;
+        const bins = [];
         for (let i = 0; i < bars; i++) {
             let sum = 0;
             for (let j = 0; j < chunk; j++) sum += data[i * chunk + j] || 0;
@@ -181,6 +282,7 @@
     // ============================================
     function startWebSpeech(langOverride) {
         if (active) return;
+
         const support = getSupportInfo();
         if (support.status === 'blocked') {
             emit('error', { code: support.code, title: support.title, message: support.message });
@@ -212,22 +314,30 @@
 
         recognition.onresult = function (event) {
             armSilenceWatchdog();
-            let interim = '', final = '';
+            let interim = '';
+            let final = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) final += transcript;
                 else interim += transcript;
             }
-            if (final.trim()) { emit('final', final.trim()); stopWebSpeech(); }
-            else if (interim.trim()) { emit('interim', interim.trim()); }
+            if (final.trim()) {
+                emit('final', final.trim());
+                stopWebSpeech();
+            } else if (interim.trim()) {
+                emit('interim', interim.trim());
+            }
         };
 
         recognition.onerror = function (event) {
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
-                active = false; clearWatchdogs(); releaseAudioMeter();
+                active = false;
+                clearWatchdogs();
+                releaseAudioMeter();
                 startWebSpeech('fa');
                 return;
             }
+            if (maybeFallbackToVosk(event.error)) return;
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -236,7 +346,7 @@
         recognition.onend = function () {
             clearWatchdogs();
             if (active && !ENV.isIOS) {
-                try { recognition.start(); return; } catch (e) {}
+                try { recognition.start(); return; } catch (e) { /* fall through */ }
             }
             active = false;
             releaseAudioMeter();
@@ -251,7 +361,11 @@
         }
 
         startWatchdog = setTimeout(function () {
-            if (!active) { emit('error', classifyError('timeout')); stopWebSpeech(); }
+            if (!active) {
+                if (maybeFallbackToVosk('timeout')) return;
+                emit('error', classifyError('timeout'));
+                stopWebSpeech();
+            }
         }, 5000);
     }
 
@@ -268,7 +382,7 @@
     }
 
     // ============================================
-    // BACKEND 2: VOSK (offline, on-device)
+    // BACKEND 2: VOSK (offline, on‑device)
     // ============================================
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -316,19 +430,171 @@
         return output;
     }
 
-    // ----- DIRECT MODEL LOADING – no Blob, no Cache API, stable memory -----
+    // ----- IMPROVED XHR fetch with HEAD check, retry, and live progress -----
+    function fetchModelWithProgress(url, onProgress) {
+        const MAX_ATTEMPTS = 8;
+        const STALL_TIMEOUT_MS = 120000; // 2 minutes per attempt
+        let loaded = 0, total = 0, chunks = [], attemptNum = 0;
+        let supportsRange = false;
+        let useRange = false;
+
+        // Check if server supports Range requests
+        function checkRangeSupport() {
+            return new Promise(function (resolve) {
+                const headXhr = new XMLHttpRequest();
+                headXhr.open('HEAD', url, true);
+                headXhr.onload = function () {
+                    const acceptRanges = headXhr.getResponseHeader('Accept-Ranges');
+                    supportsRange = acceptRanges === 'bytes';
+                    resolve();
+                };
+                headXhr.onerror = function () { resolve(); };
+                headXhr.timeout = 10000;
+                headXhr.send();
+            });
+        }
+
+        function attempt() {
+            attemptNum++;
+            return new Promise(function (resolve, reject) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.responseType = 'arraybuffer';
+                if (useRange && loaded > 0) {
+                    xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+                }
+                xhr.withCredentials = false;
+                xhr.timeout = STALL_TIMEOUT_MS;
+
+                let lastProgressTime = 0;
+
+                xhr.onprogress = function (e) {
+                    const now = Date.now();
+                    if (now - lastProgressTime < 300) return;
+                    lastProgressTime = now;
+
+                    let currentLoaded = loaded + e.loaded;
+                    let currentTotal = total > 0 ? total : (e.total > 0 ? e.total + loaded : 0);
+                    if (currentTotal === 0) currentTotal = 1;
+                    const percent = Math.min(100, Math.round((currentLoaded / currentTotal) * 100));
+                    if (typeof onProgress === 'function') {
+                        onProgress({ loaded: currentLoaded, total: currentTotal, percent: percent });
+                    }
+                };
+
+                xhr.onload = function () {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const responseData = xhr.response;
+                        if (!responseData) {
+                            reject(new Error('Empty response'));
+                            return;
+                        }
+
+                        const isPartial = (xhr.status === 206);
+                        if (isPartial && useRange) {
+                            const newData = new Uint8Array(responseData);
+                            chunks.push(newData);
+                            loaded += newData.length;
+                            const rangeHeader = xhr.getResponseHeader('Content-Range');
+                            if (rangeHeader) {
+                                const match = rangeHeader.match(/\/(\d+)$/);
+                                if (match) total = parseInt(match[1], 10);
+                            }
+                        } else {
+                            // Full response (200) – server ignored Range
+                            chunks = [new Uint8Array(responseData)];
+                            loaded = responseData.byteLength;
+                            total = loaded;
+                            useRange = false; // don't try Range again
+                        }
+
+                        // Final progress
+                        if (typeof onProgress === 'function') {
+                            onProgress({ loaded: loaded, total: total || loaded, percent: 100 });
+                        }
+
+                        // Check if we have all data
+                        if (total > 0 && loaded >= total) {
+                            resolve(new Blob(chunks));
+                        } else if (!useRange && loaded === total) {
+                            resolve(new Blob(chunks));
+                        } else {
+                            // If we have data and no total known, assume complete
+                            if (chunks.length > 0 && loaded > 0) {
+                                resolve(new Blob(chunks));
+                            } else {
+                                reject(new Error('Incomplete download'));
+                            }
+                        }
+                    } else {
+                        reject(new Error('HTTP ' + xhr.status));
+                    }
+                };
+
+                xhr.onerror = function () { reject(new Error('XHR network error')); };
+                xhr.ontimeout = function () { reject(new Error('XHR timeout')); };
+                xhr.send();
+            }).catch(function (err) {
+                if (attemptNum >= MAX_ATTEMPTS) throw err;
+                // Exponential backoff: 2^attemptNum seconds, max 30s
+                const delay = Math.min(30000, 1000 * Math.pow(2, attemptNum));
+                return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(attempt);
+            });
+        }
+
+        return checkRangeSupport().then(function () {
+            useRange = supportsRange;
+            return attempt();
+        });
+    }
+
+    // ----- Model loading with Cache API and memory cleanup -----
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
 
         emit('model-loading');
 
-        voskModelLoadPromise = ensureVoskLib()
+        function loadBlob() {
+            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+                return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                    if (cached) {
+                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                        return cached.blob();
+                    }
+                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                        try {
+                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
+                            if (putPromise && typeof putPromise.catch === 'function') {
+                                putPromise.catch(function () {});
+                            }
+                        } catch (e) {}
+                        return blob;
+                    });
+                });
+            }).catch(function () {
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            });
+        }
+
+        function onModelProgress(progress) { emit('model-progress', progress); }
+
+        const loadChain = ensureVoskLib()
             .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(function () {
-                // Let the library fetch the model directly – browser HTTP cache will handle repeat visits.
-                // Progress is indeterminate (UI shows spinner).
-                return window.Vosk.createModel(VOSK_MODEL_URL);
+            .then(loadBlob)
+            .then(function (blob) {
+                const blobUrl = URL.createObjectURL(blob);
+                // Attempt to create model from blob, fallback to direct URL
+                return window.Vosk.createModel(blobUrl)
+                    .then(function (model) {
+                        URL.revokeObjectURL(blobUrl);
+                        return model;
+                    })
+                    .catch(function () {
+                        URL.revokeObjectURL(blobUrl);
+                        return window.Vosk.createModel(VOSK_MODEL_URL);
+                    });
             })
             .then(function (model) {
                 voskModel = model;
@@ -338,19 +604,24 @@
                 });
                 emit('model-ready');
                 return model;
-            })
+            });
+
+        const timeoutChain = new Promise(function (_, reject) {
+            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
+        });
+
+        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
             .catch(function (err) {
                 voskModelLoadPromise = null;
                 const info = (err && err.code) ? err : classifyError('vosk-model-failed');
                 voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 throw info;
             });
-
         return voskModelLoadPromise;
     }
 
     // ============================================
-    // SAFE AUDIO LEVEL EXTRACTOR
+    // SAFE AUDIO LEVEL EXTRACTOR (no errors)
     // ============================================
     let _levelCounter = 0;
     function emitVoskAudioLevel(buffer) {
@@ -397,14 +668,18 @@
 
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
-
             let recognizer;
+            // Optional grammar (off by default – add ?grammar=1 to URL to enable)
             let grammar = null;
-            try {
-                if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                    grammar = window.VoiceCommands.getGrammar();
-                }
-            } catch (e) { grammar = null; }
+            let forceGrammarOn = false;
+            try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
+            if (forceGrammarOn) {
+                try {
+                    if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
+                        grammar = window.VoiceCommands.getGrammar();
+                    }
+                } catch (e) { grammar = null; }
+            }
 
             try {
                 recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
@@ -450,39 +725,14 @@
                     return;
                 }
                 voskStream = stream;
-
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
                 voskProcessor = voskAudioCtx.createScriptProcessor(2048, 1, 1);
-
                 voskProcessor.onaudioprocess = function (event) {
-                    try {
-                        if (!recognizer) return;
-                        const inputBuffer = event.inputBuffer;
-                        if (!inputBuffer) return;
-
-                        const sourceRate = voskAudioCtx.sampleRate;
-                        let data;
-                        if (sourceRate === 16000) {
-                            data = inputBuffer;
-                        } else {
-                            data = resampleAudio(inputBuffer, sourceRate);
-                        }
-                        recognizer.acceptWaveform(data);
-                        emitVoskAudioLevel(inputBuffer);
-                    } catch (e) {
-                        if (Math.random() < 0.01) {
-                            console.error('[VOICE] onaudioprocess error:', e.message);
-                        }
-                    }
+                    try { recognizer.acceptWaveform(event.inputBuffer); } catch (e) {}
+                    emitVoskAudioLevel(event.inputBuffer);
                 };
-
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
-
-                voskAudioCtx.resume().catch(function (err) {
-                    console.error('[VOICE] AudioContext resume failed:', err);
-                    emit('error', classifyError('audio-capture'));
-                });
 
                 voskActive = true;
                 armVoskSilenceWatchdog();
@@ -501,24 +751,29 @@
         });
     }
 
-    // ============================================
-    // HELPER FUNCTIONS FOR VOSK
-    // ============================================
     function armVoskSilenceWatchdog() {
         if (voskSilenceWatchdog) clearTimeout(voskSilenceWatchdog);
         voskSilenceWatchdog = setTimeout(function () {
-            if (voskActive) { emit('error', classifyError('timeout')); stopVosk(); }
+            if (voskActive) {
+                emit('error', classifyError('timeout'));
+                stopVosk();
+            }
         }, 8000);
     }
 
     function stopVosk() {
-        if (voskLoading) { voskCancelRequested = true; return; }
+        if (voskLoading) {
+            voskCancelRequested = true;
+            return;
+        }
         if (!voskActive && !voskRecognizer) return;
         if (voskSilenceWatchdog) { clearTimeout(voskSilenceWatchdog); voskSilenceWatchdog = null; }
         if (voskRecognizer) {
             try { voskRecognizer.retrieveFinalResult(); } catch (e) {}
             voskStopTimer = setTimeout(finishVosk, 1200);
-        } else { finishVosk(); }
+        } else {
+            finishVosk();
+        }
     }
 
     function finishVosk() {
@@ -542,13 +797,14 @@
 
     function start() {
         if (active || voskActive || voskLoading) return;
-        if (pickBackend() === 'vosk') startVosk();
-        else startWebSpeech();
+        triedVoskFallback = false;
+        if (pickBackend() === 'vosk') startVosk(); else startWebSpeech();
     }
 
     function stop() {
-        if (pickBackend() === 'vosk') stopVosk();
-        else stopWebSpeech();
+        if (voskActive || voskLoading) { stopVosk(); return; }
+        if (active) { stopWebSpeech(); return; }
+        if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 
     document.addEventListener('visibilitychange', function () {
@@ -556,7 +812,10 @@
     });
 
     window.addEventListener('offline', function () {
-        if (active) { emit('error', classifyError('network')); stop(); }
+        if (active) {
+            emit('error', classifyError('network'));
+            stop();
+        }
     });
 
     // ============================================
