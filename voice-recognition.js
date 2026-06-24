@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = '';
+    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -820,21 +820,31 @@
         });
     }
 
-    function emitVoskAudioLevel(buffer) {
-        const data = buffer.getChannelData(0);
-        const bars = 12;
-        const chunk = Math.floor(data.length / bars) || 1;
-        const bins = [];
-        let levelSum = 0;
-        for (let i = 0; i < bars; i++) {
-            let sum = 0;
-            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            const avg = Math.min(1, (sum / chunk) * 4); // crude gain so quiet speech still animates
-            bins.push(avg);
-            levelSum += avg;
-        }
-        emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
+    let _levelCounter = 0;
+function emitVoskAudioLevel(buffer) {
+    _levelCounter++;
+    if (_levelCounter % 4 !== 0) return; // reduce CPU
+
+    let data;
+    if (buffer && typeof buffer.getChannelData === 'function') {
+        data = buffer.getChannelData(0);
+    } else if (buffer && buffer.constructor === Float32Array) {
+        data = buffer;
+    } else {
+        return;
     }
+
+    const bars = 12;
+    const chunk = Math.floor(data.length / bars) || 1;
+    let levelSum = 0;
+    for (let i = 0; i < bars; i++) {
+        let sum = 0;
+        for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
+        levelSum += sum / chunk;
+    }
+    const level = Math.min(1, (levelSum / bars) * 4);
+    emit('audio', { bins: [], level: level });
+}
 
     function armVoskSilenceWatchdog() {
         if (voskSilenceWatchdog) clearTimeout(voskSilenceWatchdog);
