@@ -9,6 +9,8 @@
     // --- CONFIGURATION ---
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
+    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
+    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -312,21 +314,93 @@
         return output;
     }
 
-    // ============================================
-    // SIMPLIFIED MODEL LOADER – direct URL fetch
-    // No Blob, no Cache API – uses browser HTTP cache
-    // ============================================
+    // ----- XHR‑based fetch with retry and Range support -----
+    function fetchModelWithProgress(url, onProgress) {
+        const MAX_ATTEMPTS = 6;
+        const STALL_TIMEOUT_MS = 60000;
+        let loaded = 0, total = 0, chunks = [], attemptNum = 0;
+
+        function attempt() {
+            attemptNum++;
+            return new Promise(function (resolve, reject) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.responseType = 'arraybuffer';
+                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+                xhr.withCredentials = false;
+
+                xhr.onload = function () {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const responseData = xhr.response;
+                        if (responseData) {
+                            if (loaded > 0 && xhr.getResponseHeader('Content-Range')) {
+                                const newData = new Uint8Array(responseData);
+                                chunks.push(newData);
+                                loaded += newData.length;
+                            } else {
+                                chunks = [new Uint8Array(responseData)];
+                                loaded = responseData.byteLength;
+                                total = loaded;
+                            }
+                            if (typeof onProgress === 'function') {
+                                onProgress({ loaded: loaded, total: total, percent: 100 });
+                            }
+                            resolve(new Blob(chunks));
+                        } else { reject(new Error('Empty response')); }
+                    } else { reject(new Error('HTTP ' + xhr.status)); }
+                };
+
+                xhr.onerror = function () { reject(new Error('XHR network error')); };
+                xhr.ontimeout = function () { reject(new Error('XHR timeout')); };
+                xhr.timeout = STALL_TIMEOUT_MS;
+                xhr.send();
+            }).catch(function (err) {
+                if (attemptNum >= MAX_ATTEMPTS) throw err;
+                return new Promise(function (resolve) { setTimeout(resolve, 1500); }).then(attempt);
+            });
+        }
+        return attempt();
+    }
+
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
 
         emit('model-loading');
 
-        voskModelLoadPromise = ensureVoskLib()
+        function loadBlob() {
+            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+                return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                    if (cached) {
+                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                        return cached.blob();
+                    }
+                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                        try {
+                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
+                            if (putPromise && typeof putPromise.catch === 'function') {
+                                putPromise.catch(function () {});
+                            }
+                        } catch (e) {}
+                        return blob;
+                    });
+                });
+            }).catch(function () {
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            });
+        }
+
+        function onModelProgress(progress) { emit('model-progress', progress); }
+
+        const loadChain = ensureVoskLib()
             .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(function () {
-                // Let the library fetch the model directly – browser HTTP cache will handle repeat visits.
-                return window.Vosk.createModel(VOSK_MODEL_URL);
+            .then(loadBlob)
+            .then(function (blob) {
+                const blobUrl = URL.createObjectURL(blob);
+                return window.Vosk.createModel(blobUrl).catch(function () {
+                    return window.Vosk.createModel(VOSK_MODEL_URL);
+                });
             })
             .then(function (model) {
                 voskModel = model;
@@ -334,14 +408,19 @@
                 model.on('error', function () { emit('error', classifyError('vosk-runtime')); });
                 emit('model-ready');
                 return model;
-            })
+            });
+
+        const timeoutChain = new Promise(function (_, reject) {
+            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
+        });
+
+        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
             .catch(function (err) {
                 voskModelLoadPromise = null;
                 const info = (err && err.code) ? err : classifyError('vosk-model-failed');
                 voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 throw info;
             });
-
         return voskModelLoadPromise;
     }
 
