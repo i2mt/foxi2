@@ -73,6 +73,7 @@
     // message on a genuinely dead connection, it doesn't block anything
     // else in the app.
     const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; the retry logic below handles ordinary stalls long before this
+    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
@@ -262,10 +263,6 @@
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
     let triedVoskFallback = false; // reset at the start of each fresh start() call
-
-    // Reusable buffer for resampling to reduce allocations
-    let _resampledBuffer = null;
-    let _lastInputLength = 0;
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -626,11 +623,35 @@
         console.log('[VOICE] model loading started');
         emit('model-loading');
 
-        // We deliberately avoid the Cache API to prevent keeping a second
-        // copy of the 60 MB blob in memory. Instead we rely on the browser's
-        // HTTP cache which serves the file from disk without JS memory overhead.
         function loadBlob() {
-            return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            // Use Cache API for persistent storage; if not available, fall back to direct fetch.
+            if (!window.caches) {
+                console.log('[VOICE] Cache API not available, fetching directly');
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            }
+            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
+                return cache.match(VOSK_MODEL_URL).then(function (cached) {
+                    if (cached) {
+                        console.log('[VOICE] model found in cache');
+                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
+                        return cached.blob();
+                    }
+                    console.log('[VOICE] model not in cache, fetching...');
+                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
+                        // Store in cache for next time (non-blocking)
+                        try {
+                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
+                            if (putPromise && typeof putPromise.catch === 'function') {
+                                putPromise.catch(function () { /* quota or unsupported — non-fatal */ });
+                            }
+                        } catch (e) { /* synchronous failure — also non-fatal */ }
+                        return blob;
+                    });
+                });
+            }).catch(function (err) {
+                console.log('[VOICE] Cache API error, falling back to direct fetch:', err);
+                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
+            });
         }
 
         function onModelProgress(progress) {
@@ -643,27 +664,22 @@
                 console.error('[VOICE] vosk lib load failed:', err);
                 throw classifyError('vosk-lib-failed');
             })
-            .then(function () {
-                console.log('[VOICE] vosk lib loaded, starting model fetch');
-                return loadBlob();
-            })
+            .then(loadBlob)
             .then(function (blob) {
-                console.log('[VOICE] model fetched, size:', blob.size);
+                console.log('[VOICE] model blob size:', blob.size, 'bytes');
                 const blobUrl = URL.createObjectURL(blob);
-                console.log('[VOICE] model createModel started');
-                // Pass the URL to Vosk; after creation we revoke the URL to free memory.
+                console.log('[VOICE] creating model from blob URL');
                 return window.Vosk.createModel(blobUrl)
                     .then(function (model) {
-                        console.log('[VOICE] model createModel succeeded');
-                        // Revoke the blob URL as soon as the model is created.
+                        console.log('[VOICE] model creation succeeded');
+                        // Revoke the blob URL immediately to free the large blob from memory.
                         URL.revokeObjectURL(blobUrl);
                         return model;
                     })
                     .catch(function (err) {
-                        console.error('[VOICE] model createModel failed:', err);
-                        // If creation fails, still revoke the URL.
+                        console.error('[VOICE] model creation from blob URL failed:', err);
                         URL.revokeObjectURL(blobUrl);
-                        // Fallback: try loading directly from URL (in case blob URL failed)
+                        // Fallback: let the library fetch the URL directly
                         console.log('[VOICE] falling back to direct URL fetch');
                         return window.Vosk.createModel(VOSK_MODEL_URL);
                     });
@@ -703,32 +719,34 @@
         return voskModelLoadPromise;
     }
 
-    // Resample audio to 16kHz using linear interpolation.
-    // Reuses a Float32Array if the input length is unchanged to reduce GC pressure.
-    function resampleAudio(inputBuffer, sourceRate) {
-        const targetRate = 16000;
-        if (sourceRate === targetRate) return inputBuffer.getChannelData(0);
+    // ============================================
+    // SAFE AUDIO LEVEL EXTRACTOR (no errors, reduced frequency)
+    // ============================================
+    let _levelCounter = 0;
+    function emitVoskAudioLevel(buffer) {
+        // Only compute level once every 4 frames to reduce CPU
+        _levelCounter++;
+        if (_levelCounter % 4 !== 0) return;
 
-        const input = inputBuffer.getChannelData(0);
-        const inputLength = input.length;
-        const ratio = sourceRate / targetRate;
-        const outputLength = Math.round(inputLength / ratio);
-
-        // Reuse buffer if same input length and output length
-        if (!_resampledBuffer || _resampledBuffer.length !== outputLength || _lastInputLength !== inputLength) {
-            _resampledBuffer = new Float32Array(outputLength);
-            _lastInputLength = inputLength;
+        let data;
+        if (buffer && typeof buffer.getChannelData === 'function') {
+            data = buffer.getChannelData(0);
+        } else if (buffer && buffer.constructor === Float32Array) {
+            data = buffer;
+        } else {
+            return;
         }
-        const output = _resampledBuffer;
 
-        for (let i = 0; i < outputLength; i++) {
-            const srcIndex = i * ratio;
-            const srcIndexFloor = Math.floor(srcIndex);
-            const srcIndexCeil = Math.min(srcIndexFloor + 1, inputLength - 1);
-            const frac = srcIndex - srcIndexFloor;
-            output[i] = input[srcIndexFloor] * (1 - frac) + input[srcIndexCeil] * frac;
+        const bars = 12;
+        const chunk = Math.floor(data.length / bars) || 1;
+        let levelSum = 0;
+        for (let i = 0; i < bars; i++) {
+            let sum = 0;
+            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
+            levelSum += sum / chunk;
         }
-        return output;
+        const level = Math.min(1, (levelSum / bars) * 4);
+        emit('audio', { bins: [], level: level });
     }
 
     // ============================================
@@ -747,16 +765,6 @@
         voskLoading = true;
         voskCancelRequested = false;
         console.log('[VOICE] startVosk called');
-
-        // Ensure AudioContext is created as late as possible, but we need
-        // to create it in response to user gesture. We'll create it after
-        // model is ready and mic permission granted, but we must preserve
-        // the gesture. We'll create it inside the getUserMedia success callback,
-        // which is still within the user activation event.
-        let audioCtxResolve = null;
-        const audioCtxPromise = new Promise(function (resolve) {
-            audioCtxResolve = resolve;
-        });
 
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
@@ -840,41 +848,29 @@
                 }
                 console.log('[VOICE] microphone granted');
                 voskStream = stream;
-
-                // Create AudioContext only after mic permission is granted
                 const AC = window.AudioContext || window.webkitAudioContext;
                 voskAudioCtx = new AC();
-                voskAudioCtx.resume().then(function () {
-                    console.log('[VOICE] AudioContext resumed');
-                }).catch(function (err) {
-                    console.error('[VOICE] AudioContext resume failed:', err);
-                    emit('error', classifyError('audio-capture'));
-                });
-
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
-                voskProcessor = voskAudioCtx.createScriptProcessor(2048, 1, 1);
-
+                // ScriptProcessorNode is deprecated but is what vosk-browser's
+                // own documented example uses, and it's still broadly
+                // supported (including current iOS Safari). It must be
+                // connected through to a destination for onaudioprocess to
+                // reliably fire in every browser, hence the (silent, since
+                // echoCancellation is on) connection below.
+                voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
                 voskProcessor.onaudioprocess = function (event) {
                     try {
                         const inputBuffer = event.inputBuffer;
                         if (!inputBuffer) return;
-                        const sourceRate = voskAudioCtx.sampleRate;
-                        let waveform;
-                        if (sourceRate === 16000) {
-                            waveform = inputBuffer.getChannelData(0);
-                        } else {
-                            waveform = resampleAudio(inputBuffer, sourceRate);
-                        }
-                        recognizer.acceptWaveform(waveform);
+                        recognizer.acceptWaveform(inputBuffer);
                         emitVoskAudioLevel(inputBuffer);
                     } catch (e) {
-                        // Log errors occasionally to avoid console spam
+                        // Log occasionally to avoid spam
                         if (Math.random() < 0.01) {
                             console.error('[VOICE] onaudioprocess error:', e);
                         }
                     }
                 };
-
                 voskSource.connect(voskProcessor);
                 voskProcessor.connect(voskAudioCtx.destination);
 
@@ -896,36 +892,6 @@
             console.error('[VOICE] startVosk model error:', info);
             emit('error', info && info.code ? info : classifyError('vosk-model-failed'));
         });
-    }
-
-    // ============================================
-    // SAFE AUDIO LEVEL EXTRACTOR (no errors, reduced frequency)
-    // ============================================
-    let _levelCounter = 0;
-    function emitVoskAudioLevel(buffer) {
-        // Only compute level once every 4 frames to reduce CPU
-        _levelCounter++;
-        if (_levelCounter % 4 !== 0) return;
-
-        let data;
-        if (buffer && typeof buffer.getChannelData === 'function') {
-            data = buffer.getChannelData(0);
-        } else if (buffer && buffer.constructor === Float32Array) {
-            data = buffer;
-        } else {
-            return;
-        }
-
-        const bars = 12;
-        const chunk = Math.floor(data.length / bars) || 1;
-        let levelSum = 0;
-        for (let i = 0; i < bars; i++) {
-            let sum = 0;
-            for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            levelSum += sum / chunk;
-        }
-        const level = Math.min(1, (levelSum / bars) * 4);
-        emit('audio', { bins: [], level: level });
     }
 
     function armVoskSilenceWatchdog() {
