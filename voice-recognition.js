@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Voice Engine (Enhanced)
+   FoxiMed — Voice Engine (Stable)
    ============================================ */
 (function (window) {
     'use strict';
@@ -7,10 +7,11 @@
     // ------------------------------------------------------------
     // CONFIGURATION
     // ------------------------------------------------------------
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_VERSION = 'v2'; // increment when model changes
+    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz?v=' + VOSK_MODEL_VERSION;
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
-    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
+    const VOSK_CACHE_NAME = 'foximed-vosk-model-v' + VOSK_MODEL_VERSION;
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
     function voskForcedOff() {
@@ -173,7 +174,6 @@
     let rafId = null;
     const listeners = {};
 
-    // Vosk state
     let voskActive = false;
     let voskLoading = false;
     let voskCancelRequested = false;
@@ -376,7 +376,7 @@
     }
 
     // ------------------------------------------------------------
-    // VOSK BACKEND (with N-best alternatives)
+    // VOSK BACKEND (with stable fetch)
     // ------------------------------------------------------------
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -554,31 +554,13 @@
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
             let recognizer;
-            // Grammar is OFF by default — enable with ?grammar=1
-            let grammar = null;
-            let forceGrammarOn = false;
-            try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
-            if (forceGrammarOn) {
-                try {
-                    if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                        grammar = window.VoiceCommands.getGrammar();
-                    }
-                } catch (e) { grammar = null; }
-            }
-
             try {
-                recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
+                recognizer = new model.KaldiRecognizer(16000);
             } catch (e) {
-                try {
-                    recognizer = new model.KaldiRecognizer(16000);
-                } catch (e2) {
-                    voskLoading = false;
-                    emit('error', classifyError('vosk-runtime'));
-                    return;
-                }
+                voskLoading = false;
+                emit('error', classifyError('vosk-runtime'));
+                return;
             }
-            // Enable word timings and alternatives
-            try { recognizer.setWords(true); } catch (e) {}
             voskRecognizer = recognizer;
 
             recognizer.on('partialresult', function (message) {
@@ -588,34 +570,13 @@
                     emit('interim', partial.trim());
                 }
             });
-
             recognizer.on('result', function (message) {
-                const result = message && message.result;
-                if (!result) return;
-
-                // Get alternatives (N-best)
-                const alternatives = result.alternatives || [];
-                let bestText = null;
-                let bestConfidence = -1;
-                for (const alt of alternatives) {
-                    if (alt.confidence > bestConfidence) {
-                        bestConfidence = alt.confidence;
-                        bestText = alt.text;
-                    }
-                }
-                // Fallback to 'text' field if alternatives empty
-                if (!bestText && result.text) bestText = result.text;
-
-                if (bestText && bestText.trim()) {
-                    emit('final', bestText.trim());
-                    // Also emit all hypotheses for potential ranking in VoiceCommands
-                    if (alternatives.length > 1) {
-                        emit('hypotheses', alternatives.map(a => ({ text: a.text, confidence: a.confidence })));
-                    }
+                const text = message && message.result && message.result.text;
+                if (text && text.trim()) {
+                    emit('final', text.trim());
                 }
                 finishVosk();
             });
-
             recognizer.on('error', function () {
                 emit('error', classifyError('vosk-runtime'));
                 finishVosk();
@@ -762,4 +723,5 @@
     };
 
     window.VoiceEngine = api;
+    console.log('[Voice] VoiceEngine loaded (stable)');
 })(window);
