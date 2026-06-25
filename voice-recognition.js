@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -546,14 +546,17 @@
     // streaming response body (`response.body.getReader()`) has a less
     // consistent track record across Safari versions, which matters here
     // given everything else we've already run into on iOS specifically.
-    // XHR's native `responseType: 'blob'` also lets the browser assemble
-    // the file itself instead of holding every chunk in a JS array until
-    // the end, which is one less thing competing for memory on a
-    // constrained device.
+    //
+    // responseType is 'arraybuffer', not 'blob' — confirmed via real
+    // on-device testing that this is the more memory-predictable choice
+    // on iOS WebKit. Letting the browser manage Blob materialization
+    // internally during a large streamed response appears less reliable
+    // than collecting raw bytes ourselves and constructing exactly one
+    // Blob at the very end.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
-        let assembledBlob = null;
+        let chunks = [];
         let loaded = 0;
         let total = 0;
 
@@ -566,7 +569,7 @@
             return new Promise(function (resolve, reject) {
                 const xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
-                xhr.responseType = 'blob';
+                xhr.responseType = 'arraybuffer';
                 if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
 
                 let stallTimer = null;
@@ -594,15 +597,17 @@
                         reject(new Error('http-' + xhr.status));
                         return;
                     }
-                    const newBlob = xhr.response;
-                    if (xhr.status === 206 && assembledBlob) {
-                        assembledBlob = new Blob([assembledBlob, newBlob]);
+                    const responseData = xhr.response;
+                    if (!responseData) { reject(new Error('empty-response')); return; }
+                    if (xhr.status === 206 && loaded > 0) {
+                        chunks.push(new Uint8Array(responseData));
+                        loaded += responseData.byteLength;
                     } else {
                         // Either the first attempt, or the server ignored
                         // our Range request and sent the whole file again.
-                        assembledBlob = newBlob;
+                        chunks = [new Uint8Array(responseData)];
+                        loaded = responseData.byteLength;
                     }
-                    loaded = assembledBlob.size;
                     total = total || loaded;
                     resolve();
                 };
@@ -619,7 +624,7 @@
             });
         }
 
-        return attempt(1).then(function () { return assembledBlob; });
+        return attempt(1).then(function () { return new Blob(chunks); });
     }
 
     function ensureVoskModel() {
