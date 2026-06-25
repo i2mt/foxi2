@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Voice Commands (Balanced Scoring)
+   FoxiMed — Voice Commands (Robust Dose Extraction)
    ============================================ */
 (function (window) {
     'use strict';
@@ -189,13 +189,15 @@
     }
 
     // ------------------------------------------------------------
-    // PARAMETER EXTRACTION
+    // PARAMETER EXTRACTION (Enhanced Dose)
     // ------------------------------------------------------------
     function extractParams(text) {
         const params = {};
+        // Keep raw text for number extraction fallback
+        const raw = text;
         const s = normalizeText(text);
 
-        // Weight
+        // --- Weight ---
         const weightPatterns = [
             /(\d+(?:\.\d+)?)\s*kg\b/i,
             /(\d+(?:\.\d+)?)\s*کیلو[^\d]*/i,
@@ -210,7 +212,7 @@
             }
         }
 
-        // Height
+        // --- Height ---
         const heightPatterns = [
             /(\d+(?:\.\d+)?)\s*cm\b/i,
             /(\d+(?:\.\d+)?)\s*سانت[^\d]*/i,
@@ -225,40 +227,48 @@
             }
         }
 
-        // Age
+        // --- Age ---
         const ageMatch = s.match(/(\d+(?:\.\d+)?)\s*(yr|سال|age)\b/i);
         if (ageMatch) params.age = parseFloat(ageMatch[1]);
 
-        // Dose
-        const doseMatch = s.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)\b/i);
+        // --- Dose (primary) ---
+        // Pattern 1: number with explicit unit (mg, mcg, g, units, "واحد")
+        let doseMatch = s.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units|واحد)\b/i);
         if (doseMatch) {
             params.dose = parseFloat(doseMatch[1]);
             params.doseUnit = doseMatch[2].toLowerCase();
         } else {
-            // Fallback: any standalone number if drug name or dose keywords exist
-            if (findDrugName(s) || /دوز|مقدار/.test(s)) {
-                const numMatch = s.match(/(\d+(?:\.\d+)?)/);
-                if (numMatch) params.dose = parseFloat(numMatch[1]);
+            // Pattern 2: number followed by "دوز" or "مقدار"
+            const doseContext = s.match(/(\d+(?:\.\d+)?)\s*(دوز|مقدار)/i);
+            if (doseContext) {
+                params.dose = parseFloat(doseContext[1]);
+            } else {
+                // Pattern 3: any standalone number if a drug name is present
+                const drugId = findDrugName(s);
+                if (drugId) {
+                    const numMatch = s.match(/(\d+(?:\.\d+)?)/);
+                    if (numMatch) params.dose = parseFloat(numMatch[1]);
+                }
             }
         }
 
-        // Volume
+        // --- Volume ---
         const volMatch = s.match(/(\d+(?:\.\d+)?)\s*(ml|mL|cc|سی‌سی)\b/i);
         if (volMatch) params.volume = parseFloat(volMatch[1]);
 
-        // Time
+        // --- Time ---
         const timeMatch = s.match(/(\d+(?:\.\d+)?)\s*(hour|hr|ساعت|h)\b/i);
         if (timeMatch) params.time = parseFloat(timeMatch[1]);
 
-        // Pressure
+        // --- Pressure ---
         const pressMatch = s.match(/(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa)\b/i);
         if (pressMatch) params.pressure = parseFloat(pressMatch[1]);
 
-        // Flow
+        // --- Flow ---
         const flowMatch = s.match(/(\d+(?:\.\d+)?)\s*(L\/min|litre\/min|لیتر در دقیقه)\b/i);
         if (flowMatch) params.flow = parseFloat(flowMatch[1]);
 
-        // GCS
+        // --- GCS ---
         const gcsMatch = s.match(/gcs\s*(\d+)\s*(\d+)\s*(\d+)/i);
         if (gcsMatch) {
             params.gcs_eye = parseInt(gcsMatch[1]);
@@ -266,11 +276,11 @@
             params.gcs_motor = parseInt(gcsMatch[3]);
         }
 
-        // RASS
+        // --- RASS ---
         const rassMatch = s.match(/rass\s*([+-]?\d+)/i);
         if (rassMatch) params.rassScore = parseInt(rassMatch[1]);
 
-        // VBG
+        // --- VBG ---
         const phMatch = s.match(/ph\s*(\d+(?:\.\d+)?)/i);
         if (phMatch) params.pH = parseFloat(phMatch[1]);
         const pco2Match = s.match(/pco2\s*(\d+(?:\.\d+)?)/i);
@@ -278,40 +288,40 @@
         const hco3Match = s.match(/hco3\s*(\d+(?:\.\d+)?)/i);
         if (hco3Match) params.hco3 = parseFloat(hco3Match[1]);
 
-        // Electrolyte
+        // --- Electrolyte ---
         const elecMatch = s.match(/(سدیم|پتاسیم|کلسیم|منیزیم|بی‌کربنات|bicarbonate)/i);
         if (elecMatch) {
             const map = { 'سدیم':'sodium', 'پتاسیم':'potassium', 'کلسیم':'calcium', 'منیزیم':'magnesium', 'بی‌کربنات':'sodium_bicarbonate', 'bicarbonate':'sodium_bicarbonate' };
             params.electrolyte = map[elecMatch[1].toLowerCase()] || null;
         }
 
-        // Gender
+        // --- Gender ---
         if (s.includes('male') || s.includes('مرد')) params.gender = 'male';
         else if (s.includes('female') || s.includes('زن')) params.gender = 'female';
 
-        // Drug ID
+        // --- Drug ID ---
         const drugId = findDrugName(s);
         if (drugId) params.drugId = drugId;
 
-        // Y-Site
+        // --- Y-Site ---
         const drugIds = findAllDrugNames(s, 2);
         if (drugIds.length === 2) {
             params.drug1 = drugIds[0];
             params.drug2 = drugIds[1];
         }
 
-        // Custom amount
+        // --- Custom amount ---
         const customMatch = s.match(/(دلخواه|مقدار)\s*(\d+(?:\.\d+)?)\s*(units|mg|mcg|g)/i);
         if (customMatch) {
             params.customAmount = parseFloat(customMatch[2]);
             params.customUnit = customMatch[3].toLowerCase();
         }
 
-        // Burns percentage
+        // --- Burns percentage ---
         const burnPct = s.match(/(\d+(?:\.\d+)?)\s*(%|درصد)/i);
         if (burnPct) params.burnPercent = parseFloat(burnPct[1]);
 
-        // Oxygen
+        // --- Oxygen ---
         const oxySize = s.match(/(\d+(?:\.\d+)?)\s*(L|لیتر)\b/i);
         if (oxySize) params.liters = parseFloat(oxySize[1]);
         if (!params.liters && /oxygen|اکسیژن|کپسول/.test(s)) {
@@ -333,18 +343,16 @@
     }
 
     // ------------------------------------------------------------
-    // COMMAND TRIGGERS (balanced)
+    // COMMAND TRIGGERS (same as balanced version)
     // ------------------------------------------------------------
     const COMMAND_TRIGGERS = {
         tab_calculator: ['ماشین حساب', 'calculator', 'محاسبه'],
         tab_drugs: ['مرجع داروها', 'کتابخانه دارو', 'لیست داروها', 'داروخانه', 'drug library'],
         tab_tools: ['ابزارها', 'ابزار', 'tools'],
-
         clear: ['پاک کن', 'پاک کردن', 'صفر', 'clear', 'reset', 'پاکسازی'],
         manual_calc: ['دستی', 'manual', 'بدون دارو', 'دلخواه'],
         history: ['تاریخچه', 'history', 'سابقه', 'گزارش'],
         reverse: ['معکوس', 'reverse', 'برعکس', 'وارونه'],
-
         bmi: ['bmi', 'بی ام ای', 'بی‌ام‌ای', 'شاخص توده', 'body mass index', 'وزن و قد', 'محاسبه bmi'],
         bsa: ['bsa', 'بی اس ای', 'سطح بدن', 'body surface area', 'mosteller', 'محاسبه bsa'],
         ibw: ['وزن ایده‌آل', 'ideal weight', 'ibw', 'وزن استاندارد', 'وزن ایده ال'],
@@ -359,20 +367,17 @@
         vbg: ['vbg', 'وی بی جی', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'اسید باز', 'تفسیر گاز'],
         ventilator: ['ventilator', 'ونتیلاتور', 'حجم جاری', 'tidal volume', 'pbw', 'ards', 'تهویه'],
         nutrition: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'نیاز کالری'],
-
         convert: ['convert', 'تبدیل', 'meq', 'میلی‌اکی‌والان', 'الکترولیت'],
         electrolyte: ['الکترولیت', 'تبدیل الکترولیت', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی‌کربنات'],
         percentage: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی'],
         unit_convert: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی‌گرم', 'gram', 'unit conversion'],
         temp_convert: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature'],
         weight_convert: ['تبدیل وزن', 'کیلوگرم', 'پوند', 'گرم', 'weight conversion'],
-
         drug: ['دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی‌لیتر', 'سی‌سی', 'حجم', 'محلول', 'آمپول', 'ویال'],
         druginfo: ['دارو', 'اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe'],
         dose_calc: ['دوز', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی'],
         compat_tool: ['سازگاری', 'compatibility', 'تداخل دارویی', 'ysite', 'y-site', 'مخلوط'],
         ysite: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'مخلوط', 'همزمان'],
-
         settings: ['تنظیمات', 'settings', 'dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'فونت بزرگ', 'فونت کوچک'],
         theme: ['تم', 'theme', 'فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'dreamfire', 'شرابی'],
         help: ['help', 'راهنما', 'کمک', 'نمونه', 'example', 'چه کارایی', 'راهنمایی']
@@ -385,7 +390,6 @@
         const lower = text.toLowerCase();
         const scores = {};
 
-        // First pass: basic trigger matches
         for (const [cmd, triggers] of Object.entries(COMMAND_TRIGGERS)) {
             let score = 0;
             for (const trigger of triggers) {
@@ -396,14 +400,12 @@
             scores[cmd] = score;
         }
 
-        // Second pass: contextual boosts
-        // Drug command: only boost if drug name is present
+        // Contextual boosts
         if (params.drugId) {
             scores['drug'] = (scores['drug'] || 0) + 4;
             scores['druginfo'] = (scores['druginfo'] || 0) + 3;
         }
 
-        // Tool parameter boosts (only add if the command already has some score)
         if (params.weight && params.height) {
             if (scores['bmi'] > 0) scores['bmi'] += 3;
             if (scores['bsa'] > 0) scores['bsa'] += 3;
@@ -439,7 +441,7 @@
             if (scores['oxygen'] > 0) scores['oxygen'] += 3;
         }
 
-        // Direct tool name mention boost (if the tool name appears as a word in the text)
+        // Direct tool name mention
         const toolNames = ['bmi','bsa','ibw','crcl','drip','gcs','rass','braden','morse','burns','oxygen','vbg','ventilator','nutrition'];
         for (const t of toolNames) {
             if (scores[t] > 0 && fuzzyMatch(lower, t, 1)) {
@@ -970,7 +972,7 @@
     }
 
     // ------------------------------------------------------------
-    // DRUG HANDLERS
+    // DRUG HANDLERS (with robust dose setting)
     // ------------------------------------------------------------
     function handleDrugVoice(text, params) {
         try {
@@ -987,12 +989,14 @@
             selectDrug(drugId);
             const drug = drugDatabase[drugId];
 
+            // ---- Method ----
             if (params.method) {
                 document.querySelectorAll('.method-btn-compact').forEach(btn => {
                     if (btn.dataset.method === params.method) btn.click();
                 });
             }
 
+            // ---- Volume ----
             if (params.volume !== undefined) {
                 const methodKey = AppState.infusionMethod;
                 const volumes = drug.defaultSolutionVolumes[methodKey];
@@ -1009,6 +1013,7 @@
                 }
             }
 
+            // ---- Ampoules ----
             if (params.ampoules) {
                 AppState.ampouleCount = Math.max(1, params.ampoules);
                 if (typeof updateAmpouleInfo === 'function') updateAmpouleInfo();
@@ -1016,6 +1021,7 @@
                 if (ampDisplay) ampDisplay.textContent = AppState.ampouleCount;
             }
 
+            // ---- Custom amount ----
             if (params.customAmount !== undefined && params.customUnit) {
                 const isInsulin = drug.id === 'insulin';
                 if (!isInsulin && DOM.customAmountToggleClickRow) DOM.customAmountToggleClickRow.click();
@@ -1025,6 +1031,7 @@
                 }
             }
 
+            // ---- Weight ----
             const useWeight = (params.weight !== undefined) || text.includes('/kg');
             if (useWeight && DOM.weightCheckbox && DOM.patientWeight) {
                 DOM.weightCheckbox.checked = true;
@@ -1044,11 +1051,19 @@
                 if (DOM.patientWeight) DOM.patientWeight.disabled = true;
             }
 
+            // ---- Dose (extract again from raw text as fallback) ----
             let doseVal = params.dose || null;
             if (!doseVal || doseVal <= 0) {
+                // Try to extract from raw text (before normalization)
                 const rawNum = text.match(/\d+(?:\.\d+)?/);
                 if (rawNum) doseVal = parseFloat(rawNum[0]);
             }
+            // If still no dose, but we have a drug name and a unit word, maybe the number is before the unit
+            if (!doseVal || doseVal <= 0) {
+                const unitMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units|واحد)/i);
+                if (unitMatch) doseVal = parseFloat(unitMatch[1]);
+            }
+
             if (doseVal !== null && doseVal > 0) {
                 if (DOM.doctorOrder) {
                     DOM.doctorOrder.value = doseVal;
@@ -1058,6 +1073,7 @@
                 showVoiceResult('دوز مشخص نشد. لطفاً مقدار دوز را وارد کنید.', 'warning');
             }
 
+            // ---- Switch to calculator and calculate ----
             if (AppState.currentTab !== 'calculator' && typeof switchTab === 'function') switchTab('calculator');
             if (typeof updateDoseRangeIndicator === 'function') updateDoseRangeIndicator();
             if (AppState.reverseMode) {
@@ -1071,6 +1087,7 @@
                     results.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             }, 300);
+
             if (doseVal) {
                 showVoiceResult('محاسبه ' + drug.persianName + ' با دوز ' + doseVal + ' انجام شد.', 'success');
             } else {
@@ -1082,6 +1099,9 @@
         }
     }
 
+    // ------------------------------------------------------------
+    // DRUG INFO HANDLER
+    // ------------------------------------------------------------
     function handleDrugInfo(text, params) {
         try {
             const drugId = params.drugId || findDrugName(text);
@@ -1109,6 +1129,9 @@
         }
     }
 
+    // ------------------------------------------------------------
+    // THEME HANDLER
+    // ------------------------------------------------------------
     function handleThemeVoice(text) {
         try {
             const themeMap = {
