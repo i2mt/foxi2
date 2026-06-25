@@ -59,15 +59,13 @@
        to index.html) so there's no CORS step to configure at all.
      - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
        file at your host so repeat visits don't re-download ~53MB.
-     - This part of the rebuild could not be end-to-end tested here (no
-       iOS device, no microphone, no real network fetch of the model in
-       this sandbox) — the integration matches the verified library
-       source exactly, but please test for real on an iOS device before
-       relying on it.
    ============================================ */
 (function (window) {
     'use strict';
 
+    // ------------------------------------------------------------
+    // CONFIGURATION
+    // ------------------------------------------------------------
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
@@ -82,13 +80,17 @@
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
 
-    // ============================================
+    // Allow forcing off Vosk via URL param ?novosk=1 (for testing)
+    function voskForcedOff() {
+        try { return new URLSearchParams(window.location.search).get('novosk') === '1'; } catch (e) { return false; }
+    }
+
+    // ------------------------------------------------------------
     // ENVIRONMENT DETECTION
-    // ============================================
+    // ------------------------------------------------------------
     function detectIOS() {
         const ua = navigator.userAgent || '';
         const isClassicIOS = /iPad|iPhone|iPod/.test(ua);
-        // iPadOS 13+ identifies as "Macintosh" but exposes multi-touch
         const isModernIPad = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
         return isClassicIOS || isModernIPad;
     }
@@ -111,15 +113,9 @@
         hasAudioContext: !!(window.AudioContext || window.webkitAudioContext)
     };
 
-    // ============================================
+    // ------------------------------------------------------------
     // SUPPORT / LIMITATION REPORT
-    // ============================================
-    // status: 'ok'        -> everything should work normally
-    //         'limited'    -> API exists but is known to be unreliable here
-    //                         (iOS Home Screen app) — we still allow trying,
-    //                         but the UI should show a persistent notice and
-    //                         lead with the text fallback.
-    //         'blocked'    -> no point attempting (no API / insecure context)
+    // ------------------------------------------------------------
     function getSupportInfo() {
         if (!ENV.isSecureContext) {
             return {
@@ -129,10 +125,8 @@
                 message: 'دسترسی به میکروفون فقط روی HTTPS کار می‌کند. آدرس سایت را بررسی کنید.'
             };
         }
-        if (ENV.isIOS && voskConfigured()) {
+        if (ENV.isIOS && voskConfigured() && !voskForcedOff()) {
             if (voskFailInfo) return voskFailInfo;
-            // Vosk doesn't touch WebKit's SpeechRecognition at all, so the
-            // standalone-PWA restriction simply doesn't apply here.
             return { status: 'ok', code: 'ios-vosk', title: null, message: null };
         }
         if (!ENV.hasSpeechRecognition) {
@@ -152,19 +146,14 @@
             };
         }
         if (ENV.isIOS) {
-            return {
-                status: 'ok',
-                code: 'ios-safari',
-                title: null,
-                message: null
-            };
+            return { status: 'ok', code: 'ios-safari', title: null, message: null };
         }
         return { status: 'ok', code: 'ok', title: null, message: null };
     }
 
-    // ============================================
+    // ------------------------------------------------------------
     // ERROR CLASSIFICATION
-    // ============================================
+    // ------------------------------------------------------------
     function classifyError(rawCode) {
         const map = {
             'not-allowed': {
@@ -239,27 +228,27 @@
         };
     }
 
-    // ============================================
-    // STATE
-    // ============================================
+    // ------------------------------------------------------------
+    // STATE & LISTENERS
+    // ------------------------------------------------------------
     let recognition = null;
     let active = false;
-    let startWatchdog = null;   // fires if `onstart` never happens (silent iOS hang)
-    let silenceWatchdog = null; // fires if no interim/final result for too long
+    let startWatchdog = null;
+    let silenceWatchdog = null;
     let micStream = null;
     let audioCtx = null;
     let analyser = null;
     let rafId = null;
     const listeners = {};
 
-    // --- Vosk backend state ---
+    // Vosk state
     let voskActive = false;
     let voskLoading = false;
     let voskCancelRequested = false;
     let voskLibLoadPromise = null;
     let voskModel = null;
     let voskModelLoadPromise = null;
-    let voskFailInfo = null;     // set if model/lib failed to load this session
+    let voskFailInfo = null;
     let voskRecognizer = null;
     let voskAudioCtx = null;
     let voskSource = null;
@@ -267,7 +256,7 @@
     let voskStream = null;
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
-    let triedVoskFallback = false; // reset at the start of each fresh start() call
+    let triedVoskFallback = false;
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -277,19 +266,12 @@
         if (silenceWatchdog) { clearTimeout(silenceWatchdog); silenceWatchdog = null; }
     }
 
-    // If native recognition shows a clear sign of being broken on this
-    // device — not just "didn't hear anything" — silently switch to the
-    // Vosk backend instead of just reporting an error, IF it's configured.
-    // This is what actually makes voice "certainly work" across the wide
-    // variety of Android devices/OEM browsers out there: native speech
-    // recognition quality and availability varies a lot by device (missing
-    // language packs, OEM browser quirks, etc.), but Vosk doesn't depend on
-    // any of that — it ships its own model, so it works the same way
-    // everywhere once downloaded. Only one fallback attempt per start() —
-    // this never ping-pongs between backends.
+    // ------------------------------------------------------------
+    // NATIVE WEB SPEECH BACKEND
+    // ------------------------------------------------------------
     function maybeFallbackToVosk(errorCode) {
         if (triedVoskFallback) return false;
-        if (!voskConfigured()) return false;
+        if (!voskConfigured() || voskForcedOff()) return false;
         if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
         const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
         if (!FALLBACK_CODES[errorCode]) return false;
@@ -310,10 +292,6 @@
         }, 8000);
     }
 
-    // ============================================
-    // AUDIO METERING (Web Audio API)
-    // Purely cosmetic/feedback — independent of SpeechRecognition working.
-    // ============================================
     function attachAudioMeter() {
         if (!ENV.hasGetUserMedia || !ENV.hasAudioContext) return;
         navigator.mediaDevices.getUserMedia({ audio: true })
@@ -328,26 +306,21 @@
                 source.connect(analyser);
                 pumpAudioFrames();
             })
-            .catch(function () {
-                // No mic stream for visualization — UI falls back to a
-                // gentle decorative animation. Not a fatal problem.
-            });
+            .catch(function () { /* no mic for visualization — UI falls back to decorative animation */ });
     }
 
     function pumpAudioFrames() {
         if (!analyser || !active) return;
         const data = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(data);
-
-        // Down-sample the frequency bins into 12 bars for the UI.
         const bars = 12;
-        const bins = [];
         const chunk = Math.floor(data.length / bars) || 1;
+        const bins = [];
         let levelSum = 0;
         for (let i = 0; i < bars; i++) {
             let sum = 0;
             for (let j = 0; j < chunk; j++) sum += data[i * chunk + j] || 0;
-            const avg = sum / chunk / 255; // 0..1
+            const avg = sum / chunk / 255;
             bins.push(avg);
             levelSum += avg;
         }
@@ -369,9 +342,6 @@
         analyser = null;
     }
 
-    // ============================================
-    // BACKEND 1: NATIVE WEB SPEECH API
-    // ============================================
     function startWebSpeech(langOverride) {
         if (active) return;
 
@@ -385,10 +355,6 @@
             return;
         }
 
-        // A ?testlang=en-US URL parameter overrides the language for quick
-        // diagnostics (e.g. checking whether a device's speech service
-        // works at all in English when Persian silently produces nothing)
-        // without needing to edit and redeploy code each time.
         let urlTestLang = null;
         try { urlTestLang = new URLSearchParams(window.location.search).get('testlang'); } catch (e) {}
 
@@ -396,9 +362,6 @@
         const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognitionImpl();
         recognition.lang = langToUse;
-        // iOS WebKit has long-standing bugs with continuous mode (hangs /
-        // never stops listening) — only enable continuous + auto-restart
-        // on non-iOS platforms.
         recognition.continuous = !ENV.isIOS;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
@@ -408,19 +371,11 @@
             if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = null; }
             armSilenceWatchdog();
             emit('start');
-            // Microphone level metering for the UI — requested only now,
-            // after the recognition engine itself has confirmed it has the
-            // mic. Some older Android/WebView combinations appear to
-            // mis-arbitrate two near-simultaneous mic permission requests
-            // (one implicit inside SpeechRecognition, one explicit from a
-            // separate getUserMedia call), reporting the recognition's own
-            // permission as denied even though the user never saw a second
-            // prompt. Waiting for onstart removes that race entirely.
             attachAudioMeter();
         };
 
         recognition.onresult = function (event) {
-            armSilenceWatchdog(); // we're getting signal — push the timeout back
+            armSilenceWatchdog();
             let interim = '';
             let final = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -437,10 +392,6 @@
         };
 
         recognition.onerror = function (event) {
-            // Some Android speech services are picky about the exact
-            // locale tag — if "fa-IR" is reported as unsupported, silently
-            // retry once with the bare "fa" before giving up on native
-            // recognition entirely (and falling back further, below).
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
                 active = false;
                 clearWatchdogs();
@@ -456,10 +407,6 @@
 
         recognition.onend = function () {
             clearWatchdogs();
-            // Android/Chrome sometimes ends a "continuous" session on its
-            // own (e.g. brief silence) — restart transparently. iOS must
-            // never auto-restart on its own (it can re-trigger permission
-            // prompts and hang).
             if (active && !ENV.isIOS) {
                 try { recognition.start(); return; } catch (e) { /* fall through */ }
             }
@@ -468,11 +415,6 @@
             emit('end');
         };
 
-        // --- Critical for iOS: call start() synchronously, directly from
-        // the user-gesture call stack. Do NOT await getUserMedia or any
-        // other promise before this call — iOS WebKit only honors the
-        // "real user activation" required by SpeechRecognition.start()
-        // when nothing asynchronous has happened first. ---
         try {
             recognition.start();
         } catch (e) {
@@ -480,8 +422,6 @@
             return;
         }
 
-        // Safety net: if onstart never fires (a known silent-hang on some
-        // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
                 if (maybeFallbackToVosk('timeout')) return;
@@ -503,9 +443,9 @@
         if (wasActive) emit('end');
     }
 
-    // ============================================
-    // BACKEND 2: VOSK (offline, on-device — used on iOS)
-    // ============================================
+    // ------------------------------------------------------------
+    // VOSK BACKEND
+    // ------------------------------------------------------------
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
         if (existing) {
@@ -532,30 +472,9 @@
         return voskLibLoadPromise;
     }
 
-    // Fetches the model with real byte-level progress, and — this is the
-    // important part for unstable connections — automatically retries on
-    // a stall or dropped connection by resuming from where it left off via
-    // an HTTP Range request, instead of restarting the whole 53MB from
-    // zero. Falls back to a full restart only if the server doesn't honor
-    // Range requests. A single fixed timeout can't fix "the connection
-    // drops partway through" — this is built specifically for that case.
-    //
-    // Uses XMLHttpRequest rather than fetch()+ReadableStream on purpose:
-    // XHR's `progress` event is a much older, simpler mechanism that
-    // doesn't depend on the Streams API being fully supported — fetch's
-    // streaming response body (`response.body.getReader()`) has a less
-    // consistent track record across Safari versions, which matters here
-    // given everything else we've already run into on iOS specifically.
-    //
-    // responseType is 'arraybuffer', not 'blob' — confirmed via real
-    // on-device testing that this is the more memory-predictable choice
-    // on iOS WebKit. Letting the browser manage Blob materialization
-    // internally during a large streamed response appears less reliable
-    // than collecting raw bytes ourselves and constructing exactly one
-    // Blob at the very end.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
+        const STALL_TIMEOUT_MS = 25000;
         let chunks = [];
         let loaded = 0;
         let total = 0;
@@ -603,8 +522,6 @@
                         chunks.push(new Uint8Array(responseData));
                         loaded += responseData.byteLength;
                     } else {
-                        // Either the first attempt, or the server ignored
-                        // our Range request and sent the whole file again.
                         chunks = [new Uint8Array(responseData)];
                         loaded = responseData.byteLength;
                     }
@@ -617,8 +534,6 @@
                 xhr.send();
             }).catch(function (err) {
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Brief pause before retrying — resumes from `loaded` bytes
-                // via the Range header above, not from scratch.
                 return new Promise(function (resolve) { setTimeout(resolve, 1500); })
                     .then(function () { return attempt(attemptNum + 1); });
             });
@@ -644,17 +559,18 @@
                         try {
                             const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
                             if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal, model still works this session */ });
+                                putPromise.catch(function () { /* quota or unsupported — non-fatal */ });
                             }
-                        } catch (e) { /* synchronous failure — also non-fatal */ }
+                        } catch (e) { /* non-fatal */ }
                         return blob;
                     });
                 });
             }).catch(function () {
-                // Cache API unavailable for some reason — fetch without it.
+                // Cache API unavailable — fetch without it.
                 return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
             });
         }
+
         function onModelProgress(progress) { emit('model-progress', progress); }
 
         const loadChain = ensureVoskLib()
@@ -667,21 +583,13 @@
                     .then(function (model) { releaseBlobUrl(); return model; })
                     .catch(function () {
                         releaseBlobUrl();
-                        // Not verifiable without a live device: some browsers'
-                        // internal Worker may be unable to resolve a blob: URL
-                        // created on the main thread. If creating the model
-                        // from our pre-fetched blob fails, fall back to letting
-                        // the library fetch the plain URL itself directly —
-                        // by now it's likely sitting in the normal browser HTTP
-                        // cache anyway from the fetch we just did.
+                        // Fallback: let the library fetch the plain URL directly
                         return window.Vosk.createModel(VOSK_MODEL_URL);
                     });
             })
             .then(function (model) {
                 voskModel = model;
                 voskFailInfo = null;
-                // Catch errors that occur *after* the initial load too
-                // (e.g. a Worker crash mid-session), not just load failure.
                 model.on('error', function () {
                     emit('error', classifyError('vosk-runtime'));
                 });
@@ -689,10 +597,6 @@
                 return model;
             });
 
-        // The retry logic above already handles ordinary stalls/drops —
-        // this outer cap only exists to eventually give up on something
-        // truly stuck (e.g. eight straight Range-resume cycles still going
-        // nowhere), so it's set generously rather than tuned tightly.
         const timeoutChain = new Promise(function (_, reject) {
             setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
         });
@@ -709,10 +613,7 @@
 
     function startVosk() {
         if (voskActive || voskLoading) return;
-        if (!voskConfigured()) {
-            // Silent — getSupportInfo() already steered the UI toward the
-            // native-API / banner path in this case, so this should not
-            // normally be reachable.
+        if (!voskConfigured() || voskForcedOff()) {
             emit('error', classifyError('vosk-not-configured'));
             return;
         }
@@ -723,22 +624,7 @@
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
             let recognizer;
-            // Bias the decoder toward FoxiMed's actual vocabulary (drug
-            // names, command words, numbers, units) — it can still freely
-            // combine these in whatever order someone speaks them, it's
-            // not limited to exact pre-written phrases.
-            //
-            // OFF BY DEFAULT as of this version: real testing showed it
-            // can force wrong output for anything outside the list rather
-            // than just biasing toward known words — e.g. saying "سلام"
-            // (not in the vocabulary at all) was heard as "صد تا", which
-            // *is* built entirely from two words that ARE in the list
-            // ("صد" and "تا"). That's the constrained grammar forcing a
-            // best-fit substitution instead of recognizing normal speech.
-            // Add ?grammar=1 to the URL to opt back in and experiment —
-            // worth retrying once the vocabulary list covers more of what
-            // people actually say, including casual speech, not just
-            // clinical terms.
+            // Grammar is OFF by default — enable with ?grammar=1 in URL.
             let grammar = null;
             let forceGrammarOn = false;
             try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
@@ -754,7 +640,7 @@
                 recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
             } catch (e) {
                 try {
-                    recognizer = new model.KaldiRecognizer(16000); // retry without grammar
+                    recognizer = new model.KaldiRecognizer(16000);
                 } catch (e2) {
                     voskLoading = false;
                     emit('error', classifyError('vosk-runtime'));
@@ -788,7 +674,6 @@
             }).then(function (stream) {
                 voskLoading = false;
                 if (voskCancelRequested || voskRecognizer !== recognizer) {
-                    // stop() was called before the mic permission resolved
                     try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
                     try { recognizer.remove(); } catch (e) {}
                     if (voskRecognizer === recognizer) voskRecognizer = null;
@@ -798,12 +683,6 @@
                 const AC = window.AudioContext || window.webkitAudioContext;
                 voskAudioCtx = new AC();
                 voskSource = voskAudioCtx.createMediaStreamSource(stream);
-                // ScriptProcessorNode is deprecated but is what vosk-browser's
-                // own documented example uses, and it's still broadly
-                // supported (including current iOS Safari). It must be
-                // connected through to a destination for onaudioprocess to
-                // reliably fire in every browser, hence the (silent, since
-                // echoCancellation is on) connection below.
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
                 voskProcessor.onaudioprocess = function (event) {
                     try { recognizer.acceptWaveform(event.inputBuffer); } catch (e) {}
@@ -838,7 +717,7 @@
         for (let i = 0; i < bars; i++) {
             let sum = 0;
             for (let j = 0; j < chunk; j++) sum += Math.abs(data[i * chunk + j] || 0);
-            const avg = Math.min(1, (sum / chunk) * 4); // crude gain so quiet speech still animates
+            const avg = Math.min(1, (sum / chunk) * 4);
             bins.push(avg);
             levelSum += avg;
         }
@@ -857,14 +736,12 @@
 
     function stopVosk() {
         if (voskLoading) {
-            voskCancelRequested = true; // unwound inside startVosk()'s pending chain
+            voskCancelRequested = true;
             return;
         }
         if (!voskActive && !voskRecognizer) return;
         if (voskSilenceWatchdog) { clearTimeout(voskSilenceWatchdog); voskSilenceWatchdog = null; }
         if (voskRecognizer) {
-            // Ask for whatever was captured so far before tearing down, so a
-            // manual stop mid-sentence doesn't just throw the words away.
             try { voskRecognizer.retrieveFinalResult(); } catch (e) {}
             voskStopTimer = setTimeout(finishVosk, 1200);
         } else {
@@ -884,10 +761,11 @@
         if (wasActive) emit('end');
     }
 
-    // ============================================
+    // ------------------------------------------------------------
     // UNIFIED DISPATCHER
-    // ============================================
+    // ------------------------------------------------------------
     function pickBackend() {
+        if (voskForcedOff()) return 'webspeech';
         return (ENV.isIOS && voskConfigured()) ? 'vosk' : 'webspeech';
     }
 
@@ -898,18 +776,12 @@
     }
 
     function stop() {
-        // Check actual runtime state rather than just the static platform
-        // choice — a session that fell back from webspeech to Vosk mid-
-        // flight (see maybeFallbackToVosk) is now genuinely running Vosk
-        // even on a platform where pickBackend() would normally say
-        // "webspeech", so stopping the wrong one would leave it running.
         if (voskActive || voskLoading) { stopVosk(); return; }
         if (active) { stopWebSpeech(); return; }
         if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 
-    // Stop listening if the app is backgrounded/locked — prevents a
-    // recognition session (and an open mic) from lingering forever.
+    // Stop listening if the app is backgrounded/locked
     document.addEventListener('visibilitychange', function () {
         if (document.hidden && (active || voskActive || voskLoading)) stop();
     });
@@ -919,13 +791,11 @@
             emit('error', classifyError('network'));
             stop();
         }
-        // Note: the Vosk backend deliberately keeps running when offline —
-        // once its model is loaded it needs no network at all.
     });
 
-    // ============================================
+    // ------------------------------------------------------------
     // PUBLIC API
-    // ============================================
+    // ------------------------------------------------------------
     const api = {
         ENV: ENV,
         getSupportInfo: getSupportInfo,
@@ -934,11 +804,6 @@
         isActive: function () { return active || voskActive || voskLoading; },
         on: on,
         openInSafari: function () {
-            // Standalone PWAs on iOS have no tabs/windows of their own, so
-            // opening the current URL via window.open kicks the user out
-            // into a real Safari tab — this is the standard workaround for
-            // APIs (like full SpeechRecognition support) that only behave
-            // correctly outside of "Add to Home Screen" mode.
             try { window.open(window.location.href, '_blank'); }
             catch (e) { window.location.href = window.location.href; }
         }
