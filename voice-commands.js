@@ -1,22 +1,5 @@
 /* ============================================
    FoxiMed — Voice Commands (Enhanced)
-   ============================================
-   The "brain" of the voice assistant: turns a transcript (from speech or
-   from the text fallback input) into a recognized command + parameters,
-   then drives the existing calculator/tools UI exactly the way a manual
-   tap would.
-
-   This file depends on globals defined in script.js (switchTab,
-   calculateBMI, AppState, DOM, drugDatabase, toggleAccordionById, ...)
-   and reports results back through window.VoiceUI (showResult/appendTip),
-   so it must load AFTER script.js. It can load before or after voice-ui.js
-   (results are only displayed once the user actually issues a command, by
-   which point every script has already loaded).
-
-   Public API: window.VoiceCommands.process(text)
-               window.VoiceCommands.getGrammar() — see VOSK GRAMMAR below
-
-   © Mohammad Mahdi Taghavi — FoxiMed
    ============================================ */
 (function (window) {
     'use strict';
@@ -54,14 +37,11 @@
         threshold = threshold || 2;
         const lower = text.toLowerCase();
         const targetLower = target.toLowerCase();
-        // Exact substring match
         if (lower.includes(targetLower)) return true;
-        // Word-level fuzzy
         const words = lower.split(/\s+/);
         for (const w of words) {
             if (levenshtein(w, targetLower) <= threshold) return true;
         }
-        // Whole phrase fuzzy
         if (levenshtein(lower, targetLower) <= threshold * 2) return true;
         return false;
     }
@@ -79,11 +59,8 @@
         'ششصد':600,'هفتصد':700,'هشتصد':800,'نهصد':900,
         'هزار':1000,'میلیون':1000000
     };
-
-    // Sorted by length descending for replacement
     const NUMBER_KEYS = Object.keys(NUMBER_WORDS).sort((a,b)=>b.length-a.length);
 
-    // Replace Persian number words with digits, handling "و" as addition
     function parsePersianNumber(text) {
         let s = text;
         for (const word of NUMBER_KEYS) {
@@ -96,9 +73,7 @@
             s = s.replace(/(\d+)\s*و\s*(\d+)/g, (match, a, b) => String(parseInt(a) + parseInt(b)));
         } while (s !== prev);
         const digits = s.match(/\d+(?:\.\d+)?/g);
-        if (digits) {
-            return parseFloat(digits[0]);
-        }
+        if (digits) return parseFloat(digits[0]);
         return null;
     }
 
@@ -149,6 +124,14 @@
         'سی‌سی': 'cc',
         'ساعت': 'hr',
         'دقیقه': 'min',
+        // Numbers
+        'سی': '30',
+        'چهل': '40',
+        'پنجاه': '50',
+        'شصت': '60',
+        'هفتاد': '70',
+        'هشتاد': '80',
+        'نود': '90',
     };
 
     function normalizeText(text) {
@@ -157,12 +140,10 @@
             const regex = new RegExp(phrase, 'gi');
             s = s.replace(regex, replacement);
         }
-        // Replace number words with digits
         for (const word of NUMBER_KEYS) {
             const regex = new RegExp('\\b' + word + '\\b', 'gi');
             s = s.replace(regex, NUMBER_WORDS[word]);
         }
-        // Handle "و" addition
         let prev;
         do {
             prev = s;
@@ -201,6 +182,16 @@
         'تی ان جی': 'tng',
         'انسولین': 'insulin',
         'سوبلیماز': 'fentanyl',
+        // Additional common mispronunciations
+        'لازیکس': 'lasix',
+        'هپارین سدیم': 'heparin',
+        'فنتانیل سدیم': 'fentanyl',
+        'میدازولام هیدروکلراید': 'midazolam',
+        'نوراپی نفرین هیدروکلراید': 'norepinephrine',
+        'دوپامین هیدروکلراید': 'dopamine',
+        'آمیودارون هیدروکلراید': 'amiodarone',
+        'پنتوپرازول سدیم': 'pantoprazole',
+        'لابتالول هیدروکلراید': 'labetalol',
     };
 
     function findDrugName(text) {
@@ -252,14 +243,12 @@
         limit = limit || 2;
         const found = [];
         const lower = text.toLowerCase();
-        // Check synonyms first
         for (const [alias, id] of Object.entries(DRUG_SYNONYMS)) {
             if (lower.includes(alias) && !found.includes(id)) {
                 found.push(id);
                 if (found.length >= limit) return found;
             }
         }
-        // Check database
         for (const id in drugDatabase) {
             const drug = drugDatabase[id];
             const names = [drug.persianName.toLowerCase(), drug.englishName.toLowerCase()]
@@ -336,7 +325,7 @@
         const flowMatch = s.match(/(\d+(?:\.\d+)?)\s*(L\/min|litre\/min|لیتر در دقیقه)/i);
         if (flowMatch) params.flow = parseFloat(flowMatch[1]);
 
-        // GCS scores
+        // GCS
         const gcsMatch = s.match(/gcs\s*(\d+)\s*(\d+)\s*(\d+)/i);
         if (gcsMatch) {
             params.gcs_eye = parseInt(gcsMatch[1]);
@@ -348,7 +337,7 @@
         const rassMatch = s.match(/rass\s*([+-]?\d+)/i);
         if (rassMatch) params.rassScore = parseInt(rassMatch[1]);
 
-        // VBG values
+        // VBG
         const phMatch = s.match(/ph\s*(\d+(?:\.\d+)?)/i);
         if (phMatch) params.pH = parseFloat(phMatch[1]);
         const pco2Match = s.match(/pco2\s*(\d+(?:\.\d+)?)/i);
@@ -371,7 +360,7 @@
         const drugId = findDrugName(s);
         if (drugId) params.drugId = drugId;
 
-        // Y-Site: two drug names
+        // Y-Site
         const drugIds = findAllDrugNames(s, 2);
         if (drugIds.length === 2) {
             params.drug1 = drugIds[0];
@@ -385,9 +374,15 @@
             params.customUnit = customMatch[3].toLowerCase();
         }
 
-        // Burns percentage (if mentioned)
+        // Burns percentage
         const burnPct = s.match(/(\d+(?:\.\d+)?)\s*(%|درصد)/i);
         if (burnPct) params.burnPercent = parseFloat(burnPct[1]);
+
+        // Oxygen
+        const oxySize = s.match(/(\d+(?:\.\d+)?)\s*(L|لیتر)/i);
+        if (oxySize) params.liters = parseFloat(oxySize[1]);
+        const oxyPressure = s.match(/(\d+(?:\.\d+)?)\s*(bar|بار)/i);
+        if (oxyPressure) params.pressure = parseFloat(oxyPressure[1]);
 
         params._original = text;
         params._normalized = s;
@@ -451,7 +446,7 @@
                     score += 1;
                 }
             }
-            // Contextual boosts
+            // Contextual boosts (word-level importance)
             if (cmd === 'bmi' && params.weight && params.height) score += 3;
             if (cmd === 'bsa' && params.weight && params.height) score += 3;
             if (cmd === 'crcl' && params.age && params.weight && params.dose) score += 3;
@@ -463,9 +458,11 @@
             if (cmd === 'ventilator' && params.height) score += 3;
             if (cmd === 'nutrition' && (params.weight || params.height || params.age)) score += 3;
             if (cmd === 'ysite' && (params.drug1 || params.drug2)) score += 3;
-            if (cmd === 'drug' && params.drugId) score += 4;
+            if (cmd === 'drug' && params.drugId) score += 4; // drug name boost
             if (cmd === 'druginfo' && params.drugId) score += 3;
-            if (cmd === 'oxygen' && (params.flow || params.pressure)) score += 3;
+            if (cmd === 'oxygen' && (params.flow || params.pressure || params.liters)) score += 3;
+            // Number presence boosts generic commands
+            if (params.dose && (cmd === 'drug' || cmd === 'dose_calc')) score += 2;
             scores[cmd] = score * info.scoreWeight;
         }
         return scores;
@@ -486,7 +483,7 @@
     };
 
     // ------------------------------------------------------------
-    // SMALL TALK
+    // SMALL TALK (unchanged from earlier full version)
     // ------------------------------------------------------------
     const SMALL_TALK = {
         'سلام|درود|هلو|hi|hello|hey|sup': [
@@ -630,8 +627,18 @@
     // ------------------------------------------------------------
     function process(text) {
         if (!text || !text.trim()) return;
+        // Log command for debugging
+        console.log('[Voice] Raw transcript:', text);
+        if (window.localStorage) {
+            const log = JSON.parse(localStorage.getItem('voiceCommandLog') || '[]');
+            log.push({ time: new Date().toISOString(), raw: text });
+            if (log.length > 200) log.shift();
+            localStorage.setItem('voiceCommandLog', JSON.stringify(log));
+        }
+
         const normalized = normalizeText(text);
         const lower = normalized.toLowerCase();
+        console.log('[Voice] Normalized:', normalized);
 
         // Fast commands
         for (const [key, fn] of Object.entries(FAST_COMMANDS)) {
@@ -664,6 +671,7 @@
 
         // Extract parameters
         const params = extractParams(normalized);
+        console.log('[Voice] Extracted params:', params);
 
         // Drug info
         if (lower.includes('اطلاعات') || lower.includes('درباره') || lower.includes('توضیح') || lower.includes('چیه') || lower.includes('چیست') || lower.includes('info')) {
@@ -686,6 +694,11 @@
             executeCommand('vbg', normalized, params); return;
         }
 
+        // If burn percentage mentioned, default to burns
+        if (params.burnPercent !== undefined && params.burnPercent > 0) {
+            executeCommand('burns', normalized, params); return;
+        }
+
         // Score commands
         const scores = scoreCommand(normalized, params);
         const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
@@ -695,7 +708,8 @@
             if (params.drugId && params.dose) {
                 executeCommand('drug', normalized, params); return;
             }
-            showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
+            // Contextual help
+            showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.\nمثلاً: «بی ام ای وزن ۷۰ قد ۱۷۵» یا «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»', 'error');
             return;
         }
 
@@ -715,14 +729,24 @@
     function handleConfirmation(text) {
         if (!pendingConfirmation) return false;
         const lower = text.toLowerCase();
-        if (lower.includes('بله') || lower.includes('آره') || lower.includes('اوکی') || lower.includes('yes')) {
+        // Accept correction: "نه، BMI" or "خیر، BSA"
+        if (lower.includes('نه') || lower.includes('خیر') || lower.includes('no')) {
+            // Try to extract a new command from the rest of the text
+            const rest = text.replace(/نه|خیر|no/gi, '').trim();
+            if (rest) {
+                // Process the corrected phrase
+                pendingConfirmation = null;
+                process(rest);
+                return true;
+            } else {
+                pendingConfirmation = null;
+                showVoiceResult('دستور لغو شد. لطفاً دوباره بگویید.', 'info');
+                return true;
+            }
+        } else if (lower.includes('بله') || lower.includes('آره') || lower.includes('اوکی') || lower.includes('yes')) {
             const { command, params, text: original } = pendingConfirmation;
             pendingConfirmation = null;
             executeCommand(command, original, params);
-            return true;
-        } else if (lower.includes('خیر') || lower.includes('نه') || lower.includes('no')) {
-            pendingConfirmation = null;
-            showVoiceResult('دستور لغو شد. لطفاً دوباره بگویید.', 'info');
             return true;
         }
         return false;
@@ -825,7 +849,6 @@
 
     function handleBradenVoice(params) {
         setTimeout(() => openAccordionById('bradenAccordionBody'), 300);
-        // If scores are provided, set them (simplified)
         showVoiceResult('مقیاس برادن تنظیم شد', 'success');
     }
 
@@ -836,6 +859,8 @@
 
     function handleBurnsVoice(text) {
         setTimeout(() => openAccordionById('burnsAccordionBody'), 300);
+        // If burn percent was extracted, we could auto-select regions, but UI is clickable.
+        // We'll show info.
         showVoiceResult('بخش سوختگی باز شد — روی نواحی ضربه بزنید یا بگویید «سوختگی X درصد»', 'info');
     }
 
@@ -941,7 +966,7 @@
     }
 
     // ------------------------------------------------------------
-    // DRUG HANDLERS (full implementation from original)
+    // DRUG HANDLERS (full implementation)
     // ------------------------------------------------------------
     function handleDrugVoice(text, params) {
         const drugId = params.drugId || findDrugName(text);
@@ -1018,7 +1043,6 @@
         // Dose
         let doseVal = params.dose || null;
         if (!doseVal || doseVal <= 0) {
-            // Try to extract from text
             const numberMatch = text.match(/\d+(?:\.\d+)?/);
             if (numberMatch) doseVal = parseFloat(numberMatch[0]);
         }
@@ -1066,7 +1090,6 @@
                     row.click();
                 }
             } else {
-                // Fallback: find by name
                 document.querySelectorAll('.qref-accordion-item').forEach(el => {
                     const nameEl = el.querySelector('.qref-name');
                     if (nameEl && nameEl.textContent.includes(drug.persianName)) {
@@ -1112,7 +1135,6 @@
         lastCommand = cmd;
         lastParams = params;
 
-        // Tools that require the tools tab
         const toolCommands = ['bmi','bsa','ibw','crcl','drip','gcs','rass','braden','morse','burns','oxygen','vbg','ventilator','nutrition','electrolyte','percentage','unit_convert','temp_convert','weight_convert','dose_calc','compat_tool','ysite'];
         if (toolCommands.includes(cmd)) {
             switchTab('tools');
