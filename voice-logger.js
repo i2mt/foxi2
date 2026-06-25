@@ -5,8 +5,8 @@
   'use strict';
 
   // ─── Configuration ──────────────────────────────────────────
-  const WORKER_URL = 'https://your-worker.workers.dev/voice-log';
-  const CORRECTION_URL = 'https://your-worker.workers.dev/correction';
+  const WORKER_URL = 'https://foximed-voice-worker.mohammad-mahdi-ta.workers.dev/voice-log';
+  const CORRECTION_URL = 'https://foximed-voice-worker.mohammad-mahdi-ta.workers.dev/correction';
   const BATCH_SIZE = 20;
   const FLUSH_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
   const MAX_RETRY_DELAY = 60000;
