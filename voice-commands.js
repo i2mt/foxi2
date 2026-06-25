@@ -1,49 +1,103 @@
 /* ============================================
-   FoxiMed — Voice Commands (Refactored)
+   FoxiMed — Voice Commands (Final)
    ============================================
    Intent‑driven, scoring‑based, Persian‑friendly.
+   Full number parser, event‑driven UI, similarity matching.
    ============================================ */
 (function (window) {
     'use strict';
 
     // ──────────────────────────────────────────────
-    // 1. HELPERS
+    // 1. HELPERS – Persian Number Parser
     // ──────────────────────────────────────────────
 
-    // Levenshtein distance for fuzzy drug matching
-    function levenshtein(a, b) {
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
-        const matrix = [];
-        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-        for (let i = 1; i <= b.length; i++) {
-            for (let j = 1; j <= a.length; j++) {
-                const cost = (a[j-1] === b[i-1]) ? 0 : 1;
-                matrix[i][j] = Math.min(
-                    matrix[i-1][j] + 1,
-                    matrix[i][j-1] + 1,
-                    matrix[i-1][j-1] + cost
-                );
+    // Parse a Persian number phrase like "صد و شصت و هشت" → 168
+    // Handles up to thousands.
+    function parsePersianNumber(text) {
+        // Remove extra spaces and normalise connectors
+        const normalized = text.replace(/\s+/g, ' ').trim();
+        // Map of Persian number words to digits
+        const wordToNum = {
+            'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5,
+            'شش': 6, 'هفت': 7, 'هشت': 8, 'نه': 9, 'ده': 10,
+            'یازده': 11, 'دوازده': 12, 'سیزده': 13, 'چهارده': 14, 'پانزده': 15,
+            'شانزده': 16, 'هفده': 17, 'هجده': 18, 'نوزده': 19, 'بیست': 20,
+            'سی': 30, 'چهل': 40, 'پنجاه': 50, 'شصت': 60, 'هفتاد': 70,
+            'هشتاد': 80, 'نود': 90, 'صد': 100, 'دویست': 200, 'سیصد': 300,
+            'چهارصد': 400, 'پانصد': 500, 'ششصد': 600, 'هفتصد': 700,
+            'هشتصد': 800, 'نهصد': 900, 'هزار': 1000
+        };
+
+        // Split into tokens by spaces and "و" (and)
+        const tokens = normalized.split(/\s*و\s*|\s+/);
+        let total = 0;
+        let current = 0;
+        for (const token of tokens) {
+            if (token === '') continue;
+            if (wordToNum.hasOwnProperty(token)) {
+                const val = wordToNum[token];
+                if (val >= 100) {
+                    // Hundreds/thousands: multiply current or add
+                    if (current === 0) {
+                        current = val;
+                    } else {
+                        current *= val;
+                    }
+                } else {
+                    current += val;
+                }
+            } else {
+                // Not a number word – stop parsing (return what we have so far)
+                break;
             }
         }
-        return matrix[b.length][a.length];
+        total += current;
+        return total;
     }
 
-    // Persian number words → digits (longest first)
-    const NUMBER_WORDS = {
-        'یک': '1', 'دو': '2', 'سه': '3', 'چهار': '4', 'پنج': '5',
-        'شش': '6', 'هفت': '7', 'هشت': '8', 'نه': '9', 'ده': '10',
-        'یازده': '11', 'دوازده': '12', 'سیزده': '13', 'چهارده': '14', 'پانزده': '15',
-        'شانزده': '16', 'هفده': '17', 'هجده': '18', 'نوزده': '19', 'بیست': '20',
-        'سی': '30', 'چهل': '40', 'پنجاه': '50', 'شصت': '60', 'هفتاد': '70',
-        'هشتاد': '80', 'نود': '90', 'صد': '100',
-        'دویست': '200', 'سیصد': '300', 'چهارصد': '400', 'پانصد': '500',
-        'ششصد': '600', 'هفتصد': '700', 'هشتصد': '800', 'نهصد': '900', 'هزار': '1000'
-    };
-    const NUMBER_WORD_KEYS = Object.keys(NUMBER_WORDS).sort((a,b) => b.length - a.length);
+    // Extract the first number phrase from text (including compound Persian numbers)
+    function extractNumberPhrase(text) {
+        // Match a sequence of Persian number words separated by spaces and "و"
+        const pattern = /((?:[^\d\s]+?)\s*(?:و\s*)?)+/g;
+        // We'll use a simpler approach: split by spaces and find contiguous number words
+        const words = text.split(/\s+/);
+        let phrase = [];
+        for (const w of words) {
+            if (w === 'و' || w === '') continue;
+            // Check if it's a number word or part of a number word
+            // If it's purely numeric digits, capture it and break
+            if (/^\d+$/.test(w)) {
+                // If we already have a phrase, return the combined number
+                if (phrase.length) {
+                    return parsePersianNumber(phrase.join(' '));
+                }
+                return parseInt(w, 10);
+            }
+            // Check if it's a known number word
+            if (['یک','دو','سه','چهار','پنج','شش','هفت','هشت','نه','ده',
+                'یازده','دوازده','سیزده','چهارده','پانزده','شانزده','هفده','هجده','نوزده',
+                'بیست','سی','چهل','پنجاه','شصت','هفتاد','هشتاد','نود',
+                'صد','دویست','سیصد','چهارصد','پانصد','ششصد','هفتصد','هشتصد','نهصد',
+                'هزار'].includes(w)) {
+                phrase.push(w);
+            } else {
+                // Not a number word – break and parse what we have
+                if (phrase.length) {
+                    return parsePersianNumber(phrase.join(' '));
+                }
+                return null;
+            }
+        }
+        if (phrase.length) {
+            return parsePersianNumber(phrase.join(' '));
+        }
+        return null;
+    }
 
-    // Common misrecognitions → corrected form
+    // ──────────────────────────────────────────────
+    // 2. NORMALIZATION & CORRECTIONS
+    // ──────────────────────────────────────────────
+
     const CORRECTIONS = {
         'بی ام ای': 'بی‌ام‌آی',
         'بی ام آی': 'بی‌ام‌آی',
@@ -77,67 +131,105 @@
         'کراتین': 'کراتینین',
         'بی‌کربنات': 'بی‌کربنات',
         'بیکربنات': 'بی‌کربنات',
+        'تنظیمات برنامه': 'تنظیمات',
+        'باز کردن تنظیمات': 'تنظیمات',
+        'برو به تنظیمات': 'تنظیمات',
+        'رفتن به تنظیمات': 'تنظیمات',
+        'سوختگی پوست': 'سوختگی',
+        'سوختگی بدن': 'سوختگی',
+        'درصد سوختگی': 'سوختگی',
     };
 
     function normalizeTranscript(text) {
         let norm = text;
-
-        // Replace Persian number words with digits
-        for (const word of NUMBER_WORD_KEYS) {
-            const regex = new RegExp('(^|\\s)' + word + '(?=$|\\s)', 'g');
-            norm = norm.replace(regex, (match, prefix) => prefix + NUMBER_WORDS[word]);
-        }
-
-        // Apply corrections
+        // Replace Persian number words with digits (simple ones, but we'll use full parser later)
+        // We'll keep the number word replacement for simple numbers but rely on parser for compound.
+        // For simplicity, we'll just apply corrections and let the parser handle numbers.
         for (const [wrong, correct] of Object.entries(CORRECTIONS)) {
             norm = norm.replace(new RegExp(wrong, 'gi'), correct);
         }
-
-        // Normalize whitespace
         norm = norm.replace(/\s+/g, ' ').trim();
         return norm;
     }
 
     // ──────────────────────────────────────────────
-    // 2. ENTITY EXTRACTION
+    // 3. ENTITY EXTRACTION (improved)
     // ──────────────────────────────────────────────
 
     function extractEntities(text) {
         const params = {};
+        const lower = text.toLowerCase();
 
-        // --- Numbers with units ---
-        const patterns = [
-            { regex: /(\d+(?:\.\d+)?)\s*(kg|کیلوگرم|کیلو)/i, key: 'weight' },
-            { regex: /(\d+(?:\.\d+)?)\s*(cm|سانت(?:ی‌متر)?)/i, key: 'height' },
-            { regex: /(\d+(?:\.\d+)?)\s*(سال|yr)/i, key: 'age' },
-            { regex: /(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i, key: 'dose' },
-            { regex: /(\d+(?:\.\d+)?)\s*(meq|mEq)/i, key: 'meq' },
-            { regex: /(\d+(?:\.\d+)?)\s*(L\/min|لیتر در دقیقه)/i, key: 'flow' },
-            { regex: /(\d+(?:\.\d+)?)\s*(bar|psi|mmHg|cmH2O|kPa)/i, key: 'pressure' },
-            { regex: /(\d+(?:\.\d+)?)\s*(%|درصد)/i, key: 'percentage' },
-            { regex: /(\d+(?:\.\d+)?)\s*(mL|cc|سی‌سی)/i, key: 'volume' },
-            { regex: /(\d+(?:\.\d+)?)\s*(h|ساعت)/i, key: 'time' },
+        // --- Weight: find pattern like "وزن 70", "وزنش 70", "70 کیلو", "70 کیلویی" ---
+        const weightPatterns = [
+            /وزن(?:ش)?\s*(\d+(?:\.\d+)?)/i,
+            /وزن(?:ش)?\s*([^\d]+?)\s*(?:کیلو)?/i, // fallback for Persian number words
+            /(\d+(?:\.\d+)?)\s*کیلو(?:ی)?/i,
+            /(\d+(?:\.\d+)?)\s*kg/i,
         ];
-
-        for (const p of patterns) {
-            const match = text.match(p.regex);
+        for (const pat of weightPatterns) {
+            const match = text.match(pat);
             if (match) {
-                const val = parseFloat(match[1]);
-                if (!isNaN(val) && val > 0) {
-                    params[p.key] = val;
+                let val = match[1];
+                // If it's not a number, try parsing as Persian number phrase
+                if (!/^\d+/.test(val)) {
+                    const parsed = extractNumberPhrase(val);
+                    if (parsed) val = parsed;
+                }
+                const num = parseFloat(val);
+                if (!isNaN(num) && num > 0) {
+                    params.weight = num;
+                    break;
                 }
             }
+        }
+
+        // --- Height: patterns like "قد 168", "قدش 168", "168 سانت" ---
+        const heightPatterns = [
+            /قد(?:ش)?\s*(\d+(?:\.\d+)?)/i,
+            /قد(?:ش)?\s*([^\d]+?)\s*(?:سانت)?/i,
+            /(\d+(?:\.\d+)?)\s*سانت(?:ی)?/i,
+            /(\d+(?:\.\d+)?)\s*cm/i,
+        ];
+        for (const pat of heightPatterns) {
+            const match = text.match(pat);
+            if (match) {
+                let val = match[1];
+                if (!/^\d+/.test(val)) {
+                    const parsed = extractNumberPhrase(val);
+                    if (parsed) val = parsed;
+                }
+                const num = parseFloat(val);
+                if (!isNaN(num) && num > 0) {
+                    params.height = num;
+                    break;
+                }
+            }
+        }
+
+        // --- Age ---
+        const ageMatch = text.match(/(\d+(?:\.\d+)?)\s*(سال|yr)/i);
+        if (ageMatch) {
+            const num = parseFloat(ageMatch[1]);
+            if (!isNaN(num) && num > 0) params.age = num;
+        }
+
+        // --- Dose ---
+        const doseMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i);
+        if (doseMatch) {
+            const num = parseFloat(doseMatch[1]);
+            if (!isNaN(num) && num > 0) params.dose = num;
         }
 
         // --- Sex ---
         if (/مرد|male/i.test(text)) params.sex = 'male';
         else if (/زن|female/i.test(text)) params.sex = 'female';
 
-        // --- Drug name (fuzzy) ---
+        // --- Drug name (fuzzy similarity) ---
         const drugId = findDrugFuzzy(text);
         if (drugId) params.drugId = drugId;
 
-        // --- GCS scores ---
+        // --- GCS ---
         const gcsMatch = text.match(/(\d+)\s*(\d+)\s*(\d+)/);
         if (gcsMatch) {
             const e = parseInt(gcsMatch[1]), v = parseInt(gcsMatch[2]), m = parseInt(gcsMatch[3]);
@@ -148,39 +240,45 @@
             }
         }
 
-        // --- RASS score ---
+        // --- RASS ---
         const rassMatch = text.match(/rass\s*([+-]?\d+)/i) || text.match(/ریچموند\s*([+-]?\d+)/i);
         if (rassMatch) {
             const score = parseInt(rassMatch[1]);
             if (score >= -5 && score <= 4) params.rassScore = score;
         }
 
-        // --- Braden scores (6 numbers) ---
+        // --- Braden (6 numbers) ---
         const bradenMatch = text.match(/برادن\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/i);
         if (bradenMatch) {
             const scores = bradenMatch.slice(1, 7).map(Number);
             if (scores.every(s => s >= 1 && s <= 4)) params.bradenScores = scores;
         }
 
-        // --- Morse scores (6 numbers) ---
+        // --- Morse (6 numbers) ---
         const morseMatch = text.match(/مورس\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/i);
         if (morseMatch) {
             const scores = morseMatch.slice(1, 7).map(Number);
             if (scores.every(s => s >= 0)) params.morseScores = scores;
         }
 
-        // --- Burns mention ---
-        if (/سوختگی|برن|tbsa/i.test(text)) params.burns = true;
+        // --- Burns ---
+        if (/سوختگی|برن|tbsa|قانون نه|پارکلند/i.test(text)) params.burns = true;
 
         // --- Creatinine ---
         const crMatch = text.match(/کراتینین\s*(\d+(?:\.\d+)?)/i);
-        if (crMatch) params.creatinine = parseFloat(crMatch[1]);
+        if (crMatch) {
+            const num = parseFloat(crMatch[1]);
+            if (!isNaN(num) && num > 0) params.creatinine = num;
+        }
 
         // --- Temperature ---
         const tempMatch = text.match(/(\d+(?:\.\d+)?)\s*درجه/i);
-        if (tempMatch) params.temp = parseFloat(tempMatch[1]);
+        if (tempMatch) {
+            const num = parseFloat(tempMatch[1]);
+            if (!isNaN(num) && num > 0) params.temp = num;
+        }
 
-        // --- Electrolyte element ---
+        // --- Electrolyte ---
         const elems = ['سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی‌کربنات', 'sodium', 'potassium', 'calcium', 'magnesium', 'bicarbonate'];
         for (const e of elems) {
             if (text.includes(e)) {
@@ -189,12 +287,49 @@
             }
         }
 
+        // --- Flow, pressure, volume, time (for oxygen, drip) ---
+        const flowMatch = text.match(/(\d+(?:\.\d+)?)\s*(L\/min|لیتر در دقیقه)/i);
+        if (flowMatch) { const n = parseFloat(flowMatch[1]); if (!isNaN(n) && n > 0) params.flow = n; }
+        const pressureMatch = text.match(/(\d+(?:\.\d+)?)\s*(bar|psi|mmHg|cmH2O|kPa)/i);
+        if (pressureMatch) { const n = parseFloat(pressureMatch[1]); if (!isNaN(n) && n > 0) params.pressure = n; }
+        const volumeMatch = text.match(/(\d+(?:\.\d+)?)\s*(mL|cc|سی‌سی)/i);
+        if (volumeMatch) { const n = parseFloat(volumeMatch[1]); if (!isNaN(n) && n > 0) params.volume = n; }
+        const timeMatch = text.match(/(\d+(?:\.\d+)?)\s*(h|ساعت)/i);
+        if (timeMatch) { const n = parseFloat(timeMatch[1]); if (!isNaN(n) && n > 0) params.time = n; }
+
         return params;
     }
 
     // ──────────────────────────────────────────────
-    // 3. FUZZY DRUG MATCHING
+    // 4. FUZZY DRUG MATCHING (similarity ratio)
     // ──────────────────────────────────────────────
+
+    // Levenshtein distance (already defined)
+    function levenshtein(a, b) {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        const matrix = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+                const cost = (a[j-1] === b[i-1]) ? 0 : 1;
+                matrix[i][j] = Math.min(
+                    matrix[i-1][j] + 1,
+                    matrix[i][j-1] + 1,
+                    matrix[i-1][j-1] + cost
+                );
+            }
+        }
+        return matrix[b.length][a.length];
+    }
+
+    // Compute similarity ratio (0..1)
+    function similarityRatio(a, b) {
+        const dist = levenshtein(a, b);
+        const maxLen = Math.max(a.length, b.length);
+        return maxLen === 0 ? 1 : 1 - (dist / maxLen);
+    }
 
     function findDrugFuzzy(text) {
         const normalized = text.toLowerCase();
@@ -206,10 +341,10 @@
                 if (normalized.includes(name.toLowerCase())) return id;
             }
         }
-        // Fallback: token-based Levenshtein (allow threshold 2)
+        // Fallback: token-based similarity ratio > 0.8
         const tokens = normalized.split(/\s+/);
         let bestId = null;
-        let bestDist = Infinity;
+        let bestRatio = 0;
         for (const id in window.drugDatabase) {
             const drug = window.drugDatabase[id];
             const names = [drug.persianName, drug.englishName, ...(drug.alternativeNames || [])];
@@ -217,9 +352,9 @@
                 const nameLower = name.toLowerCase();
                 for (const token of tokens) {
                     if (token.length < 2) continue;
-                    const dist = levenshtein(token, nameLower);
-                    if (dist <= 2 && dist < bestDist) {
-                        bestDist = dist;
+                    const ratio = similarityRatio(token, nameLower);
+                    if (ratio > 0.8 && ratio > bestRatio) {
+                        bestRatio = ratio;
                         bestId = id;
                     }
                 }
@@ -229,24 +364,123 @@
     }
 
     // ──────────────────────────────────────────────
-    // 4. INTENT DEFINITIONS
+    // 5. EVENT-DRIVEN ACCORDION OPENER
     // ──────────────────────────────────────────────
 
-    // Each intent: id, triggers, weight, entityBonus, handler, tab, accordionId
+    function openAccordionAndRun(tabId, accordionId, callback) {
+        // First, switch to the tab and wait for it to become active.
+        // We'll use a MutationObserver on the tab pane.
+        const tabPane = document.getElementById(tabId + 'Tab');
+        if (!tabPane) {
+            // Fallback: switch tab and use setTimeout (last resort)
+            switchTab(tabId);
+            setTimeout(() => {
+                if (accordionId) {
+                    const item = document.getElementById(accordionId);
+                    if (item && !item.classList.contains('open')) {
+                        const body = item.querySelector('.accordion-body');
+                        if (body && body.id) {
+                            toggleAccordionById(body.id);
+                        } else {
+                            // fallback: click header
+                            const header = item.querySelector('.accordion-header');
+                            if (header) header.click();
+                        }
+                    }
+                }
+                if (callback) setTimeout(callback, 200);
+            }, 300);
+            return;
+        }
+
+        // If tab is already active, open accordion and run
+        if (tabPane.classList.contains('active')) {
+            if (accordionId) {
+                const item = document.getElementById(accordionId);
+                if (item && !item.classList.contains('open')) {
+                    const body = item.querySelector('.accordion-body');
+                    if (body && body.id) toggleAccordionById(body.id);
+                    else {
+                        const header = item.querySelector('.accordion-header');
+                        if (header) header.click();
+                    }
+                }
+            }
+            if (callback) setTimeout(callback, 200);
+            return;
+        }
+
+        // Otherwise, switch tab and observe for activation
+        switchTab(tabId);
+        const observer = new MutationObserver(() => {
+            if (tabPane.classList.contains('active')) {
+                observer.disconnect();
+                if (accordionId) {
+                    const item = document.getElementById(accordionId);
+                    if (item && !item.classList.contains('open')) {
+                        const body = item.querySelector('.accordion-body');
+                        if (body && body.id) toggleAccordionById(body.id);
+                        else {
+                            const header = item.querySelector('.accordion-header');
+                            if (header) header.click();
+                        }
+                    }
+                }
+                if (callback) setTimeout(callback, 200);
+            }
+        });
+        observer.observe(tabPane, { attributes: true, attributeFilter: ['class'] });
+        // Safety timeout: if after 2 seconds still not active, force it.
+        setTimeout(() => {
+            observer.disconnect();
+            if (!tabPane.classList.contains('active')) {
+                // Force switch again
+                switchTab(tabId);
+                setTimeout(() => {
+                    if (accordionId) {
+                        const item = document.getElementById(accordionId);
+                        if (item && !item.classList.contains('open')) {
+                            const body = item.querySelector('.accordion-body');
+                            if (body && body.id) toggleAccordionById(body.id);
+                            else {
+                                const header = item.querySelector('.accordion-header');
+                                if (header) header.click();
+                            }
+                        }
+                    }
+                    if (callback) callback();
+                }, 300);
+            }
+        }, 2000);
+    }
+
+    // ──────────────────────────────────────────────
+    // 6. INTENT DEFINITIONS (final weights)
+    // ──────────────────────────────────────────────
+
     const INTENTS = [];
 
     function defineIntent(id, triggers, weight, entityBonus, handler, tab, accordionId) {
         INTENTS.push({ id, triggers, weight, entityBonus, handler, tab, accordionId });
     }
 
-    // Helper to add triggers with normalized form
+    // Helper for triggers
     function t(...triggers) { return triggers; }
 
     // ---- Drug Calculation ----
+    // Base weight lowered; penalty if no drug name found is applied later.
     defineIntent('drug_calc',
         t('دارو', 'دوز', 'انفوزیون', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units'),
-        5,
-        (params) => (params.drugId ? 10 : 0) + (params.dose ? 8 : 0) + (params.weight ? 2 : 0),
+        4,
+        (params) => {
+            let score = 0;
+            if (params.drugId) score += 10;
+            if (params.dose) score += 6;
+            if (params.weight) score += 2;
+            // Penalty if no explicit drug name found (to prevent "قد 168" from matching drug)
+            if (!params.drugId) score -= 5;
+            return score;
+        },
         (params) => { handleDrugVoice(params); },
         'calculator', null
     );
@@ -260,14 +494,12 @@
             const w = params.weight || 0;
             const h = params.height || 0;
             if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('bmiAccordionItem');
+            openAccordionAndRun('tools', 'bmiAccordionItem', () => {
                 document.getElementById('bmiWeight').value = w;
                 document.getElementById('bmiHeight').value = h;
                 calculateBMI();
                 showVoiceResult(`BMI محاسبه شد: ${document.getElementById('bmiResult').textContent || ''}`, 'success');
-            }, 300);
+            });
         },
         'tools', 'bmiAccordionItem'
     );
@@ -281,14 +513,12 @@
             const w = params.weight || 0;
             const h = params.height || 0;
             if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('bsaAccordionItem');
+            openAccordionAndRun('tools', 'bsaAccordionItem', () => {
                 document.getElementById('bsaWeight').value = w;
                 document.getElementById('bsaHeight').value = h;
                 calculateBSA();
                 showVoiceResult('BSA محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'bsaAccordionItem'
     );
@@ -301,19 +531,17 @@
         (params) => {
             const h = params.height || 0;
             if (!h) { showVoiceResult('لطفاً قد را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('ibwAccordionItem');
+            openAccordionAndRun('tools', 'ibwAccordionItem', () => {
                 document.getElementById('ibwHeight').value = h;
                 if (params.sex) document.getElementById('ibwGender').value = params.sex;
                 calculateIBW();
                 showVoiceResult('وزن ایده‌آل محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'ibwAccordionItem'
     );
 
-    // ---- Creatinine Clearance ----
+    // ---- CrCl ----
     defineIntent('crcl',
         t('کلیرانس کراتینین', 'crcl', 'creatinine clearance', 'نارسایی کلیه'),
         14,
@@ -323,16 +551,14 @@
             const w = params.weight || 0;
             const cr = params.creatinine || 0;
             if (!age || !w || !cr) { showVoiceResult('لطفاً سن، وزن و کراتینین را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('crclAccordionItem');
+            openAccordionAndRun('tools', 'crclAccordionItem', () => {
                 document.getElementById('crclAge').value = age;
                 document.getElementById('crclWeight').value = w;
                 document.getElementById('crclValue').value = cr;
                 if (params.sex) document.getElementById('crclGender').value = params.sex;
                 calculateCrCl();
                 showVoiceResult('کلیرانس کراتینین محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'crclAccordionItem'
     );
@@ -346,14 +572,12 @@
             const vol = params.volume || 0;
             const time = params.time || 0;
             if (!vol || !time) { showVoiceResult('لطفاً حجم و زمان را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('dripAccordionItem');
+            openAccordionAndRun('tools', 'dripAccordionItem', () => {
                 document.getElementById('dripVolume').value = vol;
                 document.getElementById('dripTime').value = time;
                 calculateDripRateLive();
                 showVoiceResult('نرخ قطره محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'dripAccordionItem'
     );
@@ -368,14 +592,12 @@
             const v = params.gcs_verbal || 0;
             const m = params.gcs_motor || 0;
             if (!e || !v || !m) { showVoiceResult('لطفاً سه عدد برای GCS وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('gcsAccordionItem');
+            openAccordionAndRun('tools', 'gcsAccordionItem', () => {
                 document.querySelectorAll('.gcs-btn[data-domain="eye"]').forEach(btn => { if (parseInt(btn.dataset.score) === e) btn.click(); });
                 document.querySelectorAll('.gcs-btn[data-domain="verbal"]').forEach(btn => { if (parseInt(btn.dataset.score) === v) btn.click(); });
                 document.querySelectorAll('.gcs-btn[data-domain="motor"]').forEach(btn => { if (parseInt(btn.dataset.score) === m) btn.click(); });
                 showVoiceResult(`GCS محاسبه شد: E${e} V${v} M${m}`, 'success');
-            }, 300);
+            });
         },
         'tools', 'gcsAccordionItem'
     );
@@ -388,12 +610,10 @@
         (params) => {
             const score = params.rassScore;
             if (score === undefined || score < -5 || score > 4) { showVoiceResult('لطفاً عدد RASS را بین -5 تا 4 وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('rassAccordionItem');
+            openAccordionAndRun('tools', 'rassAccordionItem', () => {
                 document.querySelectorAll('.rass-level').forEach(level => { if (parseInt(level.dataset.score) === score) level.click(); });
                 showVoiceResult(`RASS ${score} تنظیم شد`, 'success');
-            }, 300);
+            });
         },
         'tools', 'rassAccordionItem'
     );
@@ -406,15 +626,13 @@
         (params) => {
             const scores = params.bradenScores;
             if (!scores || scores.length !== 6) { showVoiceResult('لطفاً ۶ عدد برای برادن وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('bradenAccordionItem');
+            openAccordionAndRun('tools', 'bradenAccordionItem', () => {
                 const domains = ['sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction'];
                 domains.forEach((d, i) => {
                     document.querySelectorAll(`.gcs-btn[data-braden="${d}"]`).forEach(btn => { if (parseInt(btn.dataset.score) === scores[i]) btn.click(); });
                 });
                 showVoiceResult('مقیاس برادن تنظیم شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'bradenAccordionItem'
     );
@@ -427,32 +645,28 @@
         (params) => {
             const scores = params.morseScores;
             if (!scores || scores.length !== 6) { showVoiceResult('لطفاً ۶ عدد برای مورس وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('morseAccordionItem');
+            openAccordionAndRun('tools', 'morseAccordionItem', () => {
                 const domains = ['fallHistory', 'secDiag', 'aid', 'iv', 'gait', 'mental'];
                 domains.forEach((d, i) => {
                     document.querySelectorAll(`.gcs-btn[data-morse="${d}"]`).forEach(btn => { if (parseInt(btn.dataset.score) === scores[i]) btn.click(); });
                 });
                 showVoiceResult('مقیاس مورس تنظیم شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'morseAccordionItem'
     );
 
     // ---- Burns ----
     defineIntent('burns',
-        t('سوختگی', 'برن', 'tbsa', 'درصد سوختگی', 'قانون نه', 'پارکلند'),
+        t('سوختگی', 'برن', 'tbsa', 'درصد سوختگی', 'قانون نه', 'پارکلند', 'سوختگی پوست', 'سوختگی بدن'),
         16,
         (params) => (params.burns ? 8 : 0),
         (params) => {
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('burnsAccordionItem');
+            openAccordionAndRun('tools', 'burnsAccordionItem', () => {
                 if (/کودک|pediatric/i.test(params._original || '')) setBurnsAge('pediatric');
                 else setBurnsAge('adult');
                 showVoiceResult('بخش سوختگی باز شد — روی نواحی ضربه بزنید', 'info');
-            }, 300);
+            });
         },
         'tools', 'burnsAccordionItem'
     );
@@ -467,15 +681,13 @@
             const pressure = params.pressure || 0;
             const flow = params.flow || 0;
             if (!size || !pressure || !flow) { showVoiceResult('لطفاً حجم کپسول، فشار و جریان را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('oxygenAccordionItem');
+            openAccordionAndRun('tools', 'oxygenAccordionItem', () => {
                 document.getElementById('oxyCylinderSize').value = size;
                 document.getElementById('oxyPressure').value = pressure;
                 document.getElementById('oxyFlow').value = flow;
                 calculateOxygen();
                 showVoiceResult('مدت کپسول اکسیژن محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'oxygenAccordionItem'
     );
@@ -494,15 +706,13 @@
             const pco2 = pco2Match ? parseFloat(pco2Match[1]) : 0;
             const hco3 = hco3Match ? parseFloat(hco3Match[1]) : 0;
             if (!pH || !pco2 || !hco3) { showVoiceResult('لطفاً pH، pCO₂ و HCO₃ را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('vbgAccordionItem');
+            openAccordionAndRun('tools', 'vbgAccordionItem', () => {
                 document.getElementById('vbgPH').value = pH;
                 document.getElementById('vbgPCO2').value = pco2;
                 document.getElementById('vbgHCO3').value = hco3;
                 interpretVBG();
                 showVoiceResult('تفسیر گازهای خون انجام شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'vbgAccordionItem'
     );
@@ -515,16 +725,14 @@
         (params) => {
             const h = params.height || 0;
             if (!h) { showVoiceResult('لطفاً قد بیمار را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('ventilatorAccordionItem');
+            openAccordionAndRun('tools', 'ventilatorAccordionItem', () => {
                 document.getElementById('ventHeight').value = h;
                 if (params.sex) {
                     document.querySelectorAll('#ventGenderBtns .method-btn-compact').forEach(btn => { if (btn.dataset.gender === params.sex) btn.click(); });
                 }
                 calculateVentTV();
                 showVoiceResult('حجم جاری ونتیلاتور محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'ventilatorAccordionItem'
     );
@@ -539,9 +747,7 @@
             const h = params.height || 0;
             const age = params.age || 0;
             if (!w || !h || !age) { showVoiceResult('لطفاً وزن، قد و سن را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('nutritionAccordionItem');
+            openAccordionAndRun('tools', 'nutritionAccordionItem', () => {
                 document.getElementById('nutWeight').value = w;
                 document.getElementById('nutHeight').value = h;
                 document.getElementById('nutAge').value = age;
@@ -554,12 +760,12 @@
                 else if (/ards/i.test(text)) document.getElementById('nutStress').value = '2.0';
                 calculateNutrition();
                 showVoiceResult('نیاز تغذیه‌ای محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'nutritionAccordionItem'
     );
 
-    // ---- Y-Site Compatibility ----
+    // ---- Y-Site ----
     defineIntent('ysite',
         t('سازگاری', 'تداخل', 'y-site', 'مخلوط داروها', 'داروها', 'همزمان'),
         12,
@@ -569,14 +775,12 @@
             const d1 = params.drug1 || ids[0];
             const d2 = params.drug2 || ids[1];
             if (!d1 || !d2 || d1 === d2) { showVoiceResult('لطفاً دو دارو را برای بررسی سازگاری وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('ysiteAccordionItem');
+            openAccordionAndRun('tools', 'ysiteAccordionItem', () => {
                 document.querySelectorAll('#ysiteDrugGrid .ysite-drug-chip').forEach(chip => {
                     if (chip.dataset.id === d1 || chip.dataset.id === d2) chip.click();
                 });
                 showVoiceResult(`سازگاری ${window.drugDatabase[d1]?.persianName || d1} و ${window.drugDatabase[d2]?.persianName || d2} بررسی شد`, 'success');
-            }, 300);
+            });
         },
         'tools', 'ysiteAccordionItem'
     );
@@ -607,7 +811,7 @@
 
     // ---- Settings ----
     defineIntent('settings',
-        t('تنظیمات', 'حالت', 'دارک', 'لایت', 'فونت', 'تم', 'theme'),
+        t('تنظیمات', 'حالت', 'دارک', 'لایت', 'فونت', 'تم', 'theme', 'باز کردن تنظیمات', 'تنظیمات برنامه', 'برو به تنظیمات'),
         20,
         (params) => 0,
         (params) => {
@@ -645,7 +849,7 @@
         null, null
     );
 
-    // ---- Reverse mode ----
+    // ---- Reverse ----
     defineIntent('reverse',
         t('معکوس', 'برعکس', 'وارونه', 'حالت معکوس'),
         9,
@@ -658,7 +862,7 @@
         null, null
     );
 
-    // ---- Clear results ----
+    // ---- Clear ----
     defineIntent('clear',
         t('پاک کن', 'پاک کردن', 'صفر', 'clear', 'reset', 'پاکسازی', 'حذف نتایج'),
         8,
@@ -670,7 +874,7 @@
         null, null
     );
 
-    // ---- Manual calculation ----
+    // ---- Manual calc ----
     defineIntent('manual_calc',
         t('دستی', 'دستي', 'manual', 'custom', 'بدون دارو', 'دلخواه'),
         8,
@@ -701,7 +905,7 @@
         null, null
     );
 
-    // ---- Theme change ----
+    // ---- Theme ----
     defineIntent('theme',
         t('تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'dreamfire', 'شرابی', 'پیش‌فرض', 'هدو'),
         9,
@@ -743,30 +947,30 @@
         null, null
     );
 
-    // ---- Tab switching ----
+    // ---- Tab switching (low weight) ----
     defineIntent('tab_calculator',
         t('ماشین حساب', 'calculator', 'محاسبه'),
-        5,
+        3,
         (params) => 0,
         (params) => { switchTab('calculator'); showVoiceResult('ماشین حساب باز شد', 'success'); },
         'calculator', null
     );
     defineIntent('tab_drugs',
         t('مرجع داروها', 'کتابخانه دارو', 'drug library', 'داروها'),
-        5,
+        3,
         (params) => 0,
         (params) => { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
         'drugs', null
     );
     defineIntent('tab_tools',
         t('ابزارها', 'tools', 'ابزارک‌ها'),
-        5,
+        3,
         (params) => 0,
         (params) => { switchTab('tools'); showVoiceResult('ابزارها باز شد', 'success'); },
         'tools', null
     );
 
-    // ---- Electrolyte converter ----
+    // ---- Converters ----
     defineIntent('electrolyte',
         t('تبدیل الکترولیت', 'الکترولیت', 'meq', 'میلی‌اکی‌والان'),
         9,
@@ -775,19 +979,16 @@
             const elem = params.electrolyte || 'sodium';
             const val = params.meq || params.dose || 0;
             if (!val) { showVoiceResult('مقدار را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('electrolyteAccordionItem');
+            openAccordionAndRun('tools', 'electrolyteAccordionItem', () => {
                 document.getElementById('electrolyteElement').value = elem;
                 document.getElementById('electrolyteMeq').value = val;
                 convertElectrolyteLive('meq');
                 showVoiceResult('تبدیل الکترولیت انجام شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'electrolyteAccordionItem'
     );
 
-    // ---- Percentage converter ----
     defineIntent('percentage',
         t('درصد', 'غلظت درصد', 'percentage solution'),
         8,
@@ -796,19 +997,16 @@
             const pct = params.percentage || 0;
             const vol = params.volume || 100;
             if (!pct) { showVoiceResult('درصد را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('percentageAccordionItem');
+            openAccordionAndRun('tools', 'percentageAccordionItem', () => {
                 document.getElementById('percentageValue').value = pct;
                 document.getElementById('percentageVolume').value = vol;
                 convertPercentageLive();
                 showVoiceResult('غلظت درصد محاسبه شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'percentageAccordionItem'
     );
 
-    // ---- Unit converter ----
     defineIntent('unit_convert',
         t('تبدیل واحد', 'واحد', 'میکروگرم', 'میلی‌گرم', 'گرم'),
         8,
@@ -816,18 +1014,15 @@
         (params) => {
             const val = params.dose || 0;
             if (!val) { showVoiceResult('مقدار را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('unitAccordionItem');
+            openAccordionAndRun('tools', 'unitAccordionItem', () => {
                 document.getElementById('unitFromVal').value = val;
                 convertUnitsLive('from');
                 showVoiceResult('تبدیل واحد انجام شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'unitAccordionItem'
     );
 
-    // ---- Temperature converter ----
     defineIntent('temp_convert',
         t('دما', 'درجه', 'سلسیوس', 'فارنهایت', 'تب'),
         7,
@@ -835,18 +1030,15 @@
         (params) => {
             const t = params.temp || 0;
             if (!t) { showVoiceResult('دما را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('tempAccordionItem');
+            openAccordionAndRun('tools', 'tempAccordionItem', () => {
                 document.getElementById('tempC').value = t;
                 convertTempLive('c');
                 showVoiceResult('تبدیل دما انجام شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'tempAccordionItem'
     );
 
-    // ---- Weight converter ----
     defineIntent('weight_convert',
         t('وزن', 'پوند', 'گرم', 'کیلوگرم'),
         7,
@@ -854,18 +1046,15 @@
         (params) => {
             const w = params.weight || 0;
             if (!w) { showVoiceResult('وزن را وارد کنید', 'error'); return; }
-            switchTab('tools');
-            setTimeout(() => {
-                openAccordionById('weightAccordionItem');
+            openAccordionAndRun('tools', 'weightAccordionItem', () => {
                 document.getElementById('weightKg').value = w;
                 convertWeightLive('kg');
                 showVoiceResult('تبدیل وزن انجام شد', 'success');
-            }, 300);
+            });
         },
         'tools', 'weightAccordionItem'
     );
 
-    // ---- Dose calculator (simple) ----
     defineIntent('dose_calc',
         t('دوز', 'حجم ویال', 'dose calculation', 'vial'),
         8,
@@ -873,9 +1062,9 @@
         (params) => {
             const dose = params.dose || 0;
             if (!dose) { showVoiceResult('دوز مورد نیاز را وارد کنید', 'error'); return; }
+            // No dedicated accordion; just open tools tab and show info
             switchTab('tools');
             setTimeout(() => {
-                // This tool doesn't have a dedicated accordion; we'll just open tools tab
                 showVoiceResult('دوز محاسبه شد (قابلیت کامل در نسخه بعدی)', 'info');
             }, 300);
         },
@@ -883,7 +1072,7 @@
     );
 
     // ──────────────────────────────────────────────
-    // 5. MAIN PROCESSING PIPELINE
+    // 7. MAIN PROCESSING PIPELINE
     // ──────────────────────────────────────────────
 
     function processTranscript(text) {
@@ -892,7 +1081,7 @@
         const params = extractEntities(normalized);
         params._original = original;
 
-        // Compute scores for all intents
+        // Compute scores
         let bestIntent = null;
         let bestScore = -Infinity;
         const scores = {};
@@ -900,20 +1089,19 @@
         for (const intent of INTENTS) {
             let score = intent.weight;
             const lower = normalized.toLowerCase();
+            // Trigger match: each trigger adds +1
             for (const trigger of intent.triggers) {
                 if (lower.includes(trigger.toLowerCase())) {
                     score += 1;
                 }
             }
+            // Entity bonus
             if (intent.entityBonus) {
                 score += intent.entityBonus(params) || 0;
             }
-            // Boost if explicitly mentioned
+            // Boost if explicit mention (e.g., "BMI" as a separate word)
             if (intent.triggers.some(t => lower.includes(t.toLowerCase()))) {
                 score += 2;
-            }
-            if (intent.id === 'drug_calc' && params.drugId) {
-                score += 5;
             }
             scores[intent.id] = score;
             if (score > bestScore) {
@@ -922,7 +1110,7 @@
             }
         }
 
-        // Debug: show scores if debug mode enabled
+        // Debug
         if (window.DEBUG_VOICE) {
             const debugEl = document.getElementById('voiceDebug');
             if (debugEl) {
@@ -947,14 +1135,12 @@
             return;
         }
 
-        // Execute best intent
         if (bestIntent.handler) {
             bestIntent.handler(params);
         } else {
             showVoiceResult('این دستور پشتیبانی نمی‌شود', 'error');
         }
 
-        // Show tip if available
         const tip = TIPS[bestIntent.id];
         if (tip && window.VoiceUI && typeof window.VoiceUI.appendTip === 'function') {
             setTimeout(() => { window.VoiceUI.appendTip(tip); }, 1500);
@@ -962,7 +1148,7 @@
     }
 
     // ──────────────────────────────────────────────
-    // 6. DRUG VOICE HANDLER
+    // 8. DRUG VOICE HANDLER
     // ──────────────────────────────────────────────
 
     function handleDrugVoice(params) {
@@ -1068,8 +1254,9 @@
     }
 
     // ──────────────────────────────────────────────
-    // 7. SMALL TALK (original, kept)
+    // 9. SMALL TALK (kept from original)
     // ──────────────────────────────────────────────
+
     function trySmallTalk(text, lower) {
         const SMALL_TALK = {
             'سلام|درود|هلو|hi|hello|hey|sup': ['سلام! وقت بخیر 🌸 چطور می‌تونم کمکت کنم؟', 'درود بر شما! خوشحالم که اینجایی ✨'],
@@ -1102,17 +1289,42 @@
     }
 
     // ──────────────────────────────────────────────
-    // 8. GRAMMAR BUILDER (for Vosk, unchanged)
+    // 10. HELPERS (show result, find drug names)
     // ──────────────────────────────────────────────
-    function buildVoiceGrammar() {
-        // We'll reuse the existing grammar builder from original
-        // but for simplicity, we return null to let Vosk use its default.
-        return null;
+
+    function showVoiceResult(message, type) {
+        if (window.VoiceUI && typeof window.VoiceUI.showResult === 'function') {
+            window.VoiceUI.showResult(message, type || 'success');
+        }
+    }
+
+    function findAllDrugNames(text, limit) {
+        limit = limit || 2;
+        const lower = text.toLowerCase();
+        const found = [];
+        for (const id in window.drugDatabase) {
+            const drug = window.drugDatabase[id];
+            const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
+            let bestIndex = -1;
+            for (const name of names) {
+                const idx = lower.indexOf(String(name).toLowerCase());
+                if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) bestIndex = idx;
+            }
+            if (bestIndex !== -1) found.push({ id, index: bestIndex });
+        }
+        found.sort((a,b) => a.index - b.index);
+        const ids = [];
+        for (const f of found) {
+            if (!ids.includes(f.id)) ids.push(f.id);
+            if (ids.length >= limit) break;
+        }
+        return ids;
     }
 
     // ──────────────────────────────────────────────
-    // 9. PUBLIC API
+    // 11. TIPS (expanded)
     // ──────────────────────────────────────────────
+
     const TIPS = {
         bmi: '💡 همچنین می‌توانید BSA (سطح بدن) را با گفتن «BSA وزن ۷۰ قد ۱۷۰» محاسبه کنید.',
         bsa: '💡 برای BMI بگویید «BMI وزن ۷۵ قد ۱۷۵».',
@@ -1139,49 +1351,20 @@
         theme: '💡 با «تم فاکس»، «تم اقیانوس» و … تغییر تم دهید.'
     };
 
-    function showVoiceResult(message, type) {
-        if (window.VoiceUI && typeof window.VoiceUI.showResult === 'function') {
-            window.VoiceUI.showResult(message, type || 'success');
-        }
-    }
+    // ──────────────────────────────────────────────
+    // 12. PUBLIC API
+    // ──────────────────────────────────────────────
 
-    // Helper to find two drug names in text (for Y-site)
-    function findAllDrugNames(text, limit) {
-        limit = limit || 2;
-        const lower = text.toLowerCase();
-        const found = [];
-        for (const id in window.drugDatabase) {
-            const drug = window.drugDatabase[id];
-            const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
-            let bestIndex = -1;
-            for (const name of names) {
-                const idx = lower.indexOf(String(name).toLowerCase());
-                if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) bestIndex = idx;
-            }
-            if (bestIndex !== -1) found.push({ id, index: bestIndex });
-        }
-        found.sort((a,b) => a.index - b.index);
-        const ids = [];
-        for (const f of found) {
-            if (!ids.includes(f.id)) ids.push(f.id);
-            if (ids.length >= limit) break;
-        }
-        return ids;
-    }
-
-    // Expose public API
     window.VoiceCommands = {
         process: function(text) {
-            // First check small talk
             const lower = text.toLowerCase();
             if (trySmallTalk(text, lower)) return;
-            // Then run intent engine
             processTranscript(text);
         },
-        getGrammar: buildVoiceGrammar
+        getGrammar: function() { return null; } // Not used; Vosk uses its own.
     };
 
-    // Enable debug mode via URL parameter ?debug=1
+    // Enable debug mode via URL parameter
     try {
         if (new URLSearchParams(window.location.search).get('debug') === '1') {
             window.DEBUG_VOICE = true;
