@@ -1,64 +1,5 @@
 /* ============================================
-   FoxiMed — Voice Engine
-   ============================================
-   Low-level speech capture layer with TWO interchangeable backends:
-
-     1. "webspeech" — the native browser SpeechRecognition API. Used on
-        Android / desktop / macOS Safari, where it's fast and needs no
-        download.
-
-     2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
-        https://github.com/ccoreilly/vosk-browser). Used on iOS, because
-        Apple's WebKit SpeechRecognition implementation is unreliable —
-        especially once the PWA is installed to the Home Screen, where it
-        frequently fails outright. Vosk never touches that API at all, so
-        it works the same whether the app is in a Safari tab or installed.
-
-   Both backends are driven through the exact same public, event-driven
-   API, so neither voice-commands.js nor voice-ui.js need to know which
-   one is active:
-
-       window.VoiceEngine.getSupportInfo()
-       window.VoiceEngine.start()
-       window.VoiceEngine.stop()
-       window.VoiceEngine.isActive()
-       window.VoiceEngine.on(event, handler)
-
-   Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
-                    'model-loading', 'model-ready'
-
-   --- SETUP REQUIRED FOR THE VOSK (iOS) BACKEND ---
-   Set VOSK_MODEL_URL below to your own hosted `.tar.gz` Persian Vosk
-   model. Until that's set, iOS falls back to the native API + the
-   existing "open in Safari / type instead" guidance, so nothing breaks
-   if you deploy before the model is ready.
-
-   WHICH MODEL: use vosk-model-small-fa-0.42 (53MB), not -0.5 (60MB).
-   Despite the lower version number, alphacephei's own published word
-   error rates show 0.42 is the noticeably better-trained generation —
-   roughly 25-45% fewer word errors than 0.5 on their own benchmarks
-   (CV17: 23.4 vs 31.2 / Fleurs: 14.0 vs 26.2) — while also being a
-   smaller download. There's no real reason to use 0.5 instead.
-   (A non-"small" vosk-model-fa-0.42 also exists with even better
-   accuracy, but at 1.6GB it's impractical for a web app — skip it.)
-   Get it from https://alphacephei.com/vosk/models.
-
-   Gotchas worth knowing (verified against the actual vosk-browser v0.0.8
-   source, not just its README, since the README example is slightly
-   out of date):
-     - The model file MUST be `.tar.gz`, not the `.zip` alphacephei.com
-       distributes. Unzip it, rename the folder to exactly `model`, then:
-           tar -czf vosk-model-small-fa-0.42.tar.gz model
-       (the library's virtual filesystem expects the top-level folder to
-       be literally named "model" — keeping the original folder name is
-       a common silent-failure cause).
-     - `new model.KaldiRecognizer(sampleRate)` requires the sample rate
-       argument — the README's own snippet omits it, but the published
-       type definitions and compiled source both require it.
-     - Host the file on the SAME origin as the rest of FoxiMed (e.g. next
-       to index.html) so there's no CORS step to configure at all.
-     - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
-       file at your host so repeat visits don't re-download ~53MB.
+   FoxiMed — Voice Engine (Enhanced)
    ============================================ */
 (function (window) {
     'use strict';
@@ -66,21 +7,12 @@
     // ------------------------------------------------------------
     // CONFIGURATION
     // ------------------------------------------------------------
-    // Mehdi: put your hosted, same-origin .tar.gz model URL here.
-    // Leave empty to keep the current native-API/banner behavior on iOS.
     const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
-    // How long to wait for the model download before giving up. Raise this
-    // further if your users are on consistently slow connections — there's
-    // no real downside to being patient here, it only delays the *failure*
-    // message on a genuinely dead connection, it doesn't block anything
-    // else in the app.
-    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; the retry logic below handles ordinary stalls long before this
+    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
     const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
 
     function voskConfigured() { return !!VOSK_MODEL_URL; }
-
-    // Allow forcing off Vosk via URL param ?novosk=1 (for testing)
     function voskForcedOff() {
         try { return new URLSearchParams(window.location.search).get('novosk') === '1'; } catch (e) { return false; }
     }
@@ -272,7 +204,7 @@
     function maybeFallbackToVosk(errorCode) {
         if (triedVoskFallback) return false;
         if (!voskConfigured() || voskForcedOff()) return false;
-        if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
+        if (errorCode === 'network' && !voskModel) return false;
         const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
         if (!FALLBACK_CODES[errorCode]) return false;
         triedVoskFallback = true;
@@ -306,7 +238,7 @@
                 source.connect(analyser);
                 pumpAudioFrames();
             })
-            .catch(function () { /* no mic for visualization — UI falls back to decorative animation */ });
+            .catch(function () { /* no mic for visualization */ });
     }
 
     function pumpAudioFrames() {
@@ -444,7 +376,7 @@
     }
 
     // ------------------------------------------------------------
-    // VOSK BACKEND
+    // VOSK BACKEND (with N-best alternatives)
     // ------------------------------------------------------------
     function loadScriptOnce(url) {
         const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
@@ -559,14 +491,13 @@
                         try {
                             const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
                             if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal */ });
+                                putPromise.catch(function () { /* quota or unsupported */ });
                             }
                         } catch (e) { /* non-fatal */ }
                         return blob;
                     });
                 });
             }).catch(function () {
-                // Cache API unavailable — fetch without it.
                 return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
             });
         }
@@ -583,7 +514,6 @@
                     .then(function (model) { releaseBlobUrl(); return model; })
                     .catch(function () {
                         releaseBlobUrl();
-                        // Fallback: let the library fetch the plain URL directly
                         return window.Vosk.createModel(VOSK_MODEL_URL);
                     });
             })
@@ -624,7 +554,7 @@
         ensureVoskModel().then(function (model) {
             if (voskCancelRequested) { voskLoading = false; return; }
             let recognizer;
-            // Grammar is OFF by default — enable with ?grammar=1 in URL.
+            // Grammar is OFF by default — enable with ?grammar=1
             let grammar = null;
             let forceGrammarOn = false;
             try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
@@ -647,6 +577,8 @@
                     return;
                 }
             }
+            // Enable word timings and alternatives
+            try { recognizer.setWords(true); } catch (e) {}
             voskRecognizer = recognizer;
 
             recognizer.on('partialresult', function (message) {
@@ -656,13 +588,34 @@
                     emit('interim', partial.trim());
                 }
             });
+
             recognizer.on('result', function (message) {
-                const text = message && message.result && message.result.text;
-                if (text && text.trim()) {
-                    emit('final', text.trim());
+                const result = message && message.result;
+                if (!result) return;
+
+                // Get alternatives (N-best)
+                const alternatives = result.alternatives || [];
+                let bestText = null;
+                let bestConfidence = -1;
+                for (const alt of alternatives) {
+                    if (alt.confidence > bestConfidence) {
+                        bestConfidence = alt.confidence;
+                        bestText = alt.text;
+                    }
+                }
+                // Fallback to 'text' field if alternatives empty
+                if (!bestText && result.text) bestText = result.text;
+
+                if (bestText && bestText.trim()) {
+                    emit('final', bestText.trim());
+                    // Also emit all hypotheses for potential ranking in VoiceCommands
+                    if (alternatives.length > 1) {
+                        emit('hypotheses', alternatives.map(a => ({ text: a.text, confidence: a.confidence })));
+                    }
                 }
                 finishVosk();
             });
+
             recognizer.on('error', function () {
                 emit('error', classifyError('vosk-runtime'));
                 finishVosk();
@@ -781,7 +734,6 @@
         if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 
-    // Stop listening if the app is backgrounded/locked
     document.addEventListener('visibilitychange', function () {
         if (document.hidden && (active || voskActive || voskLoading)) stop();
     });
