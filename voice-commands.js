@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Voice Commands (Robust)
+   FoxiMed — Voice Commands (Balanced Scoring)
    ============================================ */
 (function (window) {
     'use strict';
@@ -37,14 +37,11 @@
         threshold = threshold || 2;
         const lower = text.toLowerCase();
         const targetLower = target.toLowerCase();
-        // Exact substring match
         if (lower.includes(targetLower)) return true;
-        // Word-level fuzzy
         const words = lower.split(/\s+/);
         for (const w of words) {
             if (levenshtein(w, targetLower) <= threshold) return true;
         }
-        // Whole phrase fuzzy
         if (levenshtein(lower, targetLower) <= threshold * 2) return true;
         return false;
     }
@@ -66,7 +63,6 @@
 
     function normalizeText(text) {
         let s = text;
-        // Replace common mishearings (including units)
         const phraseMap = {
             'بی ام ای':'bmi','بی ام آ':'bmi','بی ام آی':'bmi',
             'بی‌ام‌ای':'bmi','بی‌ام‌آ':'bmi','بی‌ام‌آی':'bmi',
@@ -90,24 +86,21 @@
             const regex = new RegExp(phrase, 'gi');
             s = s.replace(regex, replacement);
         }
-        // Replace Persian number words with digits
         for (const word of NUMBER_KEYS) {
             const regex = new RegExp('\\b' + word + '\\b', 'gi');
             s = s.replace(regex, NUMBER_WORDS[word]);
         }
-        // Handle "و" addition (e.g., "دویست و پنجاه" -> "250")
         let prev;
         do {
             prev = s;
             s = s.replace(/(\d+)\s*و\s*(\d+)/g, (match, a, b) => String(parseInt(a) + parseInt(b)));
         } while (s !== prev);
-        // Remove extra spaces
         s = s.replace(/\s+/g, ' ').trim();
         return s;
     }
 
     // ------------------------------------------------------------
-    // DRUG NAME MATCHING (requires whole word match)
+    // DRUG NAME MATCHING (whole word)
     // ------------------------------------------------------------
     const DRUG_SYNONYMS = {
         'لازیس':'lasix','لازیک':'lasix','لازیکس':'lasix','فوروزماید':'lasix',
@@ -126,17 +119,13 @@
 
     function findDrugName(text) {
         const lower = text.toLowerCase();
-        // Check synonyms first (exact substring, but prefer whole word)
         for (const [alias, id] of Object.entries(DRUG_SYNONYMS)) {
-            // Use word boundaries to avoid false positives like "سوختگی" matching "سوبلیماز"
             const regex = new RegExp('\\b' + alias + '\\b', 'i');
             if (regex.test(text)) return id;
         }
         if (typeof drugDatabase === 'undefined' || !drugDatabase) {
-            console.warn('[Voice] drugDatabase not available');
             return null;
         }
-        // Database exact matches with word boundaries
         for (const id in drugDatabase) {
             const drug = drugDatabase[id];
             const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
@@ -145,7 +134,7 @@
                 if (regex.test(text)) return id;
             }
         }
-        // Fuzzy fallback (only if no exact match)
+        // Fuzzy fallback
         const words = text.split(/\s+/);
         let bestId = null;
         let bestScore = Infinity;
@@ -177,8 +166,6 @@
     function findAllDrugNames(text, limit) {
         limit = limit || 2;
         const found = [];
-        const lower = text.toLowerCase();
-        // Use regex with word boundaries
         for (const [alias, id] of Object.entries(DRUG_SYNONYMS)) {
             const regex = new RegExp('\\b' + alias + '\\b', 'i');
             if (regex.test(text) && !found.includes(id)) {
@@ -202,7 +189,7 @@
     }
 
     // ------------------------------------------------------------
-    // PARAMETER EXTRACTION (enhanced)
+    // PARAMETER EXTRACTION
     // ------------------------------------------------------------
     function extractParams(text) {
         const params = {};
@@ -242,14 +229,14 @@
         const ageMatch = s.match(/(\d+(?:\.\d+)?)\s*(yr|سال|age)\b/i);
         if (ageMatch) params.age = parseFloat(ageMatch[1]);
 
-        // Dose: look for number with unit (mg, mcg, g, units)
+        // Dose
         const doseMatch = s.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)\b/i);
         if (doseMatch) {
             params.dose = parseFloat(doseMatch[1]);
             params.doseUnit = doseMatch[2].toLowerCase();
         } else {
-            // If no unit, look for standalone number if drug name or dose keywords are present
-            if (findDrugName(s) || /دوز|مقدار|دارو/.test(s)) {
+            // Fallback: any standalone number if drug name or dose keywords exist
+            if (findDrugName(s) || /دوز|مقدار/.test(s)) {
                 const numMatch = s.match(/(\d+(?:\.\d+)?)/);
                 if (numMatch) params.dose = parseFloat(numMatch[1]);
             }
@@ -267,7 +254,7 @@
         const pressMatch = s.match(/(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa)\b/i);
         if (pressMatch) params.pressure = parseFloat(pressMatch[1]);
 
-        // Flow (oxygen)
+        // Flow
         const flowMatch = s.match(/(\d+(?:\.\d+)?)\s*(L\/min|litre\/min|لیتر در دقیقه)\b/i);
         if (flowMatch) params.flow = parseFloat(flowMatch[1]);
 
@@ -302,7 +289,7 @@
         if (s.includes('male') || s.includes('مرد')) params.gender = 'male';
         else if (s.includes('female') || s.includes('زن')) params.gender = 'female';
 
-        // Drug ID (now using whole-word matching)
+        // Drug ID
         const drugId = findDrugName(s);
         if (drugId) params.drugId = drugId;
 
@@ -324,22 +311,17 @@
         const burnPct = s.match(/(\d+(?:\.\d+)?)\s*(%|درصد)/i);
         if (burnPct) params.burnPercent = parseFloat(burnPct[1]);
 
-        // Oxygen cylinder size (liters)
+        // Oxygen
         const oxySize = s.match(/(\d+(?:\.\d+)?)\s*(L|لیتر)\b/i);
         if (oxySize) params.liters = parseFloat(oxySize[1]);
-        // Also look for standalone number if oxygen-related words present
         if (!params.liters && /oxygen|اکسیژن|کپسول/.test(s)) {
             const num = s.match(/(\d+(?:\.\d+)?)/);
             if (num) params.liters = parseFloat(num[1]);
         }
-
-        // Flow for oxygen (if not already found)
         if (!params.flow) {
             const flow2 = s.match(/(\d+(?:\.\d+)?)\s*(L\/min|لیتر)/i);
             if (flow2) params.flow = parseFloat(flow2[1]);
         }
-
-        // Pressure for oxygen (if not already found)
         if (!params.pressure) {
             const press2 = s.match(/(\d+(?:\.\d+)?)\s*(bar|بار)/i);
             if (press2) params.pressure = parseFloat(press2[1]);
@@ -351,10 +333,9 @@
     }
 
     // ------------------------------------------------------------
-    // COMMAND KEYWORDS (with explicit tool triggers)
+    // COMMAND TRIGGERS (balanced)
     // ------------------------------------------------------------
     const COMMAND_TRIGGERS = {
-        // Navigation
         tab_calculator: ['ماشین حساب', 'calculator', 'محاسبه'],
         tab_drugs: ['مرجع داروها', 'کتابخانه دارو', 'لیست داروها', 'داروخانه', 'drug library'],
         tab_tools: ['ابزارها', 'ابزار', 'tools'],
@@ -364,7 +345,6 @@
         history: ['تاریخچه', 'history', 'سابقه', 'گزارش'],
         reverse: ['معکوس', 'reverse', 'برعکس', 'وارونه'],
 
-        // Tools (high base score)
         bmi: ['bmi', 'بی ام ای', 'بی‌ام‌ای', 'شاخص توده', 'body mass index', 'وزن و قد', 'محاسبه bmi'],
         bsa: ['bsa', 'بی اس ای', 'سطح بدن', 'body surface area', 'mosteller', 'محاسبه bsa'],
         ibw: ['وزن ایده‌آل', 'ideal weight', 'ibw', 'وزن استاندارد', 'وزن ایده ال'],
@@ -380,7 +360,6 @@
         ventilator: ['ventilator', 'ونتیلاتور', 'حجم جاری', 'tidal volume', 'pbw', 'ards', 'تهویه'],
         nutrition: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'نیاز کالری'],
 
-        // Converters
         convert: ['convert', 'تبدیل', 'meq', 'میلی‌اکی‌والان', 'الکترولیت'],
         electrolyte: ['الکترولیت', 'تبدیل الکترولیت', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی‌کربنات'],
         percentage: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی'],
@@ -388,9 +367,8 @@
         temp_convert: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature'],
         weight_convert: ['تبدیل وزن', 'کیلوگرم', 'پوند', 'گرم', 'weight conversion'],
 
-        // Drug-related (only high if drug name present)
-        drug: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی‌لیتر', 'سی‌سی', 'حجم', 'محلول', 'آمپول', 'ویال'],
-        druginfo: ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe'],
+        drug: ['دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی‌لیتر', 'سی‌سی', 'حجم', 'محلول', 'آمپول', 'ویال'],
+        druginfo: ['دارو', 'اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe'],
         dose_calc: ['دوز', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی'],
         compat_tool: ['سازگاری', 'compatibility', 'تداخل دارویی', 'ysite', 'y-site', 'مخلوط'],
         ysite: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'مخلوط', 'همزمان'],
@@ -401,12 +379,13 @@
     };
 
     // ------------------------------------------------------------
-    // SCORING FUNCTION (explicit)
+    // SCORING (balanced)
     // ------------------------------------------------------------
     function scoreCommand(text, params) {
         const lower = text.toLowerCase();
         const scores = {};
 
+        // First pass: basic trigger matches
         for (const [cmd, triggers] of Object.entries(COMMAND_TRIGGERS)) {
             let score = 0;
             for (const trigger of triggers) {
@@ -414,49 +393,65 @@
                     score += 1;
                 }
             }
-
-            // Contextual boosts
-            if (cmd === 'bmi' && params.weight && params.height) score += 3;
-            if (cmd === 'bsa' && params.weight && params.height) score += 3;
-            if (cmd === 'crcl' && params.age && params.weight && params.dose) score += 3;
-            if (cmd === 'drip' && params.volume && params.time) score += 3;
-            if (cmd === 'gcs' && (params.gcs_eye || params.gcs_verbal || params.gcs_motor)) score += 3;
-            if (cmd === 'rass' && params.rassScore !== undefined) score += 3;
-            if (cmd === 'burns' && (text.includes('سوختگی') || params.burnPercent)) score += 3;
-            if (cmd === 'vbg' && (params.pH || params.pco2 || params.hco3)) score += 3;
-            if (cmd === 'ventilator' && params.height) score += 3;
-            if (cmd === 'nutrition' && (params.weight || params.height || params.age)) score += 3;
-            if (cmd === 'ysite' && (params.drug1 || params.drug2)) score += 3;
-            if (cmd === 'oxygen' && (params.flow || params.pressure || params.liters)) score += 3;
-
-            // Drug command: only boost if drug name is present AND dose or drug-related word exists
-            if (cmd === 'drug') {
-                if (params.drugId) score += 2;
-                if (params.dose) score += 2;
-                // If no drug name and no dose, don't let it score high
-                if (!params.drugId && !params.dose) score = 0;
-            }
-            if (cmd === 'druginfo' && params.drugId) score += 3;
-
-            // Give extra boost to explicit tool names so they beat generic "محاسبه"
-            if (['bmi','bsa','ibw','crcl','drip','gcs','rass','braden','morse','burns','oxygen','vbg','ventilator','nutrition','electrolyte','percentage','unit_convert','temp_convert','weight_convert','dose_calc','compat_tool','ysite'].includes(cmd)) {
-                // If the text contains the tool name (normalized), boost
-                const toolWords = COMMAND_TRIGGERS[cmd];
-                for (const tw of toolWords) {
-                    if (lower.includes(tw.toLowerCase())) {
-                        score += 3; // big boost for direct mention
-                        break;
-                    }
-                }
-            }
-
             scores[cmd] = score;
         }
+
+        // Second pass: contextual boosts
+        // Drug command: only boost if drug name is present
+        if (params.drugId) {
+            scores['drug'] = (scores['drug'] || 0) + 4;
+            scores['druginfo'] = (scores['druginfo'] || 0) + 3;
+        }
+
+        // Tool parameter boosts (only add if the command already has some score)
+        if (params.weight && params.height) {
+            if (scores['bmi'] > 0) scores['bmi'] += 3;
+            if (scores['bsa'] > 0) scores['bsa'] += 3;
+        }
+        if (params.age && params.weight && params.dose) {
+            if (scores['crcl'] > 0) scores['crcl'] += 3;
+        }
+        if (params.volume && params.time) {
+            if (scores['drip'] > 0) scores['drip'] += 3;
+        }
+        if (params.gcs_eye || params.gcs_verbal || params.gcs_motor) {
+            if (scores['gcs'] > 0) scores['gcs'] += 3;
+        }
+        if (params.rassScore !== undefined) {
+            if (scores['rass'] > 0) scores['rass'] += 3;
+        }
+        if (params.burnPercent !== undefined) {
+            if (scores['burns'] > 0) scores['burns'] += 3;
+        }
+        if (params.pH && params.pco2 && params.hco3) {
+            if (scores['vbg'] > 0) scores['vbg'] += 3;
+        }
+        if (params.height) {
+            if (scores['ventilator'] > 0) scores['ventilator'] += 3;
+        }
+        if (params.weight || params.height || params.age) {
+            if (scores['nutrition'] > 0) scores['nutrition'] += 3;
+        }
+        if (params.drug1 && params.drug2) {
+            if (scores['ysite'] > 0) scores['ysite'] += 3;
+        }
+        if (params.liters || params.pressure || params.flow) {
+            if (scores['oxygen'] > 0) scores['oxygen'] += 3;
+        }
+
+        // Direct tool name mention boost (if the tool name appears as a word in the text)
+        const toolNames = ['bmi','bsa','ibw','crcl','drip','gcs','rass','braden','morse','burns','oxygen','vbg','ventilator','nutrition'];
+        for (const t of toolNames) {
+            if (scores[t] > 0 && fuzzyMatch(lower, t, 1)) {
+                scores[t] += 2;
+            }
+        }
+
         return scores;
     }
 
     // ------------------------------------------------------------
-    // FAST COMMANDS (unchanged)
+    // FAST COMMANDS
     // ------------------------------------------------------------
     const FAST_COMMANDS = {
         'تاریک': function () {
@@ -572,7 +567,7 @@
                 }
             }
 
-            // Theme shortcuts (fast)
+            // Theme shortcuts
             if (lower.includes('dark mode') || lower.includes('دارک') || lower.includes('تاریک') || lower.includes('حالت شب')) {
                 try {
                     AppState.settings.themeMode = 'dark';
@@ -686,7 +681,7 @@
                     executeCommand('druginfo', normalized, params);
                     return;
                 }
-                // If tool name mentioned but didn't get a high score, try to open the tool anyway
+                // Fallback: try to match a tool name directly
                 for (const [cmd, triggers] of Object.entries(COMMAND_TRIGGERS)) {
                     if (['bmi','bsa','ibw','crcl','drip','gcs','rass','braden','morse','burns','oxygen','vbg','ventilator','nutrition'].includes(cmd)) {
                         for (const trigger of triggers) {
@@ -697,13 +692,13 @@
                         }
                     }
                 }
-                showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.\nمثلاً: «بی ام ای وزن ۷۰ قد ۱۷۵» یا «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»', 'error');
+                showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
                 return;
             }
 
-            // Confirmation if scores are close
+            // Confirmation if scores are very close (within 1 point)
             const second = sorted[1];
-            if (second && (best[1] - second[1]) < 0.5) {
+            if (second && (best[1] - second[1]) <= 1) {
                 pendingConfirmation = { command: best[0], params: params, text: normalized };
                 const cmdName = best[0].replace('_', ' ');
                 showVoiceResult(`آیا منظور شما "${cmdName}" بود؟ بگویید «بله» یا «خیر»`, 'info');
@@ -786,7 +781,7 @@
     }
 
     // ------------------------------------------------------------
-    // TOOL HANDLERS (unchanged but with safeCall)
+    // TOOL HANDLERS (same as before, using safeCall)
     // ------------------------------------------------------------
     function handleBMIVoice(params) {
         setTimeout(() => openAccordionById('bmiAccordionBody'), 300);
@@ -992,14 +987,12 @@
             selectDrug(drugId);
             const drug = drugDatabase[drugId];
 
-            // Method (if mentioned)
             if (params.method) {
                 document.querySelectorAll('.method-btn-compact').forEach(btn => {
                     if (btn.dataset.method === params.method) btn.click();
                 });
             }
 
-            // Volume (if mentioned)
             if (params.volume !== undefined) {
                 const methodKey = AppState.infusionMethod;
                 const volumes = drug.defaultSolutionVolumes[methodKey];
@@ -1016,7 +1009,6 @@
                 }
             }
 
-            // Ampoules
             if (params.ampoules) {
                 AppState.ampouleCount = Math.max(1, params.ampoules);
                 if (typeof updateAmpouleInfo === 'function') updateAmpouleInfo();
@@ -1024,7 +1016,6 @@
                 if (ampDisplay) ampDisplay.textContent = AppState.ampouleCount;
             }
 
-            // Custom amount
             if (params.customAmount !== undefined && params.customUnit) {
                 const isInsulin = drug.id === 'insulin';
                 if (!isInsulin && DOM.customAmountToggleClickRow) DOM.customAmountToggleClickRow.click();
@@ -1034,7 +1025,6 @@
                 }
             }
 
-            // Weight
             const useWeight = (params.weight !== undefined) || text.includes('/kg');
             if (useWeight && DOM.weightCheckbox && DOM.patientWeight) {
                 DOM.weightCheckbox.checked = true;
@@ -1054,10 +1044,8 @@
                 if (DOM.patientWeight) DOM.patientWeight.disabled = true;
             }
 
-            // Dose: try to extract from params, else from raw text
             let doseVal = params.dose || null;
             if (!doseVal || doseVal <= 0) {
-                // Try to extract from raw text directly (before normalization)
                 const rawNum = text.match(/\d+(?:\.\d+)?/);
                 if (rawNum) doseVal = parseFloat(rawNum[0]);
             }
@@ -1067,9 +1055,7 @@
                     DOM.doctorOrder.dataset.numericValue = doseVal;
                 }
             } else {
-                // Don't show error if dose not present; user can enter manually
                 showVoiceResult('دوز مشخص نشد. لطفاً مقدار دوز را وارد کنید.', 'warning');
-                // Still proceed to open calculator but with no dose
             }
 
             if (AppState.currentTab !== 'calculator' && typeof switchTab === 'function') switchTab('calculator');
