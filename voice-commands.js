@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Voice Commands (Robust Dose Extraction)
+   FoxiMed — Voice Commands (Strict Drug Match + Dose Fix)
    ============================================ */
 (function (window) {
     'use strict';
@@ -100,7 +100,7 @@
     }
 
     // ------------------------------------------------------------
-    // DRUG NAME MATCHING (whole word)
+    // DRUG NAME MATCHING (STRICT)
     // ------------------------------------------------------------
     const DRUG_SYNONYMS = {
         'لازیس':'lasix','لازیک':'lasix','لازیکس':'lasix','فوروزماید':'lasix',
@@ -119,6 +119,7 @@
 
     function findDrugName(text) {
         const lower = text.toLowerCase();
+        // 1. Exact match (whole word or substring)
         for (const [alias, id] of Object.entries(DRUG_SYNONYMS)) {
             const regex = new RegExp('\\b' + alias + '\\b', 'i');
             if (regex.test(text)) return id;
@@ -134,16 +135,19 @@
                 if (regex.test(text)) return id;
             }
         }
-        // Fuzzy fallback
+
+        // 2. Strict fuzzy: only allow if edit distance <= 1 (typo)
         const words = text.split(/\s+/);
         let bestId = null;
         let bestScore = Infinity;
-        const threshold = 3;
+        const threshold = 1; // Only 1-character difference allowed
         for (const id in drugDatabase) {
             const drug = drugDatabase[id];
             const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
             for (const name of names) {
                 const nameLower = name.toLowerCase();
+                // Ignore very short names (2 chars or less) to avoid false matches
+                if (nameLower.length < 3) continue;
                 if (nameLower.includes(' ')) {
                     const dist = levenshtein(lower, nameLower);
                     if (dist < bestScore && dist <= threshold) {
@@ -151,7 +155,7 @@
                     }
                 } else {
                     for (const word of words) {
-                        if (!word) continue;
+                        if (!word || word.length < 2) continue;
                         const dist = levenshtein(word.toLowerCase(), nameLower);
                         if (dist < bestScore && dist <= threshold) {
                             bestScore = dist; bestId = id;
@@ -166,6 +170,7 @@
     function findAllDrugNames(text, limit) {
         limit = limit || 2;
         const found = [];
+        // Exact matches first
         for (const [alias, id] of Object.entries(DRUG_SYNONYMS)) {
             const regex = new RegExp('\\b' + alias + '\\b', 'i');
             if (regex.test(text) && !found.includes(id)) {
@@ -185,6 +190,7 @@
                 }
             }
         }
+        // No fuzzy for Y-Site – must be exact
         return found;
     }
 
@@ -193,11 +199,11 @@
     // ------------------------------------------------------------
     function extractParams(text) {
         const params = {};
-        // Keep raw text for number extraction fallback
         const raw = text;
         const s = normalizeText(text);
+        console.log('[Voice] normalizeText output:', s);
 
-        // --- Weight ---
+        // Weight
         const weightPatterns = [
             /(\d+(?:\.\d+)?)\s*kg\b/i,
             /(\d+(?:\.\d+)?)\s*کیلو[^\d]*/i,
@@ -212,7 +218,7 @@
             }
         }
 
-        // --- Height ---
+        // Height
         const heightPatterns = [
             /(\d+(?:\.\d+)?)\s*cm\b/i,
             /(\d+(?:\.\d+)?)\s*سانت[^\d]*/i,
@@ -227,7 +233,7 @@
             }
         }
 
-        // --- Age ---
+        // Age
         const ageMatch = s.match(/(\d+(?:\.\d+)?)\s*(yr|سال|age)\b/i);
         if (ageMatch) params.age = parseFloat(ageMatch[1]);
 
@@ -252,23 +258,31 @@
             }
         }
 
-        // --- Volume ---
+        // If still no dose, try raw text (before normalization)
+        if (!params.dose || params.dose <= 0) {
+            const rawNum = raw.match(/\d+(?:\.\d+)?/);
+            if (rawNum) params.dose = parseFloat(rawNum[0]);
+        }
+
+        console.log('[Voice] Extracted dose:', params.dose);
+
+        // Volume
         const volMatch = s.match(/(\d+(?:\.\d+)?)\s*(ml|mL|cc|سی‌سی)\b/i);
         if (volMatch) params.volume = parseFloat(volMatch[1]);
 
-        // --- Time ---
+        // Time
         const timeMatch = s.match(/(\d+(?:\.\d+)?)\s*(hour|hr|ساعت|h)\b/i);
         if (timeMatch) params.time = parseFloat(timeMatch[1]);
 
-        // --- Pressure ---
+        // Pressure
         const pressMatch = s.match(/(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa)\b/i);
         if (pressMatch) params.pressure = parseFloat(pressMatch[1]);
 
-        // --- Flow ---
+        // Flow
         const flowMatch = s.match(/(\d+(?:\.\d+)?)\s*(L\/min|litre\/min|لیتر در دقیقه)\b/i);
         if (flowMatch) params.flow = parseFloat(flowMatch[1]);
 
-        // --- GCS ---
+        // GCS
         const gcsMatch = s.match(/gcs\s*(\d+)\s*(\d+)\s*(\d+)/i);
         if (gcsMatch) {
             params.gcs_eye = parseInt(gcsMatch[1]);
@@ -276,11 +290,11 @@
             params.gcs_motor = parseInt(gcsMatch[3]);
         }
 
-        // --- RASS ---
+        // RASS
         const rassMatch = s.match(/rass\s*([+-]?\d+)/i);
         if (rassMatch) params.rassScore = parseInt(rassMatch[1]);
 
-        // --- VBG ---
+        // VBG
         const phMatch = s.match(/ph\s*(\d+(?:\.\d+)?)/i);
         if (phMatch) params.pH = parseFloat(phMatch[1]);
         const pco2Match = s.match(/pco2\s*(\d+(?:\.\d+)?)/i);
@@ -288,40 +302,40 @@
         const hco3Match = s.match(/hco3\s*(\d+(?:\.\d+)?)/i);
         if (hco3Match) params.hco3 = parseFloat(hco3Match[1]);
 
-        // --- Electrolyte ---
+        // Electrolyte
         const elecMatch = s.match(/(سدیم|پتاسیم|کلسیم|منیزیم|بی‌کربنات|bicarbonate)/i);
         if (elecMatch) {
             const map = { 'سدیم':'sodium', 'پتاسیم':'potassium', 'کلسیم':'calcium', 'منیزیم':'magnesium', 'بی‌کربنات':'sodium_bicarbonate', 'bicarbonate':'sodium_bicarbonate' };
             params.electrolyte = map[elecMatch[1].toLowerCase()] || null;
         }
 
-        // --- Gender ---
+        // Gender
         if (s.includes('male') || s.includes('مرد')) params.gender = 'male';
         else if (s.includes('female') || s.includes('زن')) params.gender = 'female';
 
-        // --- Drug ID ---
+        // Drug ID (strict)
         const drugId = findDrugName(s);
         if (drugId) params.drugId = drugId;
 
-        // --- Y-Site ---
+        // Y-Site (exact only)
         const drugIds = findAllDrugNames(s, 2);
         if (drugIds.length === 2) {
             params.drug1 = drugIds[0];
             params.drug2 = drugIds[1];
         }
 
-        // --- Custom amount ---
+        // Custom amount
         const customMatch = s.match(/(دلخواه|مقدار)\s*(\d+(?:\.\d+)?)\s*(units|mg|mcg|g)/i);
         if (customMatch) {
             params.customAmount = parseFloat(customMatch[2]);
             params.customUnit = customMatch[3].toLowerCase();
         }
 
-        // --- Burns percentage ---
+        // Burns percentage
         const burnPct = s.match(/(\d+(?:\.\d+)?)\s*(%|درصد)/i);
         if (burnPct) params.burnPercent = parseFloat(burnPct[1]);
 
-        // --- Oxygen ---
+        // Oxygen
         const oxySize = s.match(/(\d+(?:\.\d+)?)\s*(L|لیتر)\b/i);
         if (oxySize) params.liters = parseFloat(oxySize[1]);
         if (!params.liters && /oxygen|اکسیژن|کپسول/.test(s)) {
@@ -343,7 +357,7 @@
     }
 
     // ------------------------------------------------------------
-    // COMMAND TRIGGERS (same as balanced version)
+    // COMMAND TRIGGERS (same as balanced)
     // ------------------------------------------------------------
     const COMMAND_TRIGGERS = {
         tab_calculator: ['ماشین حساب', 'calculator', 'محاسبه'],
@@ -614,6 +628,13 @@
             const params = extractParams(normalized);
             console.log('[Voice] Params:', params);
 
+            // ---- DIRECT SHORTCUTS ----
+            // Force burns if "سوختگی" or "درصد سوختگی" appears (even if drug matched)
+            if (lower.includes('سوختگی') || lower.includes('درصد سوختگی')) {
+                executeCommand('burns', normalized, params);
+                return;
+            }
+
             // Drug info
             if (lower.includes('اطلاعات') || lower.includes('درباره') || lower.includes('توضیح') || lower.includes('چیه') || lower.includes('چیست') || lower.includes('info')) {
                 const drugId = params.drugId || findDrugName(normalized);
@@ -641,12 +662,6 @@
                 return;
             }
 
-            // If burn percentage present, default to burns
-            if (params.burnPercent !== undefined && params.burnPercent > 0) {
-                executeCommand('burns', normalized, params);
-                return;
-            }
-
             // If oxygen parameters present, default to oxygen
             if (params.liters || params.pressure || params.flow) {
                 executeCommand('oxygen', normalized, params);
@@ -665,7 +680,7 @@
                 return;
             }
 
-            // Score commands
+            // ---- Score commands ----
             const scores = scoreCommand(normalized, params);
             console.log('[Voice] Scores:', scores);
             const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
@@ -673,12 +688,10 @@
             console.log('[Voice] Best command:', best);
 
             if (!best || best[1] === 0) {
-                // If drug name and dose present, assume drug calculation
                 if (params.drugId && params.dose) {
                     executeCommand('drug', normalized, params);
                     return;
                 }
-                // If only drug name, assume drug info
                 if (params.drugId) {
                     executeCommand('druginfo', normalized, params);
                     return;
@@ -783,7 +796,7 @@
     }
 
     // ------------------------------------------------------------
-    // TOOL HANDLERS (same as before, using safeCall)
+    // TOOL HANDLERS
     // ------------------------------------------------------------
     function handleBMIVoice(params) {
         setTimeout(() => openAccordionById('bmiAccordionBody'), 300);
@@ -1051,18 +1064,18 @@
                 if (DOM.patientWeight) DOM.patientWeight.disabled = true;
             }
 
-            // ---- Dose (extract again from raw text as fallback) ----
+            // ---- Dose (extract again from raw text) ----
             let doseVal = params.dose || null;
             if (!doseVal || doseVal <= 0) {
-                // Try to extract from raw text (before normalization)
                 const rawNum = text.match(/\d+(?:\.\d+)?/);
                 if (rawNum) doseVal = parseFloat(rawNum[0]);
             }
-            // If still no dose, but we have a drug name and a unit word, maybe the number is before the unit
             if (!doseVal || doseVal <= 0) {
                 const unitMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units|واحد)/i);
                 if (unitMatch) doseVal = parseFloat(unitMatch[1]);
             }
+
+            console.log('[Voice] Final dose to set:', doseVal);
 
             if (doseVal !== null && doseVal > 0) {
                 if (DOM.doctorOrder) {
@@ -1081,6 +1094,12 @@
             } else {
                 if (typeof calculateInfusion === 'function') calculateInfusion();
             }
+            // If dose was set, ensure it's still there after calculation (some functions may reset)
+            if (doseVal && DOM.doctorOrder) {
+                DOM.doctorOrder.value = doseVal;
+                DOM.doctorOrder.dataset.numericValue = doseVal;
+            }
+
             setTimeout(() => {
                 const results = document.getElementById('resultsSection');
                 if (results && results.style.display === 'block') {
