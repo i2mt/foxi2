@@ -269,7 +269,7 @@
         history: { triggers: ['تاریخچه', 'محاسبات قبلی', 'سابقه محاسبات', 'تاریخچه محاسبات', 'history', 'گزارش محاسبات'], scoreWeight: 0.9 },
         reverse: { triggers: ['reverse', 'معکوس', 'برعکس', 'وارونه', 'حالت معکوس'], scoreWeight: 0.9 },
 
-        bmi: { triggers: ['bmi', 'بی ام آی', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
+        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
         bsa: { triggers: ['bsa', 'بی اس ای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
         ibw: { triggers: ['وزن ایده‌آل', 'ideal weight', 'ibw', 'وزن ایده‌ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
         crcl: { triggers: ['crcl', 'creatinine clearance', 'کلیرانس کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
@@ -598,7 +598,23 @@
     // ============================================
     // MAIN ENTRY POINT
     // ============================================
-    function process(text) {
+    
+const VOICE_CORRECTIONS = {
+ 'بی ام ای':'بی ام آی',
+ 'فروزماید':'فوروزماید',
+ 'فروز ماید':'فوروزماید',
+ 'فورزماید':'فوروزماید',
+ 'لازیک':'لازیکس'
+};
+function normalizeVoiceText(text){
+ let out=text||'';
+ Object.keys(VOICE_CORRECTIONS).forEach(k=>{ out=out.replaceAll(k,VOICE_CORRECTIONS[k]);});
+ return out;
+}
+
+function process(text) {
+text = normalizeVoiceText(text);
+
         let normalized = PersianNumbers.toLatin(text);
         normalized = normalized.replace(/[،،]/g, ' ').replace(/\s+/g, ' ').trim();
         const lower = normalized.toLowerCase();
@@ -1300,7 +1316,11 @@
     // SMALL TEXT HELPERS
     // ============================================
     function findDrugName(text) {
-        const lower = text.toLowerCase();
+        const lower = (text||'').toLowerCase();
+        const aliases = {'لازیکس':'فوروزماید','لازیک':'فوروزماید','فروزماید':'فوروزماید','فورزماید':'فوروزماید'};
+        for (const k in aliases){ if(lower.includes(k)){ 
+            for (const id in drugDatabase){ const d=drugDatabase[id]; if((d.persianName||'').includes(aliases[k])) return id; }
+        }}
         for (const id in drugDatabase) {
             const drug = drugDatabase[id];
             const names = [drug.persianName.toLowerCase(), drug.englishName.toLowerCase()].concat(
