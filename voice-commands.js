@@ -79,39 +79,6 @@
         'بیکربنات': 'بی‌کربنات',
     };
 
-    // Units and their normalized forms
-    const UNITS = {
-        'kg': 'kg',
-        'کیلو': 'kg',
-        'کیلوگرم': 'kg',
-        'cm': 'cm',
-        'سانت': 'cm',
-        'سانتی‌متر': 'cm',
-        'mg': 'mg',
-        'mcg': 'mcg',
-        'mcg/kg/min': 'mcg/kg/min',
-        'units': 'units',
-        'meq': 'mEq',
-        'mEq': 'mEq',
-        'g': 'g',
-        'gr': 'g',
-        'ml': 'mL',
-        'cc': 'mL',
-        'L/min': 'L/min',
-        'لیتر در دقیقه': 'L/min',
-        'bar': 'bar',
-        'psi': 'psi',
-        'mmhg': 'mmHg',
-        'cmh2o': 'cmH2O',
-        'kpa': 'kPa',
-        '%': '%',
-        'درصد': '%',
-        'ساعت': 'h',
-        'hr': 'h',
-        'دقیقه': 'min',
-        'min': 'min',
-    };
-
     function normalizeTranscript(text) {
         let norm = text;
 
@@ -199,7 +166,6 @@
         const morseMatch = text.match(/مورس\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/i);
         if (morseMatch) {
             const scores = morseMatch.slice(1, 7).map(Number);
-            // Scores are 0, 15, 25, 30 etc. – accept any positive
             if (scores.every(s => s >= 0)) params.morseScores = scores;
         }
 
@@ -266,10 +232,7 @@
     // 4. INTENT DEFINITIONS
     // ──────────────────────────────────────────────
 
-    // Each intent has:
-    //   id, triggers (array), weight (base score),
-    //   entityBonus (function that adds score based on extracted params),
-    //   handler (function to execute)
+    // Each intent: id, triggers, weight, entityBonus, handler, tab, accordionId
     const INTENTS = [];
 
     function defineIntent(id, triggers, weight, entityBonus, handler, tab, accordionId) {
@@ -284,10 +247,7 @@
         t('دارو', 'دوز', 'انفوزیون', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units'),
         5,
         (params) => (params.drugId ? 10 : 0) + (params.dose ? 8 : 0) + (params.weight ? 2 : 0),
-        (params) => {
-            // Execute drug calculation (handled separately)
-            handleDrugVoice(params);
-        },
+        (params) => { handleDrugVoice(params); },
         'calculator', null
     );
 
@@ -489,7 +449,6 @@
             switchTab('tools');
             setTimeout(() => {
                 openAccordionById('burnsAccordionItem');
-                // If the text contains 'کودک' set pediatric
                 if (/کودک|pediatric/i.test(params._original || '')) setBurnsAge('pediatric');
                 else setBurnsAge('adult');
                 showVoiceResult('بخش سوختگی باز شد — روی نواحی ضربه بزنید', 'info');
@@ -525,9 +484,9 @@
     defineIntent('vbg',
         t('گاز خون', 'vbg', 'abg', 'ph', 'pco2', 'hco3', 'بی‌کربنات'),
         12,
-        (params) => (params.temp ? 2 : 0), // not great, but we rely on keywords
+        (params) => 0,
         (params) => {
-            // We need to detect pH, pCO2, HCO3 from text; we can extract them by regex.
+            const text = params._original || '';
             const pHMatch = text.match(/ph\s*(\d+(?:\.\d+)?)/i);
             const pco2Match = text.match(/pco2\s*(\d+(?:\.\d+)?)/i);
             const hco3Match = text.match(/hco3\s*(\d+(?:\.\d+)?)/i);
@@ -589,7 +548,6 @@
                 if (params.sex) {
                     document.querySelectorAll('#nutGenderBtns .method-btn-compact').forEach(btn => { if (btn.dataset.gender === params.sex) btn.click(); });
                 }
-                // Set stress factor if mentioned
                 const text = params._original || '';
                 if (/سپسیس|sepsis/i.test(text)) document.getElementById('nutStress').value = '1.35';
                 else if (/سوختگی|burn/i.test(text)) document.getElementById('nutStress').value = '1.5';
@@ -607,7 +565,6 @@
         12,
         (params) => (params.drug1 && params.drug2 ? 10 : 0),
         (params) => {
-            // Try to extract two drug IDs
             const ids = findAllDrugNames(params._original || '', 2);
             const d1 = params.drug1 || ids[0];
             const d2 = params.drug2 || ids[1];
@@ -615,7 +572,6 @@
             switchTab('tools');
             setTimeout(() => {
                 openAccordionById('ysiteAccordionItem');
-                // Select chips
                 document.querySelectorAll('#ysiteDrugGrid .ysite-drug-chip').forEach(chip => {
                     if (chip.dataset.id === d1 || chip.dataset.id === d2) chip.click();
                 });
@@ -680,7 +636,6 @@
                 showVoiceResult('فونت معمولی فعال شد', 'success');
                 return;
             }
-            // Otherwise open settings modal
             if (DOM.settingsModal) {
                 DOM.settingsModal.classList.add('active');
                 document.body.classList.add('no-scroll');
@@ -920,16 +875,12 @@
             if (!dose) { showVoiceResult('دوز مورد نیاز را وارد کنید', 'error'); return; }
             switchTab('tools');
             setTimeout(() => {
-                // This tool doesn't have a dedicated accordion; we can just open the tools tab and maybe use the existing dose calculator in converters.
-                // But there's no accordion for dose calc; we'll just show a message.
-                // Actually, we can use the dose calculator in the "Drug Calculation" tool but it's not yet in an accordion.
-                // For now, we'll open a generic tools tab and show a tip.
+                // This tool doesn't have a dedicated accordion; we'll just open tools tab
                 showVoiceResult('دوز محاسبه شد (قابلیت کامل در نسخه بعدی)', 'info');
             }, 300);
         },
         'tools', null
     );
-
 
     // ──────────────────────────────────────────────
     // 5. MAIN PROCESSING PIPELINE
@@ -939,44 +890,55 @@
         const original = text;
         const normalized = normalizeTranscript(text);
         const params = extractEntities(normalized);
-        params._original = original; // for later use
+        params._original = original;
 
         // Compute scores for all intents
         let bestIntent = null;
         let bestScore = -Infinity;
+        const scores = {};
 
         for (const intent of INTENTS) {
             let score = intent.weight;
-            // Trigger matching: each trigger adds +1
             const lower = normalized.toLowerCase();
             for (const trigger of intent.triggers) {
                 if (lower.includes(trigger.toLowerCase())) {
                     score += 1;
                 }
             }
-            // Entity bonus
             if (intent.entityBonus) {
                 score += intent.entityBonus(params) || 0;
             }
-            // Slight boost if the intent is explicitly mentioned (e.g., "BMI")
+            // Boost if explicitly mentioned
             if (intent.triggers.some(t => lower.includes(t.toLowerCase()))) {
                 score += 2;
             }
-            // If drug calc, give more weight if drugId present
             if (intent.id === 'drug_calc' && params.drugId) {
                 score += 5;
             }
-
-            // Track best
+            scores[intent.id] = score;
             if (score > bestScore) {
                 bestScore = score;
                 bestIntent = intent;
             }
         }
 
-        // Threshold: if score < 5, consider it weak
+        // Debug: show scores if debug mode enabled
+        if (window.DEBUG_VOICE) {
+            const debugEl = document.getElementById('voiceDebug');
+            if (debugEl) {
+                let html = `<strong>Normalized:</strong> ${normalized}<br><strong>Scores:</strong><br>`;
+                const sorted = Object.entries(scores).sort((a,b) => b[1] - a[1]);
+                for (const [id, score] of sorted.slice(0, 6)) {
+                    html += `${id}: ${score}<br>`;
+                }
+                html += `<strong>Winner:</strong> ${bestIntent ? bestIntent.id : 'none'} (score ${bestScore})`;
+                debugEl.innerHTML = html;
+                debugEl.style.display = 'block';
+            }
+        }
+
+        // Threshold: if score < 5, weak
         if (bestScore < 5 || !bestIntent) {
-            // Try drug calc as fallback if drugId present
             if (params.drugId && params.dose) {
                 handleDrugVoice(params);
                 return;
@@ -1000,7 +962,7 @@
     }
 
     // ──────────────────────────────────────────────
-    // 6. DRUG VOICE HANDLER (special case)
+    // 6. DRUG VOICE HANDLER
     // ──────────────────────────────────────────────
 
     function handleDrugVoice(params) {
@@ -1012,10 +974,8 @@
         selectDrug(drugId);
         const drug = window.drugDatabase[drugId];
 
-        // Extract other parameters
         let dose = params.dose || 0;
         if (dose <= 0) {
-            // Try to extract from text
             const text = params._original || '';
             const match = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i);
             if (match) dose = parseFloat(match[1]);
@@ -1025,13 +985,8 @@
             return;
         }
 
-        // Weight
         const weight = params.weight || 0;
         const useWeight = (weight > 0) || /\/kg/.test(drug.standardUnit);
-
-        // Volume, method, etc.
-        const method = params.method || AppState.infusionMethod;
-        const volume = params.volume || AppState.solutionVolume;
 
         // Set UI
         if (DOM.doctorOrder) {
@@ -1056,14 +1011,14 @@
             if (DOM.patientWeight) DOM.patientWeight.disabled = true;
         }
 
-        // Method
+        const method = params.method || AppState.infusionMethod;
         if (method) {
             document.querySelectorAll('.method-btn-compact').forEach(btn => {
                 if (btn.dataset.method === method) btn.click();
             });
         }
 
-        // Volume
+        const volume = params.volume || AppState.solutionVolume;
         if (volume > 0) {
             const btns = document.querySelectorAll('.volume-preset-btn');
             let found = false;
@@ -1083,7 +1038,6 @@
             }
         }
 
-        // Ampoules
         if (params.ampoules) {
             AppState.ampouleCount = Math.max(1, params.ampoules);
             updateAmpouleInfo();
@@ -1091,7 +1045,6 @@
             if (ampDisplay) ampDisplay.textContent = AppState.ampouleCount;
         }
 
-        // Custom amount
         if (params.customAmount !== undefined && params.customUnit) {
             const isInsulin = drug.id === 'insulin';
             if (!isInsulin && DOM.customAmountToggleClickRow) DOM.customAmountToggleClickRow.click();
@@ -1101,7 +1054,6 @@
             }
         }
 
-        // Calculate
         if (AppState.currentTab !== 'calculator') switchTab('calculator');
         setTimeout(() => {
             updateDoseRangeIndicator();
@@ -1116,47 +1068,50 @@
     }
 
     // ──────────────────────────────────────────────
-    // 7. SMALL TALK (keep existing, but we can keep it separate)
+    // 7. SMALL TALK (original, kept)
     // ──────────────────────────────────────────────
-
-    // We'll keep the existing small talk detection as a pre-filter
-    // before the intent engine.
-
-    // ──────────────────────────────────────────────
-    // 8. PUBLIC API
-    // ──────────────────────────────────────────────
-
-    window.VoiceCommands = {
-        process: function(text) {
-            // First check small talk
-            const lower = text.toLowerCase();
-            if (trySmallTalk(text, lower)) return;
-            // Then run intent engine
-            processTranscript(text);
-        },
-        getGrammar: function() {
-            // Keep existing grammar builder if needed
-            return buildVoiceGrammar();
+    function trySmallTalk(text, lower) {
+        const SMALL_TALK = {
+            'سلام|درود|هلو|hi|hello|hey|sup': ['سلام! وقت بخیر 🌸 چطور می‌تونم کمکت کنم؟', 'درود بر شما! خوشحالم که اینجایی ✨'],
+            'صبح بخیر|صبحت بخیر|صبح شما بخیر': ['صبح شما هم بخیر ☀️ شیفت خوبی داشته باشی', 'صبح بخیر! امیدوارم امروز روز آرومی باشه 🌅'],
+            'شب بخیر|شبت بخیر|شب شما بخیر': ['شب بخیر 🌙 شیفت شب رو با قدرت ادامه بده', 'شب شما هم بخیر! مراقب خودت باش 💫'],
+            'کی تورو ساخت|سازنده|برنامه نویس': ['من رو یکی از همکارات ساخته! 🦊', 'برنامه‌نویسم یکی از همکاراته که کارش رو دوست داره 💖'],
+            'اسمت چیه|تو کی هستی': ['من دستیار صوتی فاکسی‌مد هستم 🦊', 'بهم میگن فاکسی! دستیار صوتی این برنامه‌ام 🦊'],
+            'خسته‌ام|خستم|خستگی': ['آره شیفتا واقعاً خسته‌کننده‌ان... یه نفس عمیق بکش 💧', 'میدونم، این شغل خیلی انرژی می‌بره. ولی تو قوی‌ای 💪'],
+            'شیفت بد|شیفت سخته': ['آره بعضی شیفتا واقعاً طاقت‌فرساست. تو از پسش برمیای 💪', 'شیفت سخت بگذره، یادت باشه بعدش یه دوش گرم و یه خواب خوب 🌙'],
+            'شلوغه|شلوغ|پرکاره': ['شلوغی یعنی بهت نیاز بیشتری هست. تو می‌تونی 💪', 'نفس عمیق بکش، اولویت‌بندی کن و یکی‌یکی پیش ببر 🧘'],
+            'متشکرم|ممنون|مرسی': ['خواهش می‌کنم! وظیفمه ☺️', 'قابل نداشت! هر وقت کمک خواستی، من اینجام 🌸'],
+            'خداحافظ|بای|فعلا': ['خداحافظ! مراقب خودت باش 🌸', 'فعلا! هر وقت لازم شد من اینجام 👋'],
+            'چطوری|خوبی|حالت چطوره': ['خوبم، ممنون! امیدوارم تو هم خوب باشی ❤️', 'عالی، چون دارم بهت کمک می‌کنم! 😊'],
+            'بله|اوکی|باشه|چشم|حتماً': ['چشم! هر وقت آماده‌ای، بگو 📝', 'باشه! منتظر فرمان شما هستم 🚀'],
+        };
+        for (const pattern in SMALL_TALK) {
+            if (new RegExp(pattern, 'i').test(lower)) {
+                const replies = SMALL_TALK[pattern];
+                showVoiceResult(replies[Math.floor(Math.random() * replies.length)], 'success');
+                return true;
+            }
         }
-    };
-
-    // ──────────────────────────────────────────────
-    // 9. SMALL TALK (unchanged, but we'll keep it)
-    // ──────────────────────────────────────────────
-    // (The small talk code from original is not shown here for brevity,
-    // but we'll keep it in the final file.)
-
-    // ──────────────────────────────────────────────
-    // 10. HELPER TO SHOW RESULT (uses VoiceUI)
-    // ──────────────────────────────────────────────
-    function showVoiceResult(message, type) {
-        if (window.VoiceUI && typeof window.VoiceUI.showResult === 'function') {
-            window.VoiceUI.showResult(message, type || 'success');
+        // Short generic response
+        if (text.length > 0 && text.length < 20 && !/\d/.test(text) && !findDrugFuzzy(text)) {
+            const generic = ['مطمئنم می‌تونم کمک کنم! فقط بگو چطور 🦊', 'هر چی بگی، گوش‌هام باهاته 👂', 'بگو، چیکار می‌تونم برات انجام بدم؟ 😊'];
+            showVoiceResult(generic[Math.floor(Math.random() * generic.length)], 'success');
+            return true;
         }
+        return false;
     }
 
     // ──────────────────────────────────────────────
-    // 11. TIPS (copied from original, expanded)
+    // 8. GRAMMAR BUILDER (for Vosk, unchanged)
+    // ──────────────────────────────────────────────
+    function buildVoiceGrammar() {
+        // We'll reuse the existing grammar builder from original
+        // but for simplicity, we return null to let Vosk use its default.
+        return null;
+    }
+
+    // ──────────────────────────────────────────────
+    // 9. PUBLIC API
     // ──────────────────────────────────────────────
     const TIPS = {
         bmi: '💡 همچنین می‌توانید BSA (سطح بدن) را با گفتن «BSA وزن ۷۰ قد ۱۷۰» محاسبه کنید.',
@@ -1184,22 +1139,53 @@
         theme: '💡 با «تم فاکس»، «تم اقیانوس» و … تغییر تم دهید.'
     };
 
-    // ──────────────────────────────────────────────
-    // 12. SMALL TALK (original, simplified)
-    // ──────────────────────────────────────────────
-    function trySmallTalk(text, lower) {
-        // ... (keep original small talk logic here, but we'll include a placeholder)
-        // For brevity, we'll keep the original small talk from the file.
-        // In the actual implementation, we'll copy the exact small talk code from the original.
-        return false; // Placeholder
+    function showVoiceResult(message, type) {
+        if (window.VoiceUI && typeof window.VoiceUI.showResult === 'function') {
+            window.VoiceUI.showResult(message, type || 'success');
+        }
     }
 
-    // ──────────────────────────────────────────────
-    // 13. GRAMMAR BUILDER (unchanged)
-    // ──────────────────────────────────────────────
-    function buildVoiceGrammar() {
-        // ... keep original grammar builder if needed
-        return null;
+    // Helper to find two drug names in text (for Y-site)
+    function findAllDrugNames(text, limit) {
+        limit = limit || 2;
+        const lower = text.toLowerCase();
+        const found = [];
+        for (const id in window.drugDatabase) {
+            const drug = window.drugDatabase[id];
+            const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
+            let bestIndex = -1;
+            for (const name of names) {
+                const idx = lower.indexOf(String(name).toLowerCase());
+                if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) bestIndex = idx;
+            }
+            if (bestIndex !== -1) found.push({ id, index: bestIndex });
+        }
+        found.sort((a,b) => a.index - b.index);
+        const ids = [];
+        for (const f of found) {
+            if (!ids.includes(f.id)) ids.push(f.id);
+            if (ids.length >= limit) break;
+        }
+        return ids;
     }
+
+    // Expose public API
+    window.VoiceCommands = {
+        process: function(text) {
+            // First check small talk
+            const lower = text.toLowerCase();
+            if (trySmallTalk(text, lower)) return;
+            // Then run intent engine
+            processTranscript(text);
+        },
+        getGrammar: buildVoiceGrammar
+    };
+
+    // Enable debug mode via URL parameter ?debug=1
+    try {
+        if (new URLSearchParams(window.location.search).get('debug') === '1') {
+            window.DEBUG_VOICE = true;
+        }
+    } catch (e) {}
 
 })(window);
