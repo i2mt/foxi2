@@ -62,7 +62,7 @@
         potassium: ['potassium', 'پتاسیم'],
         calcium: ['calcium', 'کلسیم'],
         magnesium: ['magnesium', 'منیزیم'],
-        sodium_bicarbonate: ['bicarbonate', 'sodium bicarbonate', 'بی کربنات', 'بی‌کربنات', 'بیکربنات']
+        sodium_bicarbonate: ['bicarbonate', 'sodium bicarbonate', 'بی کربنات', 'بیکربنات']
     };
 
     function matchElectrolyte(text) {
@@ -250,8 +250,8 @@
         }
 
         const heightPatterns = [
-            /(?:قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی‌متر|سانت)?/i,
-            /(\d+(?:\.\d+)?)\s*(?:cm|سانتی‌متر|سانت)(?:\s*قد)?/i,
+            /(?:قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)?/i,
+            /(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)(?:\s*قد)?/i,
             /height\s*(\d+(?:\.\d+)?)\s*(?:cm)?/i
         ];
         for (let i = 0; i < heightPatterns.length; i++) {
@@ -282,9 +282,9 @@
             { regex: /(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa|بار)/i, key: 'pressure' },
             { regex: /(\d+(?:\.\d+)?)\s*(L|litre|لیتر)/i, key: 'liters' },
             { regex: /(\d+(?:\.\d+)?)\s*(%|percent|درصد)/i, key: 'percent' },
-            { regex: /(?:ph|پی اچ|پی‌اچ)\s*(\d+(?:\.\d+)?)/i, key: 'pH' },
-            { regex: /(?:pco2|pco 2|پی سی او دو|پی‌سی‌اُدو)\s*(\d+(?:\.\d+)?)/i, key: 'pco2' },
-            { regex: /(?:hco3|hco 3|بی کربنات|بی‌کربنات|اچ سی او سه)\s*(\d+(?:\.\d+)?)/i, key: 'hco3' },
+            { regex: /(?:ph|پی اچ)\s*(\d+(?:\.\d+)?)/i, key: 'pH' },
+            { regex: /(?:pco2|pco 2|پی سی او دو|پی سی اُدو)\s*(\d+(?:\.\d+)?)/i, key: 'pco2' },
+            { regex: /(?:hco3|hco 3|بی کربنات|اچ سی او سه)\s*(\d+(?:\.\d+)?)/i, key: 'hco3' },
             { regex: /(?:be|بیس اکسس|بی ای)\s*([+-]?\d+(?:\.\d+)?)/i, key: 'be' },
             { regex: /(\d+(?:\.\d+)?)\s*(eye|چشمی)\s*(\d+)/i, key: 'gcs_eye' },
             { regex: /(\d+(?:\.\d+)?)\s*(verbal|کلامی)\s*(\d+)/i, key: 'gcs_verbal' },
@@ -366,45 +366,45 @@
     // COMMAND KEYWORDS + SCORING
     // ============================================
     const COMMAND_KEYWORDS = {
-        tab_calculator: { triggers: ['ماشین حساب', 'calculator tab', 'go to calculator', 'ماشین‌حساب'], scoreWeight: 0.7 },
+        tab_calculator: { triggers: ['ماشین حساب', 'calculator tab', 'go to calculator', 'ماشین حساب'], scoreWeight: 0.7 },
         tab_drugs: { triggers: ['مرجع داروها', 'کتابخانه دارو', 'لیست داروها', 'داروخانه', 'drug library', 'drugs tab', 'رفتن به داروها'], scoreWeight: 0.7 },
-        tab_tools: { triggers: ['ابزارها', 'تب ابزار', 'ابزارهای بالینی', 'tools tab', 'رفتن به ابزارها', 'ابزارک‌ها'], scoreWeight: 0.7 },
+        tab_tools: { triggers: ['ابزارها', 'تب ابزار', 'ابزارهای بالینی', 'tools tab', 'رفتن به ابزارها', 'ابزارک ها'], scoreWeight: 0.7 },
 
         clear: { triggers: ['پاک کن', 'پاک کردن', 'صفر', 'clear results', 'reset', 'پاکسازی', 'حذف نتایج'], scoreWeight: 0.8 },
         manual_calc: { triggers: [' دستی', 'دستی', 'manual calculation', 'custom calculation', ' بدون دارو', ' دلخواه'], scoreWeight: 0.9 },
         history: { triggers: ['تاریخچه', 'محاسبات قبلی', 'سابقه محاسبات', 'تاریخچه محاسبات', 'history', 'گزارش محاسبات'], scoreWeight: 0.9 },
         reverse: { triggers: ['reverse', 'معکوس', 'برعکس', 'وارونه', 'حالت معکوس'], scoreWeight: 0.9 },
 
-        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بی‌ام‌آی', 'بی‌ام‌ای', 'بیامای', 'بی امای', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
-        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بی‌اس‌ای', 'بیاسای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
-        ibw: { triggers: ['وزن ایده‌آل', 'ideal weight', 'ibw', 'وزن ایده‌ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
+        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
+        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
+        ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
         crcl: { triggers: ['crcl', 'creatinine clearance', 'کلیرانس کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
         drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'ساعت', 'حجم', 'زمان', 'ست', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
-        gcs: { triggers: ['gcs', 'جی سی اس', 'جی‌سی‌اس', 'جیسیاس', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
-        rass: { triggers: ['rass', 'آر اس اس', 'آر‌اس‌اس', 'آراس‌اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام‌بخشی', 'آژیتیشن', 'آرام', 'بی‌قرار', 'مقیاس آرام‌بخشی'], scoreWeight: 0.8 },
+        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
+        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'آرام', 'بی قرار', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
         braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر'], scoreWeight: 0.8 },
         morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط'], scoreWeight: 0.8 },
         burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
         oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'flow', 'فشار', 'pressure', 'duration', 'مدت', 'جریان', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
-        vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی‌کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
+        vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
         ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'دستگاه تنفس'], scoreWeight: 0.8 },
         nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'تغذیه انترال'], scoreWeight: 0.8 },
 
-        convert: { triggers: ['convert', 'تبدیل', 'meq', 'to', 'به', 'میلی‌اکی‌والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
-        electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی‌کربنات', 'electrolyte'], scoreWeight: 0.9 },
+        convert: { triggers: ['convert', 'تبدیل', 'meq', 'to', 'به', 'میلی اکی والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
+        electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی کربنات', 'electrolyte'], scoreWeight: 0.9 },
         percentage: { triggers: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی', 'درصد دارو'], scoreWeight: 0.9 },
-        unit_convert: { triggers: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی‌گرم', 'گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
+        unit_convert: { triggers: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی گرم', 'گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
         temp_convert: { triggers: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature', 'دمای بدن', 'تب'], scoreWeight: 0.9 },
         weight_convert: { triggers: ['تبدیل وزن', 'کیلوگرم', 'پوند', 'گرم', 'weight conversion', 'وزن به پوند', 'وزن به کیلو'], scoreWeight: 0.9 },
 
-        drug: { triggers: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی‌لیتر', 'سی‌سی', 'حجم', 'محلول', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
+        drug: { triggers: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی لیتر', 'سی سی', 'حجم', 'محلول', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
         druginfo: { triggers: ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe', 'معرفی', 'راهنما دارو'], scoreWeight: 0.9 },
         dose_calc: { triggers: [' دوز', 'دوز دارو', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی', 'مقدار مصرف دارو'], scoreWeight: 0.9 },
         compat_tool: { triggers: ['سازگاری دارو', 'compatibility', 'تداخل دارویی', 'داروها', 'drug compatibility', 'سازگاری y-site', 'y-site', 'مخلوط داروها'], scoreWeight: 0.9 },
         ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'دارو', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
 
         settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
-        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش‌فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
+        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
 
         help: { triggers: ['help', 'راهنما', 'کمک', 'راهنمایی', 'نمونه', 'example', 'چه کارایی', 'چطور کار کنم', 'راهنمای صوتی', 'چه کار کنم'], scoreWeight: 0.6 }
     };
@@ -474,10 +474,10 @@
     }
 
     const PERSIAN_UNIT_WORDS = {
-        'میلی گرم': 'mg', 'میلی‌گرم': 'mg',
+        'میلی گرم': 'mg',
         'میکرو گرم': 'mcg', 'میکروگرم': 'mcg',
-        'میلی لیتر': 'ml', 'میلی‌لیتر': 'ml',
-        'سی سی': 'cc', 'سی‌سی': 'cc',
+        'میلی لیتر': 'ml',
+        'سی سی': 'cc',
         'گرم': 'g', 'واحد': 'units'
     };
 
@@ -502,7 +502,7 @@
         });
         // "کیلوئه"/"سانتیمتره"/"سانته" -> bare unit word
         text = text.replace(/کیلوئه/g, 'کیلو');
-        text = text.replace(/سانتی‌?متره|سانتیمتره|سانته/g, 'سانت');
+        text = text.replace(/سانتی\s?متره|سانته/g, 'سانت');
         text = text.replace(/سالشه|ساله/g, 'سال');
         // Any known number word with the "-ه" contraction (شصته -> شصت),
         // skipping single-letter-result words like "سه"/"نه" which already
@@ -620,7 +620,7 @@
             'شب بخیر! اگه خواب آلودی، یه استراحت کوتاه بگیر اگه میشه 😴'
         ],
         // identity / about the app
-        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس|برنامه‌نویس': [
+        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس': [
             'من رو یکی از همکارات ساخته! 🦊 ولی تویی که بیمارا رو نجات می‌دی، قهرمان اصلی‌ای ✨',
             'برنامه‌نویسم یکی از همکاراته که کارش رو دوست داره. گفته کمک به پرستارا یعنی کمک به بیمارا 💖',
             'سازنده‌م یه پرستاره و گفته هرجوری شده باید تو کارت کمکت کنم 📱'
@@ -827,6 +827,15 @@
     // ============================================
     function process(text) {
         let normalized = PersianNumbers.toLatin(text);
+        // Collapse ZWNJ (half-space, U+200C) into a regular space before
+        // anything else. Persian speech-to-text output is inconsistent
+        // about where it inserts a ZWNJ vs a regular space vs nothing at
+        // all for the same phrase — "بی‌ام‌آی", "بی ام آی", and "بی‌ام ای"
+        // (mixed) are all the same spoken words, but as plain strings they
+        // don't match each other. Normalizing here means trigger phrases
+        // only need to be listed once, with regular spaces, instead of
+        // needing every separator permutation hand-typed out.
+        normalized = normalized.replace(/\u200c/g, ' ');
         normalized = normalized.replace(/[،،]/g, ' ').replace(/\s+/g, ' ').trim();
         const lower = normalized.toLowerCase();
 
@@ -924,6 +933,19 @@
                     document.body.classList.add('no-scroll');
                 }
                 showVoiceResult('تاریخچه محاسبات باز شد', 'success');
+                break;
+            case 'settings':
+                // Bare "تنظیمات" (settings) with no more specific dark/
+                // light/font wording already handled earlier in process()
+                // — just open the settings panel itself. This command was
+                // already being correctly recognized/scored, but had no
+                // actual case here, so it fell through to the generic
+                // "not supported yet" message despite being "understood".
+                if (DOM.settingsModal) {
+                    DOM.settingsModal.classList.add('active');
+                    document.body.classList.add('no-scroll');
+                }
+                showVoiceResult('تنظیمات باز شد', 'success');
                 break;
             case 'help':
                 showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تبدیل ۲۰ mEq سدیم به mg»، «GCS 4 5 6»، «سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰»، «سازگاری هپارین و وانکومایسین»، «تاریک»، «فونت بزرگ»', 'info');
