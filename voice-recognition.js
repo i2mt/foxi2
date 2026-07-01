@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -579,12 +579,17 @@
                 }
                 armStall();
 
+                let lastProgressEmit = 0;
+                const PROGRESS_THROTTLE_MS = 150; // ~6 UI updates/sec — smooth, but far fewer DOM writes than raw XHR progress events (which can fire dozens of times/sec and each one forces a style recalc)
                 xhr.onprogress = function (e) {
-                    armStall();
+                    armStall(); // reset the stall timer on every raw event, independent of UI throttling below
                     if (!total) {
                         const isPartial = xhr.status === 206;
                         total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
                     }
+                    const now = Date.now();
+                    if (now - lastProgressEmit < PROGRESS_THROTTLE_MS) return;
+                    lastProgressEmit = now;
                     const currentLoaded = loaded + e.loaded;
                     if (typeof onProgress === 'function') {
                         onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
