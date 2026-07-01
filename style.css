@@ -4657,6 +4657,13 @@ input[type="search"]::placeholder {
     border-bottom: none;
 }
 
+.settings-hint {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.7;
+    margin: 0 0 10px 0;
+}
+
 .settings-group h4 {
     font-size: 12px !important;
     font-weight: 700 !important;

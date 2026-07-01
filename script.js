@@ -489,7 +489,18 @@ const DOM = {
     selectedDrugIcon: document.getElementById('selectedDrugIcon'),
     selectedDrugName: document.getElementById('selectedDrugName'),
     selectedDrugDesc: document.getElementById('selectedDrugDesc'),
-    methodBtns: document.querySelectorAll('.method-btn-compact'),
+    // Scoped to .method-selector-compact specifically — '.method-btn-compact'
+    // alone is also used by the ventilator/nutrition gender selectors and
+    // the VBG mode selector elsewhere on the page, and previously matched
+    // ALL of them here. Since this list gets the click listener below that
+    // unconditionally sets AppState.infusionMethod = this.dataset.method,
+    // clicking any of those OTHER buttons (which have no data-method
+    // attribute) was silently corrupting AppState.infusionMethod to
+    // undefined — breaking the next drug calculation with a hard crash in
+    // updateVolumeOptions(). Real bug, reachable via manual taps too, not
+    // just voice commands — voice commands just triggered it reliably
+    // enough to surface it during testing.
+    methodBtns: document.querySelectorAll('.method-selector-compact .method-btn-compact'),
     volumeOptions: document.getElementById('volumeOptions'),
     customVolume: document.getElementById('customVolume'),
     customVolumeContainer: document.getElementById('customVolumeContainer'),
@@ -1128,7 +1139,15 @@ function getEffectiveTotalDrug() {
 
 function updateVolumeOptions() {
     const drug = drugDatabase[AppState.selectedDrug];
-    const method = AppState.infusionMethod;
+    let method = AppState.infusionMethod;
+    // Defensive fallback: if infusionMethod is ever missing or invalid for
+    // this drug (shouldn't happen now that DOM.methodBtns is correctly
+    // scoped, but this keeps a future regression from being a hard crash),
+    // fall back to 'syringe' and self-heal the state rather than throwing.
+    if (!drug.defaultSolutionVolumes[method]) {
+        method = 'syringe';
+        AppState.infusionMethod = method;
+    }
     const volumes = drug.defaultSolutionVolumes[method];
     const defaultVol = drug.defaultVolume[method];
     if (!DOM.volumeOptions) return;

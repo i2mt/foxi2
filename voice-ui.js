@@ -70,9 +70,13 @@
         if (els.orbContainer) {
             els.orbContainer.classList.toggle('recording', state === 'listening');
         }
+        // The transcript only matters while something is actively being
+        // heard/handled — keep it out of the layout otherwise.
         if (els.transcriptArea) {
             els.transcriptArea.style.display = (state === 'listening' || state === 'processing') ? '' : 'none';
         }
+        // Hide the example chips while busy so the page stays compact and
+        // doesn't compete with the live transcript/result for attention.
         if (els.examples) {
             els.examples.style.display = (state === 'idle') ? '' : 'none';
         }
@@ -110,6 +114,17 @@
 
     // ============================================
     // VOICE OUTPUT (text-to-speech)
+    // Off by default — an ICU floor isn't always the place for a phone to
+    // talk back out loud — but one tap turns it on, and it's a separate,
+    // much simpler API than SpeechRecognition so it isn't affected by any
+    // of the iOS limitations above.
+    //
+    // Important limitation: this only sounds decent if the device has an
+    // actual Persian (fa-IR) system voice installed. Many platforms don't
+    // ship one at all — iOS in particular appears to fall back to an
+    // Arabic-ish voice that mispronounces Persian badly. Rather than ever
+    // produce that, this checks for a real fa-* voice and simply hides the
+    // toggle (and refuses to speak) if none exists, on any platform.
     // ============================================
     let cachedVoices = [];
     function refreshVoices() {
@@ -141,8 +156,11 @@
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
         let text = tmp.textContent || tmp.innerText || '';
+        // Strip emoji — some TTS voices (notably on Windows) read these out
+        // loud as descriptions ("loudspeaker emoji") instead of skipping
+        // them, which is exactly as confusing as it sounds.
         text = text.replace(/\p{Extended_Pictographic}/gu, '');
-        text = text.replace(/[\u200D\uFE0F]/g, '');
+        text = text.replace(/[\u200D\uFE0F]/g, ''); // stray joiners/variation selectors left behind
         return text.replace(/\s+/g, ' ').trim();
     }
     function isVoiceOutputOn() {
@@ -151,7 +169,7 @@
     function speak(message) {
         if (!window.speechSynthesis || !isVoiceOutputOn()) return;
         const voice = pickPersianVoice();
-        if (!voice) return;
+        if (!voice) return; // no real Persian voice on this device — stay silent rather than mispronounce
         const plain = stripForSpeech(message);
         if (!plain) return;
         try {
@@ -177,6 +195,42 @@
         updateTtsToggleIcon();
         if (typeof haptic === 'function') haptic(15);
         showResult(AppState.settings.voiceOutput ? 'پاسخ صوتی فعال شد 🔊' : 'پاسخ صوتی غیرفعال شد', 'info');
+    }
+
+    // ============================================
+    // VOICE LEARNING LOG (export / clear)
+    // See the long comment in voice-commands.js next to
+    // logUnrecognizedPhrase() for the full reasoning — short version: this
+    // is a local-only, privacy-respecting substitute for real cross-user
+    // learning, which would require a server this app doesn't (and, given
+    // the sanctions situation covered earlier, largely can't) have.
+    // ============================================
+    function wireVoiceLearningLogButtons() {
+        const exportBtn = document.getElementById('exportVoiceLogBtn');
+        const clearBtn = document.getElementById('clearVoiceLogBtn');
+        if (!window.VoiceCommands) return;
+
+        if (exportBtn) {
+            exportBtn.addEventListener('click', function () {
+                const text = window.VoiceCommands.exportUnrecognizedLogAsText();
+                if (navigator.share) {
+                    navigator.share({ title: 'فهرست عبارات درک‌نشده FoxiMed', text: text }).catch(function () {});
+                } else if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text)
+                        .then(function () { if (typeof showToast === 'function') showToast('کپی شد', 'فهرست در کلیپ‌بورد کپی شد', 'success'); })
+                        .catch(function () { if (typeof showToast === 'function') showToast('خطا', 'کپی کردن ممکن نشد', 'error'); });
+                } else if (typeof showToast === 'function') {
+                    showToast('خطا', 'این قابلیت در این مرورگر در دسترس نیست', 'error');
+                }
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function () {
+                window.VoiceCommands.clearUnrecognizedLog();
+                if (typeof showToast === 'function') showToast('پاک شد', 'فهرست عبارات درک‌نشده پاک شد', 'success');
+            });
+        }
     }
 
     // ============================================
@@ -208,6 +262,10 @@
 
     // ============================================
     // FOX MARK AUDIO REACTIVITY
+    // The ripples/embers/glow are all driven by CSS state classes already,
+    // so the only thing JS needs to push per audio frame is the real mic
+    // level — it drives glow intensity and eye-spark brightness via the
+    // --audio-level custom property (see voice-assistant.css).
     // ============================================
     function onAudioData(data) {
         if (els.orbContainer) {
@@ -237,7 +295,7 @@
     }
 
     // ============================================
-    // ENVIRONMENT BANNER
+    // ENVIRONMENT BANNER (iOS / unsupported messaging)
     // ============================================
     function renderEnvironmentBanner() {
         if (!els.banner || !window.VoiceEngine) return;
@@ -341,6 +399,7 @@
         window.VoiceEngine.on('end', function () {
             if (els.orbContainer) els.orbContainer.classList.remove('recording');
             if (els.orbContainer) els.orbContainer.style.setProperty('--audio-level', '0.15');
+            // Only fall back to idle if we're not mid-processing/result.
             const cur = els.orbContainer && els.orbContainer.classList;
             if (cur && !cur.contains('is-processing') && !cur.contains('is-success') && !cur.contains('is-error')) {
                 setOrbState('idle');
@@ -379,6 +438,8 @@
             els.ttsToggle.addEventListener('click', toggleVoiceOutput);
         }
 
+        wireVoiceLearningLogButtons();
+
         document.querySelectorAll('.voice-example-chip').forEach(function (chip) {
             chip.addEventListener('click', function () {
                 const cmd = this.dataset.command;
@@ -405,36 +466,6 @@
                 showResult('تاریخچه پاک شد', 'info');
             });
         }
-
-        // ============================================
-        // DEBUG PANEL
-        // ============================================
-        const debugDiv = document.createElement('div');
-        debugDiv.id = 'voiceDebug';
-        debugDiv.style.cssText = 'display:none; background:#1e293b; color:#e2e8f0; padding:10px; border-radius:8px; margin-top:10px; font-size:12px; direction:ltr; text-align:left; font-family:monospace; overflow-wrap:break-word;';
-        document.querySelector('.voice-container').appendChild(debugDiv);
-
-        // Toggle debug by clicking status text 3 times
-        let clickCount = 0;
-        let clickTimer = null;
-        if (els.status) {
-            els.status.addEventListener('click', function() {
-                clickCount++;
-                if (clickCount === 3) {
-                    debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
-                    clickCount = 0;
-                }
-                clearTimeout(clickTimer);
-                clickTimer = setTimeout(() => { clickCount = 0; }, 800);
-            });
-        }
-
-        // Enable debug via URL parameter
-        try {
-            if (new URLSearchParams(window.location.search).get('debug') === '1') {
-                debugDiv.style.display = 'block';
-            }
-        } catch (e) {}
     }
 
     window.VoiceUI = { showResult: showResult, appendTip: appendTip };
