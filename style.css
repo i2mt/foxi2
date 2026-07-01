@@ -830,8 +830,8 @@ select {
    =============================== */
 .app-container {
     height: 100vh;
-    height: 100dvh;
-    height: calc(var(--vh, 1vh) * 100);
+    height: calc(var(--vh, 1vh) * 100); /* fallback for browsers with no dvh support */
+    height: 100dvh; /* wins when supported — correctly handles iOS's standalone-PWA viewport, unlike the JS-measured value above which can be a frame stale at launch and leave a gap */
     display: flex;
     flex-direction: column;
     overflow: hidden;
