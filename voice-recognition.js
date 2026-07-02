@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -975,6 +975,21 @@
             // correctly outside of "Add to Home Screen" mode.
             try { window.open(window.location.href, '_blank'); }
             catch (e) { window.location.href = window.location.href; }
+        },
+        // Silently kick off the Vosk model download/instantiation in the
+        // background — e.g. right after the app finishes its own startup,
+        // instead of waiting for the person to actually tap the mic. Uses
+        // the exact same ensureVoskModel()/voskModelLoadPromise caching as
+        // the normal on-demand path, so this is fully safe to call
+        // proactively: if the person taps the mic before this finishes,
+        // that call reuses this same in-flight promise rather than
+        // starting a second, duplicate download. If it fails silently in
+        // the background (offline, etc.), nothing is shown to the person
+        // here — the normal on-demand path will surface a real error only
+        // if they actually try to use voice and it's genuinely unavailable.
+        preload: function () {
+            if (!(ENV.isIOS && voskConfigured())) return;
+            ensureVoskModel().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         }
     };
 

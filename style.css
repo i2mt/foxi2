@@ -102,6 +102,20 @@
     border: 1px solid #374151 !important;
 }
 
+/* The tab-bar's own box-shadow overpaint (see base .tab-bar rule) must
+   match whatever the tab-bar's ACTUAL background is in each mode — the
+   base rule's box-shadow uses var(--surface) to match its own light-mode
+   background, but dark mode overrides the background to
+   var(--surface-elevated) above. Missing this override was the real,
+   root cause of a persistent visible seam at the very bottom of the
+   screen in dark mode specifically: the overpaint was quietly painting
+   the wrong (too-dark) color the whole time, not a viewport-height or
+   safe-area problem at all — confirmed by inspecting exact pixel colors
+   from a real device screenshot. */
+.dark-mode .tab-bar {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 120px 0 0 var(--surface-elevated) !important;
+}
+
 .dark-mode .control-group {
     background: var(--surface) !important;
     border: 1.5px solid #374151 !important;

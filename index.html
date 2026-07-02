@@ -49,7 +49,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 4.9.5</div>
+            <div class="loading-version">نسخه 4.9.7</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -1733,14 +1733,23 @@
 
     </div>
 </div>
+    </div>
+</div>
 
-        <!-- Bottom Tab Navigation -->
-        <div class="tab-bar">
-            <button class="tab-item active" data-tab="calculator"><i class="fas fa-calculator"></i><span>محاسبه</span></button>
-            <button class="tab-item" data-tab="drugs"><i class="fas fa-book-medical"></i><span>مرجع</span></button>
-            <button class="tab-item" data-tab="tools"><i class="fas fa-tools"></i><span>ابزارها</span></button>
-            <button class="tab-item" data-tab="voice"><i class="fas fa-microphone"></i><span>دستیار</span></button>
-        </div>
+    <!-- Bottom Tab Navigation — deliberately a sibling of .app-container,
+         not nested inside it. .app-container has overflow:hidden, and iOS
+         Safari has a well-documented history of not correctly escaping
+         position:fixed descendants of an overflow:hidden ancestor to the
+         TRUE viewport edge — instead positioning them relative to that
+         ancestor's own box, which can be imprecisely calculated. Keeping
+         this at the true document root, exactly like the modals below
+         already are, sidesteps that class of bug entirely rather than
+         trying to out-calculate it. -->
+    <div class="tab-bar">
+        <button class="tab-item active" data-tab="calculator"><i class="fas fa-calculator"></i><span>محاسبه</span></button>
+        <button class="tab-item" data-tab="drugs"><i class="fas fa-book-medical"></i><span>مرجع</span></button>
+        <button class="tab-item" data-tab="tools"><i class="fas fa-tools"></i><span>ابزارها</span></button>
+        <button class="tab-item" data-tab="voice"><i class="fas fa-microphone"></i><span>دستیار</span></button>
     </div>
 
     <!-- Settings Modal -->
@@ -1871,7 +1880,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>4.9.5</span></div>
+                        <div class="about-row"><span>نسخه</span><span>4.9.7</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
