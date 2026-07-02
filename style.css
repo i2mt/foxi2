@@ -966,18 +966,17 @@ select {
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     z-index: 1000;
     min-height: calc(56px + env(safe-area-inset-bottom, 0px));
-}
-
-/* Paint surface color into the home indicator gap below the tab bar */
-.tab-bar::after {
-    content: '';
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: env(safe-area-inset-bottom, 0px);
-    background: var(--surface);
-    z-index: -1;
+    /* Overpaint below the tab bar with solid surface color. This is a pure
+       paint effect (box-shadow never affects layout/position), so unlike
+       the previous ::after + negative z-index approach, it can't be pushed
+       behind other content by an unrelated stacking-context quirk, and it
+       doesn't depend on getting env(safe-area-inset-bottom) pixel-exact —
+       it simply always covers anything below the tab bar out to 120px,
+       comfortably exceeding any real device's home-indicator zone. Fixes a
+       persistent gap reported specifically in iOS's installed/standalone
+       PWA mode, where position:fixed;bottom:0 has a long-documented
+       history of not perfectly reaching the true screen edge. */
+    box-shadow: 0 120px 0 0 var(--surface);
 }
 
 .tab-item {

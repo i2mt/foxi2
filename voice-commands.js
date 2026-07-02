@@ -234,6 +234,11 @@
         const weightPatterns = [
             /(?:وزنم|وزن من|وزن|وزنش|وزن بیمار|weight)\s*(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)?/i,
             /(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)(?:\s*وزن)?/i,
+            // Number BEFORE the keyword, no unit word required — natural
+            // Persian allows either order ("وزن ۶۲" or "۶۲ وزنش"), and the
+            // two patterns above only cover number-first when a unit word
+            // like kg is also present.
+            /(\d+(?:\.\d+)?)\s*(?:وزنم|وزن من|وزنش|وزن بیمار|وزن)/i,
             /weight\s*(\d+(?:\.\d+)?)\s*(?:kg)?/i
         ];
         for (let i = 0; i < weightPatterns.length; i++) {
@@ -252,6 +257,10 @@
         const heightPatterns = [
             /(?:قدم|قد من|قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)?/i,
             /(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)(?:\s*قد)?/i,
+            // Number BEFORE the keyword, no unit word required (see weight
+            // comment above for the same reasoning) — e.g. "۱۷۳ قدشه" said
+            // without ever mentioning "cm" or "سانت" at all.
+            /(\d+(?:\.\d+)?)\s*(?:قدم|قد من|قدش|قد بیمار|قد)/i,
             /height\s*(\d+(?:\.\d+)?)\s*(?:cm)?/i
         ];
         for (let i = 0; i < heightPatterns.length; i++) {
@@ -275,7 +284,7 @@
         }
 
         const patterns = [
-            { regex: /(?:سنم|سن من|سن)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:yr|سال|age)/i, key: 'age' },
+            { regex: /(?:سنم|سن من|سن)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:yr|سال|age|سنم|سن من|سنش|سن)/i, key: 'age' },
             { regex: /(\d+(?:\.\d+)?)\s*(ml|mL|cc|سی‌سی)/i, key: 'volume' },
             { regex: /(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i, key: 'dose' },
             { regex: /(\d+(?:\.\d+)?)\s*(meq|mEq)/i, key: 'meq' },
@@ -504,6 +513,18 @@
         text = text.replace(/کیلوئه/g, 'کیلو');
         text = text.replace(/سانتی\s?متره|سانته/g, 'سانت');
         text = text.replace(/سالشه|ساله/g, 'سال');
+        // Same "-ه" (است/هست, "is") contraction, but on the weight/height/
+        // age KEYWORD itself rather than a number — "قدشه" (his height IS)
+        // is the exact same colloquial pattern as "شصته" (sixty IS), just
+        // applied to "قدش" instead of a number word. Without this, a very
+        // natural phrase like "صد هفتاد قدشه" silently fails to recognize
+        // "قدشه" as the height keyword at all.
+        text = text.replace(/قدشه(?=\s|$)/g, 'قدش');
+        text = text.replace(/قدمه(?=\s|$)/g, 'قدم');
+        text = text.replace(/وزنشه(?=\s|$)/g, 'وزنش');
+        text = text.replace(/وزنمه(?=\s|$)/g, 'وزنم');
+        text = text.replace(/سنشه(?=\s|$)/g, 'سنش');
+        text = text.replace(/سنمه(?=\s|$)/g, 'سنم');
         // Any known number word with the "-ه" contraction (شصته -> شصت),
         // skipping single-letter-result words like "سه"/"نه" which already
         // legitimately end in "ه" themselves (handled by exact match first
