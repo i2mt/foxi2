@@ -232,7 +232,7 @@
         }
 
         const weightPatterns = [
-            /(?:وزن|وزنش|وزن بیمار|weight)\s*(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)?/i,
+            /(?:وزنم|وزن من|وزن|وزنش|وزن بیمار|weight)\s*(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)?/i,
             /(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)(?:\s*وزن)?/i,
             /weight\s*(\d+(?:\.\d+)?)\s*(?:kg)?/i
         ];
@@ -250,7 +250,7 @@
         }
 
         const heightPatterns = [
-            /(?:قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)?/i,
+            /(?:قدم|قد من|قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)?/i,
             /(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)(?:\s*قد)?/i,
             /height\s*(\d+(?:\.\d+)?)\s*(?:cm)?/i
         ];
@@ -275,7 +275,7 @@
         }
 
         const patterns = [
-            { regex: /(?:سن)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:yr|سال|age)/i, key: 'age' },
+            { regex: /(?:سنم|سن من|سن)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:yr|سال|age)/i, key: 'age' },
             { regex: /(\d+(?:\.\d+)?)\s*(ml|mL|cc|سی‌سی)/i, key: 'volume' },
             { regex: /(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i, key: 'dose' },
             { regex: /(\d+(?:\.\d+)?)\s*(meq|mEq)/i, key: 'meq' },
@@ -456,7 +456,7 @@
         'شش': '6', 'هفت': '7', 'هشت': '8', 'نه': '9', 'ده': '10',
         'یازده': '11', 'دوازده': '12', 'سیزده': '13', 'چهارده': '14', 'پانزده': '15',
         'شانزده': '16', 'هفده': '17', 'هجده': '18', 'نوزده': '19', 'بیست': '20',
-        'سی': '30', 'چهل': '40', 'پنجاه': '50', 'شصت': '60', 'هفتاد': '70', 'هشتاد': '80', 'نود': '90', 'صد': '100',
+        'سی': '30', 'چهل': '40', 'پنجاه': '50', 'شصت': '60', 'هفتاد': '70', 'هشتاد': '80', 'نود': '90', 'صد': '100', 'یکصد': '100',
         'دویست': '200', 'سیصد': '300', 'چهارصد': '400', 'پانصد': '500',
         'ششصد': '600', 'هفتصد': '700', 'هشتصد': '800', 'نهصد': '900', 'هزار': '1000'
     };
@@ -541,12 +541,33 @@
             const firstVal = matchNumberToken(tokens[i]);
             if (firstVal === null) { output.push(tokens[i]); i++; continue; }
             let sum = firstVal;
+            const startedOnHundreds = firstVal >= 100;
             let j = i + 1;
-            while (j < tokens.length && tokens[j] === 'و' && j + 1 < tokens.length) {
-                const nextVal = matchNumberToken(tokens[j + 1]);
-                if (nextVal === null) break;
-                sum += nextVal;
-                j += 2;
+            while (j < tokens.length) {
+                if (tokens[j] === 'و' && j + 1 < tokens.length) {
+                    const nextVal = matchNumberToken(tokens[j + 1]);
+                    if (nextVal === null) break;
+                    sum += nextVal;
+                    j += 2;
+                    continue;
+                }
+                // No "و" between this and the next token — only bridge this
+                // gap if we started on a hundreds/thousands word followed
+                // directly by a smaller (tens/ones) value, e.g. "صد هفتاد"
+                // said without the formally-correct middle "و". This is
+                // deliberately narrow: it does NOT apply to two arbitrary
+                // adjacent small numbers, so separate-number sequences like
+                // spoken GCS scores ("چهار پنج شش" = 4, 5, 6) are never
+                // accidentally summed into one wrong number.
+                if (startedOnHundreds) {
+                    const directVal = matchNumberToken(tokens[j]);
+                    if (directVal !== null && directVal < 100 && directVal > 0) {
+                        sum += directVal;
+                        j += 1;
+                        continue;
+                    }
+                }
+                break;
             }
             output.push(String(sum));
             i = j;

@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = '';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -667,20 +667,32 @@
             .then(loadBlob)
             .then(function (blob) {
                 const blobUrl = URL.createObjectURL(blob);
-                function releaseBlobUrl() { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
-                return window.Vosk.createModel(blobUrl)
-                    .then(function (model) { releaseBlobUrl(); return model; })
-                    .catch(function () {
-                        releaseBlobUrl();
-                        // Not verifiable without a live device: some browsers'
-                        // internal Worker may be unable to resolve a blob: URL
-                        // created on the main thread. If creating the model
-                        // from our pre-fetched blob fails, fall back to letting
-                        // the library fetch the plain URL itself directly —
-                        // by now it's likely sitting in the normal browser HTTP
-                        // cache anyway from the fetch we just did.
-                        return window.Vosk.createModel(VOSK_MODEL_URL);
-                    });
+                // Deliberately NEVER revoked. The model object returned by
+                // createModel() is cached (see voskModel below) and reused
+                // for every subsequent listening session for the rest of
+                // the page's life — not just this first one — and it's
+                // genuinely unclear from static analysis of vosk-browser's
+                // bundled code (the actual worker-side extraction logic
+                // lives in a separate file this couldn't fully inspect)
+                // whether the worker ever needs to re-reference this URL
+                // after its initial load. An earlier version of this file
+                // revoked the URL right after createModel() resolved, on
+                // the assumption that was safe — that turned out to be the
+                // most likely cause of a real regression where recognition
+                // would start but silently never produce any result at
+                // all. The browser reclaims blob URLs automatically when
+                // the page unloads, so leaving this one alive for the
+                // page's lifetime costs comparatively little.
+                return window.Vosk.createModel(blobUrl).catch(function () {
+                    // Not verifiable without a live device: some browsers'
+                    // internal Worker may be unable to resolve a blob: URL
+                    // created on the main thread. If creating the model
+                    // from our pre-fetched blob fails, fall back to letting
+                    // the library fetch the plain URL itself directly —
+                    // by now it's likely sitting in the normal browser HTTP
+                    // cache anyway from the fetch we just did.
+                    return window.Vosk.createModel(VOSK_MODEL_URL);
+                });
             })
             .then(function (model) {
                 voskModel = model;
@@ -810,8 +822,25 @@
                 // reliably fire in every browser, hence the (silent, since
                 // echoCancellation is on) connection below.
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
+                let acceptWaveformFailureReported = false;
                 voskProcessor.onaudioprocess = function (event) {
-                    try { recognizer.acceptWaveform(event.inputBuffer); } catch (e) {}
+                    try {
+                        recognizer.acceptWaveform(event.inputBuffer);
+                    } catch (e) {
+                        // Surfaced rather than silently swallowed: a
+                        // previous version of this file caught this
+                        // completely silently, which meant a real
+                        // regression elsewhere (revoking the model's blob
+                        // URL too early) produced "mic opens, zero
+                        // transcript, ever" with no error and nothing to
+                        // debug from. Rate-limited to once per session so a
+                        // persistently-failing case doesn't spam a new
+                        // error roughly 4 times a second.
+                        if (!acceptWaveformFailureReported) {
+                            acceptWaveformFailureReported = true;
+                            emit('error', classifyError('vosk-runtime'));
+                        }
+                    }
                     emitVoskAudioLevel(event.inputBuffer);
                 };
                 voskSource.connect(voskProcessor);
