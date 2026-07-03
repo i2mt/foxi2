@@ -5,7 +5,7 @@
     "start_url": "./index.html",
     "display": "standalone",
     "orientation": "portrait",
-    "theme_color": "#ffffff",
+    "theme_color": "#0f172a",
     "background_color": "#0f172a",
     "icons": [
         {
@@ -62,5 +62,5 @@
             ]
         }
     ],
-    "version": "4.9.7"
+    "version": "4.9.8"
 }

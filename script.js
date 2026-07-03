@@ -2082,6 +2082,16 @@ function switchTab(tabName) {
         initializeTools();
         initializeConverters();
     }
+    if (tabName === 'voice' && window.VoiceEngine && typeof window.VoiceEngine.preload === 'function') {
+        // Start the model download/load only once the person actually
+        // opens the Voice tab, not unconditionally at app startup. This
+        // still gets ahead of an explicit mic tap (so by the time they
+        // press the button it may already be ready, or visibly loading
+        // with real progress instead of starting stone-cold) without
+        // taxing every single app launch regardless of whether voice is
+        // ever used that session.
+        window.VoiceEngine.preload();
+    }
 }
 
 // ============================================

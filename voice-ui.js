@@ -466,24 +466,6 @@
                 showResult('تاریخچه پاک شد', 'info');
             });
         }
-
-        // Silently start downloading/loading the Vosk model in the
-        // background on iOS, well before the person ever taps the mic —
-        // so by the time they actually want to use voice, it's already
-        // ready (or well underway) instead of them waiting through the
-        // full download+load process on that first tap. Deferred slightly
-        // via requestIdleCallback so it only starts once the browser is
-        // done with more urgent first-paint work; Safari doesn't support
-        // requestIdleCallback, so a short setTimeout is the fallback there
-        // — either way this never blocks or delays the visible app.
-        if (window.VoiceEngine && typeof window.VoiceEngine.preload === 'function') {
-            const startPreload = function () { window.VoiceEngine.preload(); };
-            if (typeof window.requestIdleCallback === 'function') {
-                window.requestIdleCallback(startPreload, { timeout: 4000 });
-            } else {
-                setTimeout(startPreload, 1500);
-            }
-        }
     }
 
     window.VoiceUI = { showResult: showResult, appendTip: appendTip };
