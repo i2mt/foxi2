@@ -62,7 +62,7 @@
         potassium: ['potassium', 'پتاسیم'],
         calcium: ['calcium', 'کلسیم'],
         magnesium: ['magnesium', 'منیزیم'],
-        sodium_bicarbonate: ['bicarbonate', 'sodium bicarbonate', 'بی کربنات', 'بی‌کربنات', 'بیکربنات']
+        sodium_bicarbonate: ['bicarbonate', 'sodium bicarbonate', 'بی کربنات', 'بیکربنات']
     };
 
     function matchElectrolyte(text) {
@@ -77,6 +77,58 @@
     }
 
     // ============================================
+    // FUZZY MATCHING
+    // Speech recognition sometimes mishears a word slightly — "لازیکس"
+    // heard as "لازیک", "بی ام آی" heard as "بی امای" — close enough that
+    // a person would understand immediately, but a plain substring check
+    // wouldn't. This computes character-level edit distance as a fallback
+    // ONLY when exact matching finds nothing, so a near-miss still
+    // resolves to the right drug/command instead of silently failing,
+    // without weakening the fast, zero-false-positive exact-match path.
+    // ============================================
+    function levenshteinDistance(a, b) {
+        if (a === b) return 0;
+        const al = a.length, bl = b.length;
+        if (al === 0) return bl;
+        if (bl === 0) return al;
+        let prevRow = new Array(bl + 1);
+        for (let j = 0; j <= bl; j++) prevRow[j] = j;
+        for (let i = 1; i <= al; i++) {
+            const currRow = [i];
+            for (let j = 1; j <= bl; j++) {
+                const cost = a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1;
+                currRow[j] = Math.min(prevRow[j] + 1, currRow[j - 1] + 1, prevRow[j - 1] + cost);
+            }
+            prevRow = currRow;
+        }
+        return prevRow[bl];
+    }
+
+    function fuzzySimilarity(a, b) {
+        const maxLen = Math.max(a.length, b.length);
+        if (maxLen === 0) return 1;
+        return 1 - levenshteinDistance(a, b) / maxLen;
+    }
+
+    const FUZZY_THRESHOLD = 0.72; // tunable — catches real near-misses without matching unrelated short words
+
+    // Best fuzzy score for `target` (space-stripped) found anywhere among
+    // the tokens of `text` — tries single tokens and 2/3-token windows
+    // (space-stripped too) so multi-word targets like "بیامای" still match
+    // against "بی امای" said/heard with different word breaks.
+    function bestFuzzyScoreInText(text, target) {
+        if (!target || target.length < 3) return 0;
+        const tokens = text.split(/\s+/).filter(Boolean);
+        let best = 0;
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens[i].length >= 2) best = Math.max(best, fuzzySimilarity(tokens[i], target));
+            if (i + 1 < tokens.length) best = Math.max(best, fuzzySimilarity(tokens[i] + tokens[i + 1], target));
+            if (i + 2 < tokens.length) best = Math.max(best, fuzzySimilarity(tokens[i] + tokens[i + 1] + tokens[i + 2], target));
+        }
+        return best;
+    }
+
+    // ============================================
     // ROBUST TWO-DRUG DETECTION (for Y-Site)
     // The previous implementation matched two drugs with the regex
     // /(\w+)\s+(?:and|و)\s+(\w+)/, but `\w` only matches ASCII letters —
@@ -84,21 +136,64 @@
     // Persian sentence (i.e. almost every real voice command). This scans
     // the whole phrase for known drug names directly instead.
     // ============================================
+    // The first, most distinctive word of a multi-word drug name (e.g.
+    // "انسولین" from "انسولین رگولار") — people very commonly drop the
+    // qualifier word in casual speech. Only used as a fallback, and only
+    // for words long enough to be meaningfully distinctive (avoids a short
+    // generic first word accidentally matching too broadly).
+    function firstSignificantWord(name) {
+        const first = String(name).split(/\s+/)[0];
+        return first && first.length >= 3 ? first : null;
+    }
+
     function findAllDrugNames(text, limit) {
         limit = limit || 2;
         const lower = text.toLowerCase();
         const found = [];
+
         for (const id in drugDatabase) {
             const drug = drugDatabase[id];
-            const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
+            const fullNames = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
+            const persianNames = [drug.persianName].concat(drug.alternativeNames || [])
+                .filter(function (n) { return /[\u0600-\u06FF]/.test(n); });
+
+            // Tier 1: full name, exact substring.
             let bestIndex = -1;
-            for (let i = 0; i < names.length; i++) {
-                const idx = lower.indexOf(String(names[i]).toLowerCase());
+            for (let i = 0; i < fullNames.length; i++) {
+                const idx = lower.indexOf(String(fullNames[i]).toLowerCase());
                 if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) bestIndex = idx;
             }
-            if (bestIndex !== -1) found.push({ id: id, index: bestIndex });
+            if (bestIndex !== -1) { found.push({ id: id, index: bestIndex, tier: 1 }); continue; }
+
+            // Tier 2: first/most distinctive word of a multi-word name —
+            // independent per drug, so one drug matching on tier 1 never
+            // blocks another drug in the same sentence from reaching this.
+            persianNames.forEach(function (n) {
+                const word = firstSignificantWord(n);
+                if (!word) return;
+                const idx = lower.indexOf(word.toLowerCase());
+                if (idx !== -1 && (bestIndex === -1 || idx < bestIndex)) bestIndex = idx;
+            });
+            if (bestIndex !== -1) { found.push({ id: id, index: bestIndex, tier: 2 }); continue; }
+
+            // Tier 3: fuzzy match (Persian-script names only — fuzzy-
+            // matching a transliterated English name against a Persian
+            // transcript isn't meaningful).
+            let bestScore = 0;
+            persianNames.forEach(function (n) {
+                bestScore = Math.max(bestScore, bestFuzzyScoreInText(lower, n.replace(/\s+/g, '')));
+            });
+            if (bestScore >= FUZZY_THRESHOLD) found.push({ id: id, index: 999999, tier: 3, score: bestScore });
         }
-        found.sort(function (a, b) { return a.index - b.index; });
+
+        // Prefer stronger tiers first (exact > first-word > fuzzy), then by
+        // where in the sentence they appeared / fuzzy score.
+        found.sort(function (a, b) {
+            if (a.tier !== b.tier) return a.tier - b.tier;
+            if (a.tier === 3) return b.score - a.score;
+            return a.index - b.index;
+        });
+
         const ids = [];
         for (let i = 0; i < found.length; i++) {
             if (ids.indexOf(found[i].id) === -1) ids.push(found[i].id);
@@ -137,8 +232,13 @@
         }
 
         const weightPatterns = [
-            /(?:وزن|وزنش|وزن بیمار|weight)\s*(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)?/i,
+            /(?:وزنم|وزن من|وزن|وزنش|وزن بیمار|weight)\s*(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)?/i,
             /(\d+(?:\.\d+)?)\s*(?:kg|کیلوگرم|کیلو)(?:\s*وزن)?/i,
+            // Number BEFORE the keyword, no unit word required — natural
+            // Persian allows either order ("وزن ۶۲" or "۶۲ وزنش"), and the
+            // two patterns above only cover number-first when a unit word
+            // like kg is also present.
+            /(\d+(?:\.\d+)?)\s*(?:وزنم|وزن من|وزنش|وزن بیمار|وزن)/i,
             /weight\s*(\d+(?:\.\d+)?)\s*(?:kg)?/i
         ];
         for (let i = 0; i < weightPatterns.length; i++) {
@@ -155,8 +255,12 @@
         }
 
         const heightPatterns = [
-            /(?:قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی‌متر|سانت)?/i,
-            /(\d+(?:\.\d+)?)\s*(?:cm|سانتی‌متر|سانت)(?:\s*قد)?/i,
+            /(?:قدم|قد من|قد|قدش|قد بیمار|height)\s*(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)?/i,
+            /(\d+(?:\.\d+)?)\s*(?:cm|سانتی متر|سانت)(?:\s*قد)?/i,
+            // Number BEFORE the keyword, no unit word required (see weight
+            // comment above for the same reasoning) — e.g. "۱۷۳ قدشه" said
+            // without ever mentioning "cm" or "سانت" at all.
+            /(\d+(?:\.\d+)?)\s*(?:قدم|قد من|قدش|قد بیمار|قد)/i,
             /height\s*(\d+(?:\.\d+)?)\s*(?:cm)?/i
         ];
         for (let i = 0; i < heightPatterns.length; i++) {
@@ -171,15 +275,26 @@
             const heightFallback = text.match(/قد\s*(\d+(?:\.\d+)?)/i);
             if (heightFallback) params.height = parseFloat(heightFallback[1]);
         }
+        // No real adult/pediatric patient height is under 3 of anything
+        // but meters — if someone says "قدش یک و شصت" (1.60) or just "1.6",
+        // treat it as meters and convert, instead of requiring "متر" to be
+        // said explicitly.
+        if (params.height && params.height > 0 && params.height < 3) {
+            params.height = params.height * 100;
+        }
 
         const patterns = [
-            { regex: /(\d+(?:\.\d+)?)\s*(yr|سال|age)/i, key: 'age' },
+            { regex: /(?:سنم|سن من|سن)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:yr|سال|age|سنم|سن من|سنش|سن)/i, key: 'age' },
             { regex: /(\d+(?:\.\d+)?)\s*(ml|mL|cc|سی‌سی)/i, key: 'volume' },
             { regex: /(\d+(?:\.\d+)?)\s*(mg|mcg|g|units)/i, key: 'dose' },
             { regex: /(\d+(?:\.\d+)?)\s*(meq|mEq)/i, key: 'meq' },
-            { regex: /(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa)/i, key: 'pressure' },
+            { regex: /(\d+(?:\.\d+)?)\s*(bar|psi|mmhg|cmh2o|kpa|بار)/i, key: 'pressure' },
             { regex: /(\d+(?:\.\d+)?)\s*(L|litre|لیتر)/i, key: 'liters' },
             { regex: /(\d+(?:\.\d+)?)\s*(%|percent|درصد)/i, key: 'percent' },
+            { regex: /(?:ph|پی اچ)\s*(\d+(?:\.\d+)?)/i, key: 'pH' },
+            { regex: /(?:pco2|pco 2|پی سی او دو|پی سی اُدو)\s*(\d+(?:\.\d+)?)/i, key: 'pco2' },
+            { regex: /(?:hco3|hco 3|بی کربنات|اچ سی او سه)\s*(\d+(?:\.\d+)?)/i, key: 'hco3' },
+            { regex: /(?:be|بیس اکسس|بی ای)\s*([+-]?\d+(?:\.\d+)?)/i, key: 'be' },
             { regex: /(\d+(?:\.\d+)?)\s*(eye|چشمی)\s*(\d+)/i, key: 'gcs_eye' },
             { regex: /(\d+(?:\.\d+)?)\s*(verbal|کلامی)\s*(\d+)/i, key: 'gcs_verbal' },
             { regex: /(\d+(?:\.\d+)?)\s*(motor|حرکتی)\s*(\d+)/i, key: 'gcs_motor' }
@@ -190,7 +305,7 @@
                 if (p.key.indexOf('gcs_') === 0) {
                     params[p.key] = parseInt(match[2] || match[1]);
                 } else {
-                    params[p.key] = parseFloat(match[1]);
+                    params[p.key] = parseFloat(match[1] !== undefined ? match[1] : match[2]);
                     text = text.replace(match[0], '');
                 }
             }
@@ -260,45 +375,45 @@
     // COMMAND KEYWORDS + SCORING
     // ============================================
     const COMMAND_KEYWORDS = {
-        tab_calculator: { triggers: ['ماشین حساب', 'calculator tab', 'go to calculator', 'ماشین‌حساب'], scoreWeight: 0.7 },
+        tab_calculator: { triggers: ['ماشین حساب', 'calculator tab', 'go to calculator', 'ماشین حساب'], scoreWeight: 0.7 },
         tab_drugs: { triggers: ['مرجع داروها', 'کتابخانه دارو', 'لیست داروها', 'داروخانه', 'drug library', 'drugs tab', 'رفتن به داروها'], scoreWeight: 0.7 },
-        tab_tools: { triggers: ['ابزارها', 'تب ابزار', 'ابزارهای بالینی', 'tools tab', 'رفتن به ابزارها', 'ابزارک‌ها'], scoreWeight: 0.7 },
+        tab_tools: { triggers: ['ابزارها', 'تب ابزار', 'ابزارهای بالینی', 'tools tab', 'رفتن به ابزارها', 'ابزارک ها'], scoreWeight: 0.7 },
 
         clear: { triggers: ['پاک کن', 'پاک کردن', 'صفر', 'clear results', 'reset', 'پاکسازی', 'حذف نتایج'], scoreWeight: 0.8 },
         manual_calc: { triggers: [' دستی', 'دستی', 'manual calculation', 'custom calculation', ' بدون دارو', ' دلخواه'], scoreWeight: 0.9 },
         history: { triggers: ['تاریخچه', 'محاسبات قبلی', 'سابقه محاسبات', 'تاریخچه محاسبات', 'history', 'گزارش محاسبات'], scoreWeight: 0.9 },
         reverse: { triggers: ['reverse', 'معکوس', 'برعکس', 'وارونه', 'حالت معکوس'], scoreWeight: 0.9 },
 
-        bmi: { triggers: ['bmi', 'بی ام آی', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
-        bsa: { triggers: ['bsa', 'بی اس ای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
-        ibw: { triggers: ['وزن ایده‌آل', 'ideal weight', 'ibw', 'وزن ایده‌ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
+        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
+        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
+        ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
         crcl: { triggers: ['crcl', 'creatinine clearance', 'کلیرانس کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
         drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'ساعت', 'حجم', 'زمان', 'ست', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
-        gcs: { triggers: ['gcs', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
-        rass: { triggers: ['rass', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام‌بخشی', 'آژیتیشن', 'آرام', 'بی‌قرار', 'مقیاس آرام‌بخشی'], scoreWeight: 0.8 },
+        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
+        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'آرام', 'بی قرار', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
         braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر'], scoreWeight: 0.8 },
         morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط'], scoreWeight: 0.8 },
         burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
         oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'flow', 'فشار', 'pressure', 'duration', 'مدت', 'جریان', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
-        vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی‌کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
+        vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
         ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'دستگاه تنفس'], scoreWeight: 0.8 },
         nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'تغذیه انترال'], scoreWeight: 0.8 },
 
-        convert: { triggers: ['convert', 'تبدیل', 'meq', 'to', 'به', 'میلی‌اکی‌والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
-        electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی‌کربنات', 'electrolyte'], scoreWeight: 0.9 },
+        convert: { triggers: ['convert', 'تبدیل', 'meq', 'to', 'به', 'میلی اکی والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
+        electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی کربنات', 'electrolyte'], scoreWeight: 0.9 },
         percentage: { triggers: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی', 'درصد دارو'], scoreWeight: 0.9 },
-        unit_convert: { triggers: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی‌گرم', 'گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
+        unit_convert: { triggers: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی گرم', 'گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
         temp_convert: { triggers: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature', 'دمای بدن', 'تب'], scoreWeight: 0.9 },
         weight_convert: { triggers: ['تبدیل وزن', 'کیلوگرم', 'پوند', 'گرم', 'weight conversion', 'وزن به پوند', 'وزن به کیلو'], scoreWeight: 0.9 },
 
-        drug: { triggers: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی‌گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی‌لیتر', 'سی‌سی', 'حجم', 'محلول', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
+        drug: { triggers: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی لیتر', 'سی سی', 'حجم', 'محلول', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
         druginfo: { triggers: ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe', 'معرفی', 'راهنما دارو'], scoreWeight: 0.9 },
         dose_calc: { triggers: [' دوز', 'دوز دارو', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی', 'مقدار مصرف دارو'], scoreWeight: 0.9 },
         compat_tool: { triggers: ['سازگاری دارو', 'compatibility', 'تداخل دارویی', 'داروها', 'drug compatibility', 'سازگاری y-site', 'y-site', 'مخلوط داروها'], scoreWeight: 0.9 },
         ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'دارو', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
 
         settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
-        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش‌فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'هدو', 'سایرن', 'لینکس', 'ویکسن'], scoreWeight: 0.9 },
+        theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
 
         help: { triggers: ['help', 'راهنما', 'کمک', 'راهنمایی', 'نمونه', 'example', 'چه کارایی', 'چطور کار کنم', 'راهنمای صوتی', 'چه کار کنم'], scoreWeight: 0.6 }
     };
@@ -325,8 +440,8 @@
             if (cmd === 'morse' && params.morseScores) score += 2;
             if (cmd === 'burns' && text.includes('سوختگی')) score += 2;
             if (cmd === 'oxygen' && (params.flow || params.pressure || params.liters)) score += 2;
-            if (cmd === 'ventilator' && (params.height || params.weight)) score += 2;
-            if (cmd === 'nutrition' && (params.weight || params.height || params.age)) score += 2;
+            if (cmd === 'ventilator' && score > 0 && (params.height || params.weight)) score += 2;
+            if (cmd === 'nutrition' && score > 0 && (params.weight || params.height || params.age)) score += 2;
             if (cmd === 'ysite' && (params.drug1 || params.drug2)) score += 2;
             if (cmd === 'settings' && (text.includes('dark') || text.includes('light') || text.includes('font') || text.includes('تاریک') || text.includes('روشن') || text.includes('دارک') || text.includes('لایت'))) score += 2;
             scores[cmd] = score * info.scoreWeight;
@@ -350,7 +465,7 @@
         'شش': '6', 'هفت': '7', 'هشت': '8', 'نه': '9', 'ده': '10',
         'یازده': '11', 'دوازده': '12', 'سیزده': '13', 'چهارده': '14', 'پانزده': '15',
         'شانزده': '16', 'هفده': '17', 'هجده': '18', 'نوزده': '19', 'بیست': '20',
-        'سی': '30', 'چهل': '40', 'پنجاه': '50', 'شصت': '60', 'هفتاد': '70', 'هشتاد': '80', 'نود': '90', 'صد': '100',
+        'سی': '30', 'چهل': '40', 'پنجاه': '50', 'شصت': '60', 'هفتاد': '70', 'هشتاد': '80', 'نود': '90', 'صد': '100', 'یکصد': '100',
         'دویست': '200', 'سیصد': '300', 'چهارصد': '400', 'پانصد': '500',
         'ششصد': '600', 'هفتصد': '700', 'هشتصد': '800', 'نهصد': '900', 'هزار': '1000'
     };
@@ -368,10 +483,155 @@
     }
 
     const PERSIAN_UNIT_WORDS = {
-        'میلی گرم': 'mg', 'میلی‌گرم': 'mg',
+        'میلی گرم': 'mg',
         'میکرو گرم': 'mcg', 'میکروگرم': 'mcg',
+        'میلی لیتر': 'ml',
+        'سی سی': 'cc',
         'گرم': 'g', 'واحد': 'units'
     };
+
+    // ============================================
+    // COLLOQUIAL SPEECH NORMALIZATION
+    // Natural spoken Persian contracts "است/هست" (is) onto the word before
+    // it — "شصت است" becomes "شصته", "کیلو است" becomes "کیلوئه" — and
+    // combines hundreds with the next number via a fused "و" with no space
+    // — "صد و" said quickly becomes "صدو". None of this shows up in
+    // formal written Persian, but it's exactly how people actually talk,
+    // and it's exactly what a speech engine transcribes. Untangling this
+    // BEFORE number/unit extraction fixes real, reported failures like
+    // "هفتاد کیلوئه" (is seventy kilos) and "صدو شصته" (is a hundred
+    // and sixty) not being understood at all.
+    // ============================================
+    const HUNDREDS_WORDS = ['هزار', 'نهصد', 'هشتصد', 'هفتصد', 'ششصد', 'پانصد', 'چهارصد', 'سیصد', 'دویست', 'صد'];
+
+    function normalizeColloquialSpeech(text) {
+        // Fused "[hundreds-word]و" -> "[hundreds-word] و" (صدو -> صد و)
+        HUNDREDS_WORDS.forEach(function (w) {
+            text = text.replace(new RegExp('(^|\\s)' + w + 'و(?=\\s|$)', 'g'), '$1' + w + ' و');
+        });
+        // "کیلوئه"/"سانتیمتره"/"سانته" -> bare unit word
+        text = text.replace(/کیلوئه/g, 'کیلو');
+        text = text.replace(/سانتی\s?متره|سانته/g, 'سانت');
+        text = text.replace(/سالشه|ساله/g, 'سال');
+        // Same "-ه" (است/هست, "is") contraction, but on the weight/height/
+        // age KEYWORD itself rather than a number — "قدشه" (his height IS)
+        // is the exact same colloquial pattern as "شصته" (sixty IS), just
+        // applied to "قدش" instead of a number word. Without this, a very
+        // natural phrase like "صد هفتاد قدشه" silently fails to recognize
+        // "قدشه" as the height keyword at all.
+        text = text.replace(/قدشه(?=\s|$)/g, 'قدش');
+        text = text.replace(/قدمه(?=\s|$)/g, 'قدم');
+        text = text.replace(/وزنشه(?=\s|$)/g, 'وزنش');
+        text = text.replace(/وزنمه(?=\s|$)/g, 'وزنم');
+        text = text.replace(/سنشه(?=\s|$)/g, 'سنش');
+        text = text.replace(/سنمه(?=\s|$)/g, 'سنم');
+        // Any known number word with the "-ه" contraction (شصته -> شصت),
+        // skipping single-letter-result words like "سه"/"نه" which already
+        // legitimately end in "ه" themselves (handled by exact match first
+        // everywhere this matters, so stripping here is purely additive).
+        const allNumberWords = Object.keys(PERSIAN_NUMBER_WORDS).filter(function (w) { return w.length > 2; });
+        allNumberWords.sort(function (a, b) { return b.length - a.length; });
+        allNumberWords.forEach(function (w) {
+            text = text.replace(new RegExp('(^|\\s)' + w + 'ه(?=\\s|$)', 'g'), '$1' + w);
+        });
+        return text;
+    }
+
+    // Matches a number word, including after stripping a colloquial "-ه"
+    // contraction, returning the numeric value or null.
+    function matchNumberToken(token) {
+        if (PERSIAN_NUMBER_WORDS.hasOwnProperty(token)) return parseInt(PERSIAN_NUMBER_WORDS[token], 10);
+        if (token.length > 1) {
+            const stripped = token.slice(0, -1);
+            if (PERSIAN_NUMBER_WORDS.hasOwnProperty(stripped)) return parseInt(PERSIAN_NUMBER_WORDS[stripped], 10);
+        }
+        return null;
+    }
+
+    // Persian builds compound numbers additively with "و" (and) —
+    // "صد و شصت" = 100 + 60 = 160, "هزار و دویست و سی" = 1000+200+30=1230.
+    // The previous word-by-word replacement turned "صد و شصت" into the
+    // literal text "100 و 60" without ever summing them. This walks the
+    // token stream and collapses each consecutive number-word run
+    // (connected by "و" or directly fused with it) into its actual total.
+    function convertCompoundPersianNumbers(text) {
+        const tokens = text.split(/\s+/);
+        const output = [];
+        let i = 0;
+        while (i < tokens.length) {
+            const firstVal = matchNumberToken(tokens[i]);
+            if (firstVal === null) { output.push(tokens[i]); i++; continue; }
+            let sum = firstVal;
+            const startedOnHundreds = firstVal >= 100;
+            let j = i + 1;
+            while (j < tokens.length) {
+                if (tokens[j] === 'و' && j + 1 < tokens.length) {
+                    const nextVal = matchNumberToken(tokens[j + 1]);
+                    if (nextVal === null) break;
+                    sum += nextVal;
+                    j += 2;
+                    continue;
+                }
+                // No "و" between this and the next token — only bridge this
+                // gap if we started on a hundreds/thousands word followed
+                // directly by a smaller (tens/ones) value, e.g. "صد هفتاد"
+                // said without the formally-correct middle "و". This is
+                // deliberately narrow: it does NOT apply to two arbitrary
+                // adjacent small numbers, so separate-number sequences like
+                // spoken GCS scores ("چهار پنج شش" = 4, 5, 6) are never
+                // accidentally summed into one wrong number.
+                if (startedOnHundreds) {
+                    const directVal = matchNumberToken(tokens[j]);
+                    if (directVal !== null && directVal < 100 && directVal > 0) {
+                        sum += directVal;
+                        j += 1;
+                        continue;
+                    }
+                }
+                break;
+            }
+            output.push(String(sum));
+            i = j;
+        }
+        return output.join(' ');
+    }
+
+    function normalizeAndConvertNumbers(text) {
+        return convertCompoundPersianNumbers(normalizeColloquialSpeech(text));
+    }
+
+    // ============================================
+    // ACRONYM PROTECTION
+    // Some Persian number words are ALSO the Persian name of a Latin
+    // letter — "سی" is both "thirty" and the letter "C". Spelled-out
+    // acronyms like "جی سی اس" (G-C-S, i.e. GCS) collide with this: the
+    // number converter was turning "جی سی اس" into "جی 30 اس", destroying
+    // the command before it could ever be recognized. Known spelled-out
+    // acronym phrases are protected with a placeholder BEFORE number
+    // conversion runs, then restored immediately after — so "سی" still
+    // means 30 everywhere else (e.g. "سی میلی‌گرم"), just not inside one
+    // of these specific known phrases.
+    // ============================================
+    const PROTECTED_ACRONYM_PHRASES = [
+        'جی سی اس', 'آر اس اس', 'بی ام آی', 'بی ام ای', 'بی اس ای', 'بی اس آی', 'وی بی جی', 'ای بی جی'
+    ];
+
+    function withAcronymsProtected(text, fn) {
+        const placeholders = [];
+        let protectedText = text;
+        PROTECTED_ACRONYM_PHRASES.forEach(function (phrase, idx) {
+            const token = '\u0000ACR' + idx + '\u0000';
+            if (protectedText.indexOf(phrase) !== -1) {
+                protectedText = protectedText.split(phrase).join(token);
+                placeholders.push({ token: token, phrase: phrase });
+            }
+        });
+        let result = fn(protectedText);
+        placeholders.forEach(function (p) {
+            result = result.split(p.token).join(p.phrase);
+        });
+        return result;
+    }
 
     // ============================================
     // SMALL TALK (nurses' downtime chat)
@@ -402,7 +662,7 @@
             'شب بخیر! اگه خواب آلودی، یه استراحت کوتاه بگیر اگه میشه 😴'
         ],
         // identity / about the app
-        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس|برنامه‌نویس': [
+        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس': [
             'من رو یکی از همکارات ساخته! 🦊 ولی تویی که بیمارا رو نجات می‌دی، قهرمان اصلی‌ای ✨',
             'برنامه‌نویسم یکی از همکاراته که کارش رو دوست داره. گفته کمک به پرستارا یعنی کمک به بیمارا 💖',
             'سازنده‌م یه پرستاره و گفته هرجوری شده باید تو کارت کمکت کنم 📱'
@@ -413,7 +673,7 @@
             'یه دستیار کوچیکم که قراره کارای محاسباتی رو برات راحت کنه ✨'
         ],
         // nurse life — tiredness / shift difficulty
-        'خسته‌ام|خستم|خستگی': [
+        'خسته ام|خستم|خستگی|خسته شدم': [
             'آره شیفتا واقعاً خسته‌کننده‌ان... یه نفس عمیق بکش و یادت باشه آب کافی بخوری 💧',
             'میدونم، این شغل خیلی انرژی می‌بره. ولی تو قوی‌ای، از پسش برمیای 💪',
             'خسته نباشی! اگه فرصت شد چند دقیقه چشماتو ببند، بهتر میشی 🍵'
@@ -443,7 +703,7 @@
             'میدونم سخته بیدار ماندن. اگه فرصت شد یه استراحت کوتاه بگیر ☕',
             'شب‌ها سخت‌تره ولی صبح نزدیکه! یکم دیگه دوام بیار 💪'
         ],
-        'گشنمه|تشنمه|گرسنمه': [
+        'گشنمه|تشنمه|گرسنمه|تشنه ام|گرسنه ام|گشنه ام': [
             'اگه فرصت شد یه چیز کوچیک بخور و آب فراموش نشه 💧',
             'یادت نره بین کارها یه لحظه برای خودت هم وقت بگذاری 🍎',
             'هر وقت توانستی یه استراحت کوتاه برای غذا بگیر، حواست به خودت هم باشه 🌿'
@@ -481,7 +741,7 @@
             'خواهش میکنم، راحت باش 🌼'
         ],
         // fun
-        'جوک بگو|بخندونم|یه چیز خنده‌دار بگو': [
+        'جوک بگو|بخندونم|یه چیز خنده دار بگو': [
             'یه روباه به دکتر گفت دکتر دلم درد میکنه، دکتر گفت لابد یه چیزی رو فاکسید کردی! 🦊😄',
             'تنها چیزی که این موقع شب بیشتر از قهوه بهم نیرو میده، دیدن یه شیفت بدون آلارم اضافه‌ست ☕😌',
             'اگه کدنویس‌ها هم مثل پرستارا شیفت شب میرفتن، الان نصف برنامه‌ها باگ داشت 😅'
@@ -525,18 +785,27 @@
                 return true;
             }
         }
-        // Short, unrecognized chat-like message — still respond warmly
-        // rather than a cold "didn't understand".
-        if (normalized.length > 0 && normalized.length < 20) {
-            const generic = [
-                'مطمئنم می‌تونم کمک کنم! فقط بگو چطور 🦊',
-                'هر چی بگی، گوش‌هام باهاته 👂',
-                'بگو، چیکار می‌تونم برات انجام بدم؟ 😊'
-            ];
-            showVoiceResult(generic[Math.floor(Math.random() * generic.length)], 'success');
-            return true;
-        }
         return false;
+    }
+
+    // Generic warm filler for short, unrecognized chat-like messages.
+    // Deliberately the LAST resort, tried only after command scoring has
+    // already failed to match anything — previously this ran as part of
+    // trySmallTalk() BEFORE scoring, which meant any short command with no
+    // digits and no drug name (e.g. "پاک کن", "تم اقیانوس", "سوختگی
+    // بزرگسال") got swallowed by small talk before the real command
+    // scorer ever saw it. Real, specific commands always get first chance.
+    function tryGenericChatFiller(normalized, lower) {
+        const hasNumber = /\d/.test(normalized);
+        if (hasDrugMention(lower) || hasNumber) return false;
+        if (normalized.length === 0 || normalized.length >= 20) return false;
+        const generic = [
+            'مطمئنم می‌تونم کمک کنم! فقط بگو چطور 🦊',
+            'هر چی بگی، گوش‌هام باهاته 👂',
+            'بگو، چیکار می‌تونم برات انجام بدم؟ 😊'
+        ];
+        showVoiceResult(generic[Math.floor(Math.random() * generic.length)], 'success');
+        return true;
     }
 
     // ============================================
@@ -600,6 +869,15 @@
     // ============================================
     function process(text) {
         let normalized = PersianNumbers.toLatin(text);
+        // Collapse ZWNJ (half-space, U+200C) into a regular space before
+        // anything else. Persian speech-to-text output is inconsistent
+        // about where it inserts a ZWNJ vs a regular space vs nothing at
+        // all for the same phrase — "بی‌ام‌آی", "بی ام آی", and "بی‌ام ای"
+        // (mixed) are all the same spoken words, but as plain strings they
+        // don't match each other. Normalizing here means trigger phrases
+        // only need to be listed once, with regular spaces, instead of
+        // needing every separator permutation hand-typed out.
+        normalized = normalized.replace(/\u200c/g, ' ');
         normalized = normalized.replace(/[،،]/g, ' ').replace(/\s+/g, ' ').trim();
         const lower = normalized.toLowerCase();
 
@@ -640,14 +918,7 @@
         // drug-free phrases) ---
         if (trySmallTalk(normalized, lower)) return;
 
-        let textWithDigits = normalized;
-        for (let i = 0; i < PERSIAN_NUMBER_WORD_KEYS.length; i++) {
-            const word = PERSIAN_NUMBER_WORD_KEYS[i];
-            textWithDigits = textWithDigits.replace(
-                new RegExp('(^|\\s)' + word + '(?=$|\\s)', 'g'),
-                function (match, prefix) { return prefix + PERSIAN_NUMBER_WORDS[word]; }
-            );
-        }
+        let textWithDigits = withAcronymsProtected(normalized, normalizeAndConvertNumbers);
         for (const persian in PERSIAN_UNIT_WORDS) {
             textWithDigits = textWithDigits.replace(new RegExp(persian, 'g'), PERSIAN_UNIT_WORDS[persian]);
         }
@@ -659,11 +930,11 @@
         for (let i = 0; i < infoTriggers.length; i++) { if (lower.includes(infoTriggers[i])) { hasInfoTrigger = true; break; } }
         if (hasInfoTrigger) {
             const drugId = params.drugId || findDrugName(normalized);
-            if (drugId) { executeCommand('druginfo', normalized, { drugId: drugId }); return; }
+            if (drugId) { executeCommand('druginfo', textWithDigits, { drugId: drugId }); return; }
         }
 
         if ((lower.includes('سطح بدن') || lower.includes('body surface')) && params.weight && params.height) {
-            executeCommand('bsa', normalized, params);
+            executeCommand('bsa', textWithDigits, params);
             return;
         }
 
@@ -674,17 +945,19 @@
             return;
         }
 
-        const scores = scoreCommand(normalized, params);
+        const scores = scoreCommand(textWithDigits, params);
         const sorted = Object.entries(scores).sort(function (a, b) { return b[1] - a[1]; });
         const best = sorted[0];
 
         if (!best || best[1] === 0) {
-            if (params.weight && params.height) { executeCommand('bmi', normalized, params); return; }
+            if (params.weight && params.height) { executeCommand('bmi', textWithDigits, params); return; }
+            if (tryGenericChatFiller(normalized, lower)) return;
+            logUnrecognizedPhrase(text, normalized);
             showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
             return;
         }
 
-        executeCommand(best[0], normalized, params);
+        executeCommand(best[0], textWithDigits, params);
     }
 
     // ============================================
@@ -702,6 +975,19 @@
                     document.body.classList.add('no-scroll');
                 }
                 showVoiceResult('تاریخچه محاسبات باز شد', 'success');
+                break;
+            case 'settings':
+                // Bare "تنظیمات" (settings) with no more specific dark/
+                // light/font wording already handled earlier in process()
+                // — just open the settings panel itself. This command was
+                // already being correctly recognized/scored, but had no
+                // actual case here, so it fell through to the generic
+                // "not supported yet" message despite being "understood".
+                if (DOM.settingsModal) {
+                    DOM.settingsModal.classList.add('active');
+                    document.body.classList.add('no-scroll');
+                }
+                showVoiceResult('تنظیمات باز شد', 'success');
                 break;
             case 'help':
                 showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تبدیل ۲۰ mEq سدیم به mg»، «GCS 4 5 6»، «سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰»، «سازگاری هپارین و وانکومایسین»، «تاریک»، «فونت بزرگ»', 'info');
@@ -817,6 +1103,7 @@
                     'ocean': 'ocean', 'اقیانوس': 'ocean', 'سایرن': 'ocean',
                     'rose': 'rose', 'رز': 'rose', 'ویکسن': 'rose',
                     'forest': 'forest', 'جنگل': 'forest', 'لینکس': 'forest',
+                    'dreamfire': 'dreamfire', 'شرابی': 'dreamfire', 'زرشکی': 'dreamfire', 'گیلاسی': 'dreamfire',
                     'default': 'default', 'پیش‌فرض': 'default', 'هدو': 'default'
                 };
                 const lowerText = text.toLowerCase();
@@ -907,7 +1194,7 @@
         const drug = drugDatabase[drugId];
 
         if (params.method) {
-            document.querySelectorAll('.method-btn-compact').forEach(function (btn) {
+            document.querySelectorAll('.method-selector-compact .method-btn-compact').forEach(function (btn) {
                 if (btn.dataset.method === params.method) btn.click();
             });
         }
@@ -1309,7 +1596,30 @@
                 if (lower.includes(names[i])) return id;
             }
         }
-        return null;
+        // Full names didn't match — try just the first/most distinctive
+        // word of each multi-word name (e.g. "انسولین" alone for the
+        // canonical "انسولین رگولار").
+        for (const id in drugDatabase) {
+            const drug = drugDatabase[id];
+            const names = [drug.persianName].concat(drug.alternativeNames || []);
+            for (let i = 0; i < names.length; i++) {
+                const word = firstSignificantWord(names[i]);
+                if (word && lower.includes(word.toLowerCase())) return id;
+            }
+        }
+        // Still nothing — try fuzzy, Persian-script names only.
+        let bestId = null;
+        let bestScore = 0;
+        for (const id in drugDatabase) {
+            const drug = drugDatabase[id];
+            const names = [drug.persianName].concat(drug.alternativeNames || [])
+                .filter(function (n) { return /[\u0600-\u06FF]/.test(n); });
+            names.forEach(function (n) {
+                const score = bestFuzzyScoreInText(lower, n.replace(/\s+/g, ''));
+                if (score > bestScore) { bestScore = score; bestId = id; }
+            });
+        }
+        return bestScore >= FUZZY_THRESHOLD ? bestId : null;
     }
 
     function extractDoseFromText(text) {
@@ -1325,5 +1635,59 @@
         return null;
     }
 
-    window.VoiceCommands = { process: process, getGrammar: buildVoiceGrammar };
+    // ============================================
+    // LOCAL LEARNING LOG (honest scope)
+    // There is no server here, and no legally-usable cloud service for an
+    // Iran-based app (see the earlier conversation about sanctions
+    // blocking essentially every major cloud provider) — so genuine
+    // automatic cross-user learning isn't something this app can honestly
+    // claim. What this DOES do, entirely on-device with zero new
+    // infrastructure: remember phrases the assistant genuinely failed to
+    // understand, so you (Mehdi) can periodically ask a nurse to export
+    // this list (button lives in Settings, exports as plain text — easy
+    // to paste into a Telegram/WhatsApp message) and use it as a REAL,
+    // grounded list of what to add to the drug database, COMMAND_KEYWORDS,
+    // or SMALL_TALK next — instead of guessing what phrasing people
+    // actually use. Manual review step is deliberate: a wrong automatic
+    // "fix" in a clinical dosing tool is a worse failure mode than a
+    // missed voice command that falls back to typing.
+    // ============================================
+    const UNRECOGNIZED_LOG_KEY = 'foximed_voice_unrecognized_log';
+    const UNRECOGNIZED_LOG_MAX = 200;
+
+    function logUnrecognizedPhrase(original, normalized) {
+        try {
+            const log = JSON.parse(localStorage.getItem(UNRECOGNIZED_LOG_KEY) || '[]');
+            log.push({ text: original, normalized: normalized, at: new Date().toISOString() });
+            while (log.length > UNRECOGNIZED_LOG_MAX) log.shift();
+            localStorage.setItem(UNRECOGNIZED_LOG_KEY, JSON.stringify(log));
+        } catch (e) { /* localStorage full/unavailable — non-fatal, just skip logging */ }
+    }
+
+    function getUnrecognizedLog() {
+        try { return JSON.parse(localStorage.getItem(UNRECOGNIZED_LOG_KEY) || '[]'); } catch (e) { return []; }
+    }
+
+    function clearUnrecognizedLog() {
+        try { localStorage.removeItem(UNRECOGNIZED_LOG_KEY); } catch (e) {}
+    }
+
+    function exportUnrecognizedLogAsText() {
+        const log = getUnrecognizedLog();
+        if (log.length === 0) return 'هیچ عبارت درک‌نشده‌ای ثبت نشده است.';
+        const lines = log.map(function (entry, i) {
+            const date = new Date(entry.at);
+            const dateStr = isNaN(date.getTime()) ? '' : date.toLocaleDateString('fa-IR') + ' ' + date.toLocaleTimeString('fa-IR');
+            return (i + 1) + '. «' + entry.text + '»  —  ' + dateStr;
+        });
+        return 'عبارات درک‌نشده توسط دستیار صوتی FoxiMed (' + log.length + ' مورد):\n\n' + lines.join('\n');
+    }
+
+    window.VoiceCommands = {
+        process: process,
+        getGrammar: buildVoiceGrammar,
+        getUnrecognizedLog: getUnrecognizedLog,
+        clearUnrecognizedLog: clearUnrecognizedLog,
+        exportUnrecognizedLogAsText: exportUnrecognizedLogAsText
+    };
 })(window);

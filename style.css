@@ -102,6 +102,20 @@
     border: 1px solid #374151 !important;
 }
 
+/* The tab-bar's own box-shadow overpaint (see base .tab-bar rule) must
+   match whatever the tab-bar's ACTUAL background is in each mode — the
+   base rule's box-shadow uses var(--surface) to match its own light-mode
+   background, but dark mode overrides the background to
+   var(--surface-elevated) above. Missing this override was the real,
+   root cause of a persistent visible seam at the very bottom of the
+   screen in dark mode specifically: the overpaint was quietly painting
+   the wrong (too-dark) color the whole time, not a viewport-height or
+   safe-area problem at all — confirmed by inspecting exact pixel colors
+   from a real device screenshot. */
+.dark-mode .tab-bar {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 120px 0 0 var(--surface-elevated) !important;
+}
+
 .dark-mode .control-group {
     background: var(--surface) !important;
     border: 1.5px solid #374151 !important;
@@ -830,8 +844,8 @@ select {
    =============================== */
 .app-container {
     height: 100vh;
-    height: 100dvh;
-    height: calc(var(--vh, 1vh) * 100);
+    height: calc(var(--vh, 1vh) * 100); /* fallback for browsers with no dvh support */
+    height: 100dvh; /* wins when supported — correctly handles iOS's standalone-PWA viewport, unlike the JS-measured value above which can be a frame stale at launch and leave a gap */
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -940,6 +954,16 @@ select {
 
 .tab-pane.active {
     display: block;
+    animation: tabPaneIn 0.22s ease;
+}
+
+@keyframes tabPaneIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-pane.active { animation: none; }
 }
 
 .tab-bar {
@@ -956,18 +980,17 @@ select {
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     z-index: 1000;
     min-height: calc(56px + env(safe-area-inset-bottom, 0px));
-}
-
-/* Paint surface color into the home indicator gap below the tab bar */
-.tab-bar::after {
-    content: '';
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: env(safe-area-inset-bottom, 0px);
-    background: var(--surface);
-    z-index: -1;
+    /* Overpaint below the tab bar with solid surface color. This is a pure
+       paint effect (box-shadow never affects layout/position), so unlike
+       the previous ::after + negative z-index approach, it can't be pushed
+       behind other content by an unrelated stacking-context quirk, and it
+       doesn't depend on getting env(safe-area-inset-bottom) pixel-exact —
+       it simply always covers anything below the tab bar out to 120px,
+       comfortably exceeding any real device's home-indicator zone. Fixes a
+       persistent gap reported specifically in iOS's installed/standalone
+       PWA mode, where position:fixed;bottom:0 has a long-documented
+       history of not perfectly reaching the true screen edge. */
+    box-shadow: 0 120px 0 0 var(--surface);
 }
 
 .tab-item {
@@ -997,6 +1020,17 @@ select {
     color: white;
     background: var(--gradient-primary);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    animation: tabItemPop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tabItemPop {
+    0% { transform: scale(0.88); }
+    60% { transform: scale(1.06); }
+    100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-item.active { animation: none; }
 }
 
 .tab-item i {
@@ -4636,6 +4670,13 @@ input[type="search"]::placeholder {
     border-bottom: none;
 }
 
+.settings-hint {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.7;
+    margin: 0 0 10px 0;
+}
+
 .settings-group h4 {
     font-size: 12px !important;
     font-weight: 700 !important;
@@ -7185,24 +7226,29 @@ html {
 
 .theme-swatches {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     direction: rtl;
+    padding-bottom: 2px;
 }
+.theme-swatches::-webkit-scrollbar { display: none; }
 
 .theme-swatch {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
-    padding: 8px 10px;
+    gap: 4px;
+    padding: 7px 5px;
     border-radius: 12px;
     border: 2px solid var(--border);
     background: var(--surface-elevated);
     cursor: pointer;
     transition: all 0.2s ease;
-    flex: 1;
-    min-width: 52px;
+    flex: 0 0 auto;
+    min-width: 48px;
 }
 
 .theme-swatch:hover {
@@ -7217,8 +7263,8 @@ html {
 }
 
 .swatch-dot {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     display: block;
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
@@ -7226,7 +7272,7 @@ html {
 
 .swatch-name {
     font-family: var(--font-persian);
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: var(--text-secondary);
     text-align: center;
     white-space: nowrap;
