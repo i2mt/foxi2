@@ -70,7 +70,7 @@
 
     // Mehdi: put your hosted, same-origin .tar.gz model URL here.
     // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
+    const VOSK_MODEL_URL = 'https://github.com/i2mt/foxi2/raw/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
     const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -267,7 +267,6 @@
     let voskStream = null;
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
-    let triedVoskFallback = false; // reset at the start of each fresh start() call
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -277,33 +276,10 @@
         if (silenceWatchdog) { clearTimeout(silenceWatchdog); silenceWatchdog = null; }
     }
 
-    // If native recognition shows a clear sign of being broken on this
-    // device — not just "didn't hear anything" — silently switch to the
-    // Vosk backend instead of just reporting an error, IF it's configured.
-    // This is what actually makes voice "certainly work" across the wide
-    // variety of Android devices/OEM browsers out there: native speech
-    // recognition quality and availability varies a lot by device (missing
-    // language packs, OEM browser quirks, etc.), but Vosk doesn't depend on
-    // any of that — it ships its own model, so it works the same way
-    // everywhere once downloaded. Only one fallback attempt per start() —
-    // this never ping-pongs between backends.
-    function maybeFallbackToVosk(errorCode) {
-        if (triedVoskFallback) return false;
-        if (!voskConfigured()) return false;
-        if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
-        const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
-        if (!FALLBACK_CODES[errorCode]) return false;
-        triedVoskFallback = true;
-        stopWebSpeech();
-        startVosk();
-        return true;
-    }
-
     function armSilenceWatchdog() {
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
             if (active) {
-                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -439,8 +415,8 @@
         recognition.onerror = function (event) {
             // Some Android speech services are picky about the exact
             // locale tag — if "fa-IR" is reported as unsupported, silently
-            // retry once with the bare "fa" before giving up on native
-            // recognition entirely (and falling back further, below).
+            // retry once with the bare "fa" before surfacing anything to
+            // the person. This never fires more than one retry deep.
             if (event.error === 'language-not-supported' && langToUse === 'fa-IR') {
                 active = false;
                 clearWatchdogs();
@@ -448,7 +424,6 @@
                 startWebSpeech('fa');
                 return;
             }
-            if (maybeFallbackToVosk(event.error)) return;
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -484,7 +459,6 @@
         // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
-                if (maybeFallbackToVosk('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -538,21 +512,9 @@
     // an HTTP Range request, instead of restarting the whole 53MB from
     // zero. Falls back to a full restart only if the server doesn't honor
     // Range requests. A single fixed timeout can't fix "the connection
-    // drops partway through" — this is built specifically for that case.
-    //
-    // Uses XMLHttpRequest rather than fetch()+ReadableStream on purpose:
-    // XHR's `progress` event is a much older, simpler mechanism that
-    // doesn't depend on the Streams API being fully supported — fetch's
-    // streaming response body (`response.body.getReader()`) has a less
-    // consistent track record across Safari versions, which matters here
-    // given everything else we've already run into on iOS specifically.
-    //
-    // responseType is 'arraybuffer', not 'blob' — confirmed via real
-    // on-device testing that this is the more memory-predictable choice
-    // on iOS WebKit. Letting the browser manage Blob materialization
-    // internally during a large streamed response appears less reliable
-    // than collecting raw bytes ourselves and constructing exactly one
-    // Blob at the very end.
+    // drops partway through" — this is built specifically for that case,
+    // which sounds like what's actually happening here rather than pure
+    // slowness.
     function fetchModelWithProgress(url, onProgress) {
         const MAX_ATTEMPTS = 6;
         const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
@@ -560,67 +522,52 @@
         let loaded = 0;
         let total = 0;
 
-        function parseRangeTotal(rangeHeader) {
-            const match = rangeHeader && rangeHeader.match(/\/(\d+)$/);
-            return match ? parseInt(match[1], 10) : null;
-        }
-
         function attempt(attemptNum) {
-            return new Promise(function (resolve, reject) {
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', url, true);
-                xhr.responseType = 'arraybuffer';
-                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
+            const controller = new AbortController();
+            let stallTimer = null;
+            function armStall() {
+                if (stallTimer) clearTimeout(stallTimer);
+                stallTimer = setTimeout(function () { controller.abort(); }, STALL_TIMEOUT_MS);
+            }
 
-                let stallTimer = null;
-                function armStall() {
-                    if (stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(function () { xhr.abort(); }, STALL_TIMEOUT_MS);
+            const headers = {};
+            if (loaded > 0) headers['Range'] = 'bytes=' + loaded + '-';
+            armStall();
+
+            return fetch(url, { headers: headers, signal: controller.signal }).then(function (resp) {
+                if (!resp.ok && resp.status !== 206) throw new Error('http-' + resp.status);
+                const isPartial = resp.status === 206;
+                if (loaded > 0 && !isPartial) {
+                    // We asked for a Range but the server ignored it and
+                    // sent the whole file again — restart bookkeeping.
+                    chunks = [];
+                    loaded = 0;
                 }
-                armStall();
+                if (isPartial) {
+                    const range = resp.headers.get('content-range'); // "bytes 1000-2000/53000000"
+                    const match = range && range.match(/\/(\d+)$/);
+                    if (match) total = parseInt(match[1], 10);
+                } else {
+                    const cl = resp.headers.get('content-length');
+                    if (cl) total = parseInt(cl, 10);
+                }
 
-                let lastProgressEmit = 0;
-                const PROGRESS_THROTTLE_MS = 150; // ~6 UI updates/sec — smooth, but far fewer DOM writes than raw XHR progress events (which can fire dozens of times/sec and each one forces a style recalc)
-                xhr.onprogress = function (e) {
-                    armStall(); // reset the stall timer on every raw event, independent of UI throttling below
-                    if (!total) {
-                        const isPartial = xhr.status === 206;
-                        total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
-                    }
-                    const now = Date.now();
-                    if (now - lastProgressEmit < PROGRESS_THROTTLE_MS) return;
-                    lastProgressEmit = now;
-                    const currentLoaded = loaded + e.loaded;
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
-                    }
-                };
-
-                xhr.onload = function () {
-                    clearTimeout(stallTimer);
-                    if (xhr.status !== 200 && xhr.status !== 206) {
-                        reject(new Error('http-' + xhr.status));
-                        return;
-                    }
-                    const responseData = xhr.response;
-                    if (!responseData) { reject(new Error('empty-response')); return; }
-                    if (xhr.status === 206 && loaded > 0) {
-                        chunks.push(new Uint8Array(responseData));
-                        loaded += responseData.byteLength;
-                    } else {
-                        // Either the first attempt, or the server ignored
-                        // our Range request and sent the whole file again.
-                        chunks = [new Uint8Array(responseData)];
-                        loaded = responseData.byteLength;
-                    }
-                    total = total || loaded;
-                    resolve();
-                };
-                xhr.onerror = function () { clearTimeout(stallTimer); reject(new Error('xhr-network-error')); };
-                xhr.onabort = function () { clearTimeout(stallTimer); reject(new Error('xhr-stalled')); };
-
-                xhr.send();
+                const reader = resp.body.getReader();
+                function pump() {
+                    return reader.read().then(function (res) {
+                        if (res.done) { clearTimeout(stallTimer); return; }
+                        armStall();
+                        chunks.push(res.value);
+                        loaded += res.value.length;
+                        if (typeof onProgress === 'function') {
+                            onProgress({ loaded: loaded, total: total, percent: total ? Math.round(loaded / total * 100) : null });
+                        }
+                        return pump();
+                    });
+                }
+                return pump();
             }).catch(function (err) {
+                clearTimeout(stallTimer);
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
                 // Brief pause before retrying — resumes from `loaded` bytes
                 // via the Range header above, not from scratch.
@@ -667,22 +614,6 @@
             .then(loadBlob)
             .then(function (blob) {
                 const blobUrl = URL.createObjectURL(blob);
-                // Deliberately NEVER revoked. The model object returned by
-                // createModel() is cached (see voskModel below) and reused
-                // for every subsequent listening session for the rest of
-                // the page's life — not just this first one — and it's
-                // genuinely unclear from static analysis of vosk-browser's
-                // bundled code (the actual worker-side extraction logic
-                // lives in a separate file this couldn't fully inspect)
-                // whether the worker ever needs to re-reference this URL
-                // after its initial load. An earlier version of this file
-                // revoked the URL right after createModel() resolved, on
-                // the assumption that was safe — that turned out to be the
-                // most likely cause of a real regression where recognition
-                // would start but silently never produce any result at
-                // all. The browser reclaims blob URLs automatically when
-                // the page unloads, so leaving this one alive for the
-                // page's lifetime costs comparatively little.
                 return window.Vosk.createModel(blobUrl).catch(function () {
                     // Not verifiable without a live device: some browsers'
                     // internal Worker may be unable to resolve a blob: URL
@@ -741,31 +672,17 @@
             if (voskCancelRequested) { voskLoading = false; return; }
             let recognizer;
             // Bias the decoder toward FoxiMed's actual vocabulary (drug
-            // names, command words, numbers, units) — it can still freely
-            // combine these in whatever order someone speaks them, it's
-            // not limited to exact pre-written phrases.
-            //
-            // OFF BY DEFAULT as of this version: real testing showed it
-            // can force wrong output for anything outside the list rather
-            // than just biasing toward known words — e.g. saying "سلام"
-            // (not in the vocabulary at all) was heard as "صد تا", which
-            // *is* built entirely from two words that ARE in the list
-            // ("صد" and "تا"). That's the constrained grammar forcing a
-            // best-fit substitution instead of recognizing normal speech.
-            // Add ?grammar=1 to the URL to opt back in and experiment —
-            // worth retrying once the vocabulary list covers more of what
-            // people actually say, including casual speech, not just
-            // clinical terms.
+            // names, command words, numbers, units) when available — it
+            // can still freely combine these in whatever order someone
+            // speaks them, it's not limited to exact pre-written phrases.
+            // Experimental: not every Vosk model build supports a runtime
+            // grammar, so this falls back to plain recognition if it does.
             let grammar = null;
-            let forceGrammarOn = false;
-            try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
-            if (forceGrammarOn) {
-                try {
-                    if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                        grammar = window.VoiceCommands.getGrammar();
-                    }
-                } catch (e) { grammar = null; }
-            }
+            try {
+                if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
+                    grammar = window.VoiceCommands.getGrammar();
+                }
+            } catch (e) { grammar = null; }
 
             try {
                 recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
@@ -822,25 +739,8 @@
                 // reliably fire in every browser, hence the (silent, since
                 // echoCancellation is on) connection below.
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
-                let acceptWaveformFailureReported = false;
                 voskProcessor.onaudioprocess = function (event) {
-                    try {
-                        recognizer.acceptWaveform(event.inputBuffer);
-                    } catch (e) {
-                        // Surfaced rather than silently swallowed: a
-                        // previous version of this file caught this
-                        // completely silently, which meant a real
-                        // regression elsewhere (revoking the model's blob
-                        // URL too early) produced "mic opens, zero
-                        // transcript, ever" with no error and nothing to
-                        // debug from. Rate-limited to once per session so a
-                        // persistently-failing case doesn't spam a new
-                        // error roughly 4 times a second.
-                        if (!acceptWaveformFailureReported) {
-                            acceptWaveformFailureReported = true;
-                            emit('error', classifyError('vosk-runtime'));
-                        }
-                    }
+                    try { recognizer.acceptWaveform(event.inputBuffer); } catch (e) {}
                     emitVoskAudioLevel(event.inputBuffer);
                 };
                 voskSource.connect(voskProcessor);
@@ -927,18 +827,10 @@
 
     function start() {
         if (active || voskActive || voskLoading) return;
-        triedVoskFallback = false;
         if (pickBackend() === 'vosk') startVosk(); else startWebSpeech();
     }
 
     function stop() {
-        // Check actual runtime state rather than just the static platform
-        // choice — a session that fell back from webspeech to Vosk mid-
-        // flight (see maybeFallbackToVosk) is now genuinely running Vosk
-        // even on a platform where pickBackend() would normally say
-        // "webspeech", so stopping the wrong one would leave it running.
-        if (voskActive || voskLoading) { stopVosk(); return; }
-        if (active) { stopWebSpeech(); return; }
         if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
     }
 
@@ -975,29 +867,6 @@
             // correctly outside of "Add to Home Screen" mode.
             try { window.open(window.location.href, '_blank'); }
             catch (e) { window.location.href = window.location.href; }
-        },
-        // Silently kick off the Vosk model download/instantiation in the
-        // background — called from script.js when the person actually
-        // opens the Voice tab, ahead of them tapping the mic itself. Uses
-        // the exact same ensureVoskModel()/voskModelLoadPromise caching as
-        // the normal on-demand path, so this is fully safe to call
-        // proactively: if the person taps the mic before this finishes,
-        // that call reuses this same in-flight promise rather than
-        // starting a second, duplicate download. If it fails silently in
-        // the background (offline, etc.), nothing is shown to the person
-        // here — the normal on-demand path will surface a real error only
-        // if they actually try to use voice and it's genuinely unavailable.
-        // Deliberately NOT triggered unconditionally at app startup — an
-        // earlier version of this did that, and downloading 53MB plus
-        // running heavy WASM instantiation automatically on every single
-        // app launch (even sessions that never touch voice at all) turned
-        // out to be a real, reported cause of lag/hangs, competing with
-        // the rest of the app's own startup work at exactly the most
-        // resource-contended moment. Tying it to an actual Voice-tab visit
-        // keeps the "get ahead of the mic tap" benefit without that cost.
-        preload: function () {
-            if (!(ENV.isIOS && voskConfigured())) return;
-            ensureVoskModel().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         }
     };
 

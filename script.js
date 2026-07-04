@@ -489,18 +489,7 @@ const DOM = {
     selectedDrugIcon: document.getElementById('selectedDrugIcon'),
     selectedDrugName: document.getElementById('selectedDrugName'),
     selectedDrugDesc: document.getElementById('selectedDrugDesc'),
-    // Scoped to .method-selector-compact specifically — '.method-btn-compact'
-    // alone is also used by the ventilator/nutrition gender selectors and
-    // the VBG mode selector elsewhere on the page, and previously matched
-    // ALL of them here. Since this list gets the click listener below that
-    // unconditionally sets AppState.infusionMethod = this.dataset.method,
-    // clicking any of those OTHER buttons (which have no data-method
-    // attribute) was silently corrupting AppState.infusionMethod to
-    // undefined — breaking the next drug calculation with a hard crash in
-    // updateVolumeOptions(). Real bug, reachable via manual taps too, not
-    // just voice commands — voice commands just triggered it reliably
-    // enough to surface it during testing.
-    methodBtns: document.querySelectorAll('.method-selector-compact .method-btn-compact'),
+    methodBtns: document.querySelectorAll('.method-btn-compact'),
     volumeOptions: document.getElementById('volumeOptions'),
     customVolume: document.getElementById('customVolume'),
     customVolumeContainer: document.getElementById('customVolumeContainer'),
@@ -1139,15 +1128,7 @@ function getEffectiveTotalDrug() {
 
 function updateVolumeOptions() {
     const drug = drugDatabase[AppState.selectedDrug];
-    let method = AppState.infusionMethod;
-    // Defensive fallback: if infusionMethod is ever missing or invalid for
-    // this drug (shouldn't happen now that DOM.methodBtns is correctly
-    // scoped, but this keeps a future regression from being a hard crash),
-    // fall back to 'syringe' and self-heal the state rather than throwing.
-    if (!drug.defaultSolutionVolumes[method]) {
-        method = 'syringe';
-        AppState.infusionMethod = method;
-    }
+    const method = AppState.infusionMethod;
     const volumes = drug.defaultSolutionVolumes[method];
     const defaultVol = drug.defaultVolume[method];
     if (!DOM.volumeOptions) return;
@@ -2081,16 +2062,6 @@ function switchTab(tabName) {
     if (tabName === 'tools') {
         initializeTools();
         initializeConverters();
-    }
-    if (tabName === 'voice' && window.VoiceEngine && typeof window.VoiceEngine.preload === 'function') {
-        // Start the model download/load only once the person actually
-        // opens the Voice tab, not unconditionally at app startup. This
-        // still gets ahead of an explicit mic tap (so by the time they
-        // press the button it may already be ready, or visibly loading
-        // with real progress instead of starting stone-cold) without
-        // taxing every single app launch regardless of whether voice is
-        // ever used that session.
-        window.VoiceEngine.preload();
     }
 }
 
@@ -3309,22 +3280,6 @@ const THEMES = {
             '--primary-light':    'rgba(74,222,128,0.15)',
             '--gradient-primary': 'linear-gradient(135deg,#4ade80 0%,#2dd4bf 100%)',
             '--secondary':        '#86efac',
-        }
-    },
-    dreamfire: {
-        light: {
-            '--primary':          '#9f1239',
-            '--primary-dark':     '#7f0f2e',
-            '--primary-light':    'rgba(159,18,57,0.1)',
-            '--gradient-primary': 'linear-gradient(135deg,#be123c 0%,#4c0519 100%)',
-            '--secondary':        '#d4af7a',
-        },
-        dark: {
-            '--primary':          '#e0447e',
-            '--primary-dark':     '#c2255f',
-            '--primary-light':    'rgba(224,68,126,0.15)',
-            '--gradient-primary': 'linear-gradient(135deg,#e0447e 0%,#7c2d5e 100%)',
-            '--secondary':        '#e8c98a',
         }
     }
 };

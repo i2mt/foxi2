@@ -198,42 +198,6 @@
     }
 
     // ============================================
-    // VOICE LEARNING LOG (export / clear)
-    // See the long comment in voice-commands.js next to
-    // logUnrecognizedPhrase() for the full reasoning — short version: this
-    // is a local-only, privacy-respecting substitute for real cross-user
-    // learning, which would require a server this app doesn't (and, given
-    // the sanctions situation covered earlier, largely can't) have.
-    // ============================================
-    function wireVoiceLearningLogButtons() {
-        const exportBtn = document.getElementById('exportVoiceLogBtn');
-        const clearBtn = document.getElementById('clearVoiceLogBtn');
-        if (!window.VoiceCommands) return;
-
-        if (exportBtn) {
-            exportBtn.addEventListener('click', function () {
-                const text = window.VoiceCommands.exportUnrecognizedLogAsText();
-                if (navigator.share) {
-                    navigator.share({ title: 'فهرست عبارات درک‌نشده FoxiMed', text: text }).catch(function () {});
-                } else if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text)
-                        .then(function () { if (typeof showToast === 'function') showToast('کپی شد', 'فهرست در کلیپ‌بورد کپی شد', 'success'); })
-                        .catch(function () { if (typeof showToast === 'function') showToast('خطا', 'کپی کردن ممکن نشد', 'error'); });
-                } else if (typeof showToast === 'function') {
-                    showToast('خطا', 'این قابلیت در این مرورگر در دسترس نیست', 'error');
-                }
-            });
-        }
-
-        if (clearBtn) {
-            clearBtn.addEventListener('click', function () {
-                window.VoiceCommands.clearUnrecognizedLog();
-                if (typeof showToast === 'function') showToast('پاک شد', 'فهرست عبارات درک‌نشده پاک شد', 'success');
-            });
-        }
-    }
-
-    // ============================================
     // HISTORY
     // ============================================
     function addToHistory(text) {
@@ -437,8 +401,6 @@
             updateTtsAvailability();
             els.ttsToggle.addEventListener('click', toggleVoiceOutput);
         }
-
-        wireVoiceLearningLogButtons();
 
         document.querySelectorAll('.voice-example-chip').forEach(function (chip) {
             chip.addEventListener('click', function () {
