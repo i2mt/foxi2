@@ -523,6 +523,69 @@
 #voiceTextSend:active { transform: scale(0.9); }
 
 /* ============================================
+   AUTOCOMPLETE — drug-name suggestions while typing.
+   Exists mainly because the offline voice model can't reliably recognize
+   uncommon/hard-to-pronounce pharmaceutical names by voice at all (a
+   model-training limitation, not something tunable in software) — so
+   typing needs to be genuinely fast for exactly those names, not just a
+   fallback of last resort.
+   ============================================ */
+.voice-text-fallback-wrap {
+    position: relative;
+    width: 100%;
+}
+.voice-autocomplete {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    z-index: 5;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.voice-autocomplete-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 16px;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    font-family: inherit;
+    text-align: right;
+    direction: rtl;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background 0.15s ease;
+}
+.voice-autocomplete-item:last-child { border-bottom: none; }
+.voice-autocomplete-item:active,
+.voice-autocomplete-item.is-active {
+    background: color-mix(in srgb, var(--fox-orange, var(--voice-c1)) 10%, transparent);
+}
+@supports not (background: color-mix(in srgb, red, blue)) {
+    .voice-autocomplete-item:active,
+    .voice-autocomplete-item.is-active { background: rgba(234, 88, 12, 0.1); }
+}
+.voice-autocomplete-name {
+    font-size: 14.5px;
+    font-weight: 600;
+}
+.voice-autocomplete-en {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    direction: ltr;
+    unicode-bidi: embed;
+}
+
+/* ============================================
    EXAMPLE CHIPS — single-row, horizontally scrollable strip.
    Keeps the idle view light instead of a multi-row wall of pills, and
    costs zero vertical space beyond one row no matter how many examples

@@ -662,7 +662,7 @@
             'شب بخیر! اگه خواب آلودی، یه استراحت کوتاه بگیر اگه میشه 😴'
         ],
         // identity / about the app
-        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس': [
+        'کی تورو ساخت|کی ساخته|سازنده|کی نوشته|برنامه نویس|خالقت کیه|خالقت چیه|کی تورو خلق کرد|کی خلقت کرد|خالق تو کیه|ساخته شدی|ساخته شده ای|توسط کی ساخته': [
             'من رو یکی از همکارات ساخته! 🦊 ولی تویی که بیمارا رو نجات می‌دی، قهرمان اصلی‌ای ✨',
             'برنامه‌نویسم یکی از همکاراته که کارش رو دوست داره. گفته کمک به پرستارا یعنی کمک به بیمارا 💖',
             'سازنده‌م یه پرستاره و گفته هرجوری شده باید تو کارت کمکت کنم 📱'
@@ -1085,17 +1085,29 @@
                 showVoiceResult('تبدیل وزن انجام شد', 'success');
                 break;
             case 'dose_calc':
-                switchTab('tools');
-                setTimeout(function () {
-                    populateDoseCalcFromDrug();
-                    calculateDose();
-                }, 300);
-                showVoiceResult('محاسبه دوز انجام شد', 'success');
+                // NOTE: this command previously called populateDoseCalcFromDrug()
+                // and calculateDose(), which reference DOM elements
+                // (doseNeeded, doseVialVolume, etc.) that don't exist
+                // anywhere in index.html — a standalone "vial dose"
+                // calculator that's referenced in JS but was apparently
+                // never actually built out in the UI. Calling it always
+                // threw an error regardless of platform. Rather than
+                // fabricate a clinical calculation flow that hasn't been
+                // reviewed, this now degrades honestly instead of
+                // crashing or falsely claiming success.
+                showVoiceResult('این ابزار هنوز آماده نیست. برای محاسبه دوز، از بخش محاسبه اصلی استفاده کنید.', 'info');
                 break;
             case 'compat_tool':
-                switchTab('tools');
-                setTimeout(function () { checkCompatibility(); }, 300);
-                showVoiceResult('بررسی سازگاری انجام شد', 'success');
+                // Redirects to the real, working Y-site compatibility
+                // checker (see the 'ysite' case) instead of the old
+                // checkCompatibility()/compatDrug1/compatDrug2 flow, which
+                // referenced DOM elements that no longer exist since the
+                // Y-site tool was rebuilt as the chip-based multi-drug
+                // matrix — this old function was never removed, so any
+                // phrasing that happened to score higher on 'compat_tool'
+                // than 'ysite' would silently crash instead of using the
+                // feature that's actually there.
+                handleYSiteVoice(text, params);
                 break;
             case 'theme': {
                 const themeMap = {

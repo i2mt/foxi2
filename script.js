@@ -13,6 +13,75 @@
 // ============================================
 // APP STATE & CONFIGURATION
 // ============================================
+
+// Single source of truth for the "What's New" feature below — bump this
+// alongside the other version strings (index.html's two display spots,
+// manifest.json, service-worker.js's CACHE_NAME) on every release, and add
+// a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
+// points people would actually notice, not an engineering changelog.
+const APP_VERSION = '4.11.1';
+
+const CHANGELOG = {
+    '4.11.1': [
+        'پیشنهاد خودکار نام دارو هنگام تایپ در دستیار صوتی — برای داروهایی که تشخیص صدا آن‌ها را متوجه نمی‌شود',
+        'رفع مشکل نوار خالی پایین صفحه در نسخه نصب‌شده روی آیفون',
+        'رفع چند اشکال در دستیار صوتی هنگام پرسیدن سازنده برنامه',
+        'رفع اشکال چند ابزار که به‌درستی کار نمی‌کردند'
+    ],
+    '4.10.0': [
+        'دانلود سریع‌تر و مطمئن‌تر موتور تشخیص گفتار آفلاین در بازدیدهای بعدی',
+        'رفع چند اشکال در تشخیص اعداد و نام داروها در دستیار صوتی'
+    ],
+    '4.9.0': [
+        'بهبود قابل‌توجه دقت تشخیص گفتار فارسی',
+        'پشتیبانی از جمله‌بندی‌های طبیعی‌تر برای وزن، قد و سن'
+    ]
+};
+
+function getLastSeenVersion() {
+    try { return localStorage.getItem('foximed_last_seen_version'); } catch (e) { return null; }
+}
+function setLastSeenVersion(v) {
+    try { localStorage.setItem('foximed_last_seen_version', v); } catch (e) {}
+}
+
+// Shows the What's New modal. `force`=true (from the Settings button) always
+// shows it regardless of whether it's been seen. The automatic check on app
+// load only shows it for an actual UPGRADE from a previously-seen version —
+// deliberately not on a fresh install, since onboarding already covers that,
+// and not for the very first time this feature ships (no prior version to
+// have "changed" from).
+function showWhatsNewModal(force) {
+    const modal = document.getElementById('whatsNewModal');
+    const list = document.getElementById('whatsNewList');
+    const badge = document.getElementById('whatsNewVersionBadge');
+    if (!modal || !list) return;
+
+    const entries = CHANGELOG[APP_VERSION] || [];
+    if (!force && entries.length === 0) return;
+
+    badge.textContent = 'نسخه ' + APP_VERSION;
+    list.innerHTML = entries.length
+        ? entries.map(function (item) { return '<div class="whats-new-item"><i class="fas fa-circle-check"></i><span>' + item + '</span></div>'; }).join('')
+        : '<div class="whats-new-item"><i class="fas fa-circle-check"></i><span>در این نسخه مشکلات جزئی برطرف شده است.</span></div>';
+
+    modal.classList.add('active');
+    document.body.classList.add('no-scroll');
+    setLastSeenVersion(APP_VERSION);
+}
+
+function checkForWhatsNewOnLoad() {
+    const lastSeen = getLastSeenVersion();
+    // No record at all = fresh install; just mark current version as seen
+    // without showing anything, so the FIRST time this feature ships it
+    // doesn't retroactively show a changelog to existing users out of
+    // nowhere, and new installs don't see it either (onboarding covers that).
+    if (!lastSeen) { setLastSeenVersion(APP_VERSION); return; }
+    if (lastSeen !== APP_VERSION) {
+        setTimeout(function () { showWhatsNewModal(false); }, 600);
+    }
+}
+
 const AppState = {
     selectedDrug: 'heparin',
     infusionMethod: 'syringe',
@@ -776,6 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selectDrug('heparin');
     loadDrugLibrary();
     initVoiceTab();
+    checkForWhatsNewOnLoad();
 });
 
 function initializeApp() {
@@ -1609,6 +1679,14 @@ function setupEventListeners() {
     if (DOM.closeHistory) DOM.closeHistory.addEventListener('click', () => {
         if (DOM.historyModal) { DOM.historyModal.classList.remove('active'); document.body.classList.remove('no-scroll'); }
     });
+    const closeWhatsNewBtn = document.getElementById('closeWhatsNew');
+    const whatsNewDismissBtn = document.getElementById('whatsNewDismissBtn');
+    const whatsNewModalEl = document.getElementById('whatsNewModal');
+    function closeWhatsNewModal() {
+        if (whatsNewModalEl) { whatsNewModalEl.classList.remove('active'); document.body.classList.remove('no-scroll'); }
+    }
+    if (closeWhatsNewBtn) closeWhatsNewBtn.addEventListener('click', closeWhatsNewModal);
+    if (whatsNewDismissBtn) whatsNewDismissBtn.addEventListener('click', closeWhatsNewModal);
     if (DOM.drugSearch) DOM.drugSearch.addEventListener('input', function() {
         const term = this.value.toLowerCase();
         document.querySelectorAll('.drug-item-compact').forEach(card => {

@@ -49,6 +49,7 @@
             modelProgress: qs('voiceModelProgress'),
             modelProgressFill: qs('voiceModelProgressFill'),
             modelProgressLabel: qs('voiceModelProgressLabel'),
+            autocomplete: qs('voiceAutocomplete'),
             examples: qs('voiceExamples')
         };
     }
@@ -447,10 +448,74 @@
             });
         });
 
+        // ============================================
+        // DRUG-NAME AUTOCOMPLETE
+        // Mainly for uncommon/hard-to-pronounce pharmaceutical names the
+        // offline voice model can't reliably recognize by voice at all
+        // (a model-training vocabulary limit, not something a JS-level
+        // fix can patch) — this makes typing genuinely fast for exactly
+        // those cases instead of requiring the full name to be typed out
+        // from memory.
+        // ============================================
+        function searchDrugSuggestions(fragment) {
+            if (!window.drugDatabase || !fragment) return [];
+            const lower = fragment.toLowerCase();
+            const matches = [];
+            for (const id in window.drugDatabase) {
+                const drug = window.drugDatabase[id];
+                const names = [drug.persianName, drug.englishName].concat(drug.alternativeNames || []);
+                const hit = names.some(function (n) { return String(n).toLowerCase().indexOf(lower) !== -1; });
+                if (hit) matches.push(drug);
+                if (matches.length >= 6) break;
+            }
+            return matches;
+        }
+
+        function renderAutocomplete(matches) {
+            if (!els.autocomplete) return;
+            if (!matches.length) { els.autocomplete.style.display = 'none'; els.autocomplete.innerHTML = ''; return; }
+            els.autocomplete.innerHTML = matches.map(function (drug) {
+                return '<button type="button" class="voice-autocomplete-item" data-drug="' + drug.persianName.replace(/"/g, '&quot;') + '">' +
+                    '<span class="voice-autocomplete-name">' + drug.persianName + '</span>' +
+                    '<span class="voice-autocomplete-en">' + drug.englishName + '</span>' +
+                    '</button>';
+            }).join('');
+            els.autocomplete.style.display = 'block';
+            els.autocomplete.querySelectorAll('.voice-autocomplete-item').forEach(function (btn) {
+                // mousedown (not click) so this fires BEFORE the input's
+                // blur event would otherwise hide the dropdown first.
+                btn.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    if (!els.textInput) return;
+                    els.textInput.value = btn.dataset.drug + ' ';
+                    els.textInput.focus();
+                    renderAutocomplete([]);
+                });
+            });
+        }
+
+        if (els.textInput) {
+            els.textInput.addEventListener('input', function () {
+                const val = els.textInput.value.trim();
+                // Only search once there's a real fragment to match, and
+                // only on the LAST word being typed — so autocomplete
+                // still works naturally mid-sentence (e.g. after already
+                // typing "قطره 500 میلی لیتر" and starting a drug name).
+                const lastWord = val.split(/\s+/).pop();
+                if (!lastWord || lastWord.length < 2) { renderAutocomplete([]); return; }
+                renderAutocomplete(searchDrugSuggestions(lastWord));
+            });
+            els.textInput.addEventListener('blur', function () {
+                // Slight delay so a tap on a suggestion (mousedown) has
+                // already run before the dropdown disappears.
+                setTimeout(function () { renderAutocomplete([]); }, 150);
+            });
+        }
+
         if (els.textSend && els.textInput) {
             const send = function () {
                 const val = els.textInput.value.trim();
-                if (val) { handleTranscript(val, 'text'); els.textInput.value = ''; }
+                if (val) { handleTranscript(val, 'text'); els.textInput.value = ''; renderAutocomplete([]); }
             };
             els.textSend.addEventListener('click', send);
             els.textInput.addEventListener('keydown', function (e) {

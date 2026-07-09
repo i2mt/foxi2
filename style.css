@@ -2288,6 +2288,54 @@ select {
     justify-content: center;
 }
 
+/* ============================================
+   WHAT'S NEW MODAL
+   ============================================ */
+.whats-new-content {
+    max-width: 420px;
+}
+.whats-new-header h3 {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.whats-new-version-badge {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+}
+.whats-new-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.whats-new-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: var(--text-primary);
+}
+.whats-new-item i {
+    color: var(--success, #22c55e);
+    font-size: 15px;
+    margin-top: 3px;
+    flex-shrink: 0;
+}
+.whats-new-dismiss {
+    width: 100%;
+}
+
 .modal-close:hover {
     color: var(--text-primary);
 }

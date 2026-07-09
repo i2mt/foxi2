@@ -49,7 +49,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 4.10.1</div>
+            <div class="loading-version">نسخه 4.11.1</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -1702,10 +1702,17 @@
         <div class="voice-result" id="voiceResult" style="display:none;"></div>
 
         <!-- Text fallback — redesigned, moved up as a real secondary input -->
-        <div class="voice-text-fallback">
-            <i class="fas fa-keyboard voice-text-icon" aria-hidden="true"></i>
-            <input type="text" id="voiceTextInput" placeholder="یا دستور را تایپ کنید…" inputmode="text" autocomplete="off" />
-            <button type="button" id="voiceTextSend" aria-label="ارسال دستور"><i class="fas fa-arrow-left"></i></button>
+        <div class="voice-text-fallback-wrap">
+            <div class="voice-text-fallback">
+                <i class="fas fa-keyboard voice-text-icon" aria-hidden="true"></i>
+                <input type="text" id="voiceTextInput" placeholder="یا دستور را تایپ کنید…" inputmode="text" autocomplete="off" />
+                <button type="button" id="voiceTextSend" aria-label="ارسال دستور"><i class="fas fa-arrow-left"></i></button>
+            </div>
+            <!-- Live drug-name suggestions as the person types — mainly
+                 for hard-to-pronounce/uncommon drug names that the offline
+                 voice model can't reliably recognize by voice at all, so
+                 typing needs to be genuinely fast, not just a fallback. -->
+            <div class="voice-autocomplete" id="voiceAutocomplete" style="display:none;"></div>
         </div>
 
         <!-- Example chips — single-row horizontal scroll, hides while busy -->
@@ -1880,13 +1887,14 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>4.10.1</span></div>
+                        <div class="about-row"><span>نسخه</span><span>4.11.1</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
                     <div class="settings-btn-row">
                         <button class="setting-btn gradient" id="checkUpdateBtn"><i class="fas fa-sync-alt"></i> بررسی به‌روزرسانی</button>
                         <button class="setting-btn gradient" onclick="showTutorial()"><i class="fas fa-graduation-cap"></i> راهنمای برنامه</button>
+                        <button class="setting-btn gradient" onclick="showWhatsNewModal(true)"><i class="fa-solid fa-wand-magic-sparkles"></i> چه خبر؟</button>
                     </div>
                     <div class="settings-credits">
                         <i class="fas fa-code"></i>
@@ -1908,6 +1916,21 @@
             </div>
             <div class="modal-body">
                 <div class="history-list" id="historyList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- What's New Modal -->
+    <div class="modal" id="whatsNewModal">
+        <div class="modal-content whats-new-content">
+            <div class="modal-header whats-new-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> چه چیزهای جدیدی اضافه شده؟</h3>
+                <button class="modal-close" id="closeWhatsNew">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="whats-new-version-badge" id="whatsNewVersionBadge"></div>
+                <div class="whats-new-list" id="whatsNewList"></div>
+                <button class="setting-btn gradient whats-new-dismiss" id="whatsNewDismissBtn">متوجه شدم</button>
             </div>
         </div>
     </div>
