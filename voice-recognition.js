@@ -1041,6 +1041,29 @@
                 .then(function (cache) { return cache.match(VOSK_MODEL_URL); })
                 .then(function (match) { return !!match; })
                 .catch(function () { return false; });
+        },
+        // Frees the loaded Vosk model and its Web Worker from memory.
+        // Not called unconditionally — keeping the model warm after
+        // leaving the Voice tab is the normal default, since it makes
+        // returning to voice instant. But that resident WASM model (and
+        // worker) competes with the rest of the app for RAM even on
+        // pages that have nothing to do with voice, which matters on
+        // low-memory devices. Intended to be called from script.js only
+        // when Settings > "حالت کم‌مصرف" (low power mode) is on, right
+        // after the person leaves the Voice tab.
+        // Safe to call any time: no-ops while actively listening or
+        // mid-load. The next start()/preload() call transparently
+        // re-initializes from the model file already sitting in the
+        // Cache API (no re-download — just a few seconds of WASM
+        // startup instead of being instant).
+        releaseModel: function () {
+            if (voskActive || voskLoading) return;
+            if (voskModel) {
+                try { voskModel.terminate(); } catch (e) { /* best-effort cleanup */ }
+                voskModel = null;
+            }
+            voskModelLoadPromise = null;
+            voskFailInfo = null;
         }
     };
 

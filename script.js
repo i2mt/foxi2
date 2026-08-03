@@ -2197,6 +2197,7 @@ function calculateManualInfusion() {
 function switchTab(tabName) {
     const tabItems = document.querySelectorAll('.tab-item');
     const tabPanes = document.querySelectorAll('.tab-pane');
+    const previousTab = AppState.currentTab;
 
     tabItems.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
     tabPanes.forEach(pane => {
@@ -2219,6 +2220,14 @@ function switchTab(tabName) {
         // taxing every single app launch regardless of whether voice is
         // ever used that session.
         window.VoiceEngine.preload();
+    }
+    if (previousTab === 'voice' && tabName !== 'voice' && AppState.settings.lowPowerMode &&
+        window.VoiceEngine && typeof window.VoiceEngine.releaseModel === 'function') {
+        // Low power mode trades the "instant" re-entry to Voice for a
+        // lower memory footprint everywhere else in the app — the Vosk
+        // model otherwise stays resident in memory for the rest of the
+        // session even on pages that have nothing to do with voice.
+        window.VoiceEngine.releaseModel();
     }
 }
 
