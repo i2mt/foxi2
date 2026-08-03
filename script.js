@@ -232,8 +232,26 @@ const AppState = {
     // never used it, exactly as before. A hard 10s timeout guarantees this
     // can never hold up the loading screen indefinitely even if something
     // unexpected happens (e.g. a corrupted cache entry).
+    // Skipped entirely in low power mode: this front-loads a full WASM
+    // model init (real memory + CPU cost) onto every single app launch,
+    // regardless of whether Voice gets used again that session — on a
+    // low-RAM device that's a bad trade for a "might save a few seconds
+    // later" convenience. Low power mode keeps voice fully on-demand
+    // instead, same as if it had never been used before.
+    function isLowPowerMode() {
+        // Read straight from localStorage rather than AppState.settings —
+        // this runs at DOMContentLoaded, potentially before the main
+        // settings-loading code elsewhere in the file has populated
+        // AppState yet, and localStorage access is synchronous/cheap
+        // either way.
+        try {
+            const saved = JSON.parse(localStorage.getItem('appSettings') || '{}');
+            return !!saved.lowPowerMode;
+        } catch (e) { return false; }
+    }
+
     function finishLoadingWithOptionalVoskWarmup() {
-        if (!window.VoiceEngine || typeof window.VoiceEngine.isModelCached !== 'function') {
+        if (isLowPowerMode() || !window.VoiceEngine || typeof window.VoiceEngine.isModelCached !== 'function') {
             setTimeout(window.hideLoadingScreen, 300);
             return;
         }
