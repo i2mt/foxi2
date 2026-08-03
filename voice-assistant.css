@@ -734,3 +734,24 @@
         animation: none !important;
     }
 }
+
+/* ============================================
+   LOW POWER MODE
+   Manual toggle (Settings > حالت کم‌مصرف) that mirrors the OS-level
+   prefers-reduced-motion behavior above, plus a couple of extra cuts
+   (simplified fox-mark filter, hidden embers) for low-RAM devices.
+   ============================================ */
+body.low-power-mode .voice-ambient-glow,
+body.low-power-mode .voice-fox-mark,
+body.low-power-mode .voice-ripple,
+body.low-power-mode .voice-ember {
+    animation: none !important;
+}
+
+body.low-power-mode .voice-fox-mark {
+    filter: drop-shadow(0 0 10px rgba(234, 88, 12, 0.5));
+}
+
+body.low-power-mode .voice-embers {
+    display: none;
+}

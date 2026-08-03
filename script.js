@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '4.11.1';
+const APP_VERSION = '4.12.0';
 
 const CHANGELOG = {
+    '4.12.0': [
+        'دستیار صوتی آفلاین (Vosk) اکنون روی همه گوشی‌ها فعال است، نه فقط آیفون',
+        'رفع اشکال «هیچ صدایی شنیده نمی‌شود» در اولین استفاده از دستیار صوتی در اندروید',
+        'کاهش مصرف منابع دستیار صوتی برای گوشی‌های با رم کم'
+    ],
     '4.11.1': [
         'پیشنهاد خودکار نام دارو هنگام تایپ در دستیار صوتی — برای داروهایی که تشخیص صدا آن‌ها را متوجه نمی‌شود',
         'رفع مشکل نوار خالی پایین صفحه در نسخه نصب‌شده روی آیفون',
@@ -107,7 +112,8 @@ const AppState = {
         hapticFeedback: true,
         colorTheme: 'fox',
         themeMode: 'light',
-        voiceOutput: false
+        voiceOutput: false,
+        lowPowerMode: false
     },
     reverseMode: false
 };
@@ -646,6 +652,7 @@ const DOM = {
     closeSettings: document.getElementById('closeSettings'),
     closeHistory: document.getElementById('closeHistory'),
     largeFontToggle: document.getElementById('largeFontToggle'),
+    lowPowerModeToggle: document.getElementById('lowPowerModeToggle'),
     doseAlertToggle: document.getElementById('doseAlertToggle'),
     compatAlertToggle: document.getElementById('compatAlertToggle'),
     saveHistoryToggle: document.getElementById('saveHistoryToggle'),
@@ -940,6 +947,7 @@ function loadSettings() {
     }
     if (DOM.darkModeToggle) DOM.darkModeToggle.checked = AppState.settings.darkMode;
     if (DOM.largeFontToggle) DOM.largeFontToggle.checked = AppState.settings.largeFont;
+    if (DOM.lowPowerModeToggle) DOM.lowPowerModeToggle.checked = AppState.settings.lowPowerMode;
     if (DOM.doseAlertToggle) DOM.doseAlertToggle.checked = AppState.settings.doseAlerts;
     if (DOM.compatAlertToggle) DOM.compatAlertToggle.checked = AppState.settings.compatAlerts;
     if (DOM.saveHistoryToggle) DOM.saveHistoryToggle.checked = AppState.settings.saveHistory;
@@ -973,6 +981,8 @@ function applySettings() {
     }
     if (AppState.settings.largeFont) document.body.classList.add('large-font');
     else document.body.classList.remove('large-font');
+    if (AppState.settings.lowPowerMode) document.body.classList.add('low-power-mode');
+    else document.body.classList.remove('low-power-mode');
     const savedColor = AppState.settings.colorTheme || 'default';
     applyTheme(savedColor);
     fixVolumeButtonColors();
@@ -1764,6 +1774,16 @@ function setupSettingsEventListeners() {
     if (largeFontToggle) {
         largeFontToggle.addEventListener('change', function() {
             AppState.settings.largeFont = this.checked;
+            saveSettings();
+            applySettings();
+        });
+    }
+
+    // Low power mode toggle
+    const lowPowerModeToggle = document.getElementById('lowPowerModeToggle');
+    if (lowPowerModeToggle) {
+        lowPowerModeToggle.addEventListener('change', function() {
+            AppState.settings.lowPowerMode = this.checked;
             saveSettings();
             applySettings();
         });

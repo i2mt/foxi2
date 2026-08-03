@@ -129,11 +129,11 @@
                 message: 'دسترسی به میکروفون فقط روی HTTPS کار می‌کند. آدرس سایت را بررسی کنید.'
             };
         }
-        if (ENV.isIOS && voskConfigured()) {
+        if (voskConfigured()) {
             if (voskFailInfo) return voskFailInfo;
             // Vosk doesn't touch WebKit's SpeechRecognition at all, so the
             // standalone-PWA restriction simply doesn't apply here.
-            return { status: 'ok', code: 'ios-vosk', title: null, message: null };
+            return { status: 'ok', code: 'vosk', title: null, message: null };
         }
         if (!ENV.hasSpeechRecognition) {
             return {
@@ -334,9 +334,20 @@
             });
     }
 
+    let lastWebSpeechAudioEmit = 0;
+    let analyserDataBuffer = null;
+
     function pumpAudioFrames() {
         if (!analyser || !active) return;
-        const data = new Uint8Array(analyser.frequencyBinCount);
+        if (Date.now() - lastWebSpeechAudioEmit < AUDIO_LEVEL_THROTTLE_MS) {
+            rafId = requestAnimationFrame(pumpAudioFrames);
+            return;
+        }
+        lastWebSpeechAudioEmit = Date.now();
+        if (!analyserDataBuffer || analyserDataBuffer.length !== analyser.frequencyBinCount) {
+            analyserDataBuffer = new Uint8Array(analyser.frequencyBinCount);
+        }
+        const data = analyserDataBuffer;
         analyser.getByteFrequencyData(data);
 
         // Down-sample the frequency bins into 12 bars for the UI.
@@ -823,9 +834,18 @@
                 // echoCancellation is on) connection below.
                 voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
                 let acceptWaveformFailureReported = false;
+                // Android's audio subsystem delivers silence/garbage for a
+                // brief period right after a stream opens, which otherwise
+                // shows up as "hears nothing the first time, works on
+                // retry". Give it a short warm-up window before feeding
+                // audio into the recognizer — the audio-level meter is
+                // purely cosmetic and stays unaffected by this guard.
+                const streamStartTime = Date.now();
                 voskProcessor.onaudioprocess = function (event) {
                     try {
-                        recognizer.acceptWaveform(event.inputBuffer);
+                        if (Date.now() - streamStartTime >= 350) {
+                            recognizer.acceptWaveform(event.inputBuffer);
+                        }
                     } catch (e) {
                         // Surfaced rather than silently swallowed: a
                         // previous version of this file caught this
@@ -863,7 +883,12 @@
         });
     }
 
+    let lastAudioLevelEmit = 0;
+    const AUDIO_LEVEL_THROTTLE_MS = 125;
+
     function emitVoskAudioLevel(buffer) {
+        if (Date.now() - lastAudioLevelEmit < AUDIO_LEVEL_THROTTLE_MS) return;
+        lastAudioLevelEmit = Date.now();
         const data = buffer.getChannelData(0);
         const bars = 12;
         const chunk = Math.floor(data.length / bars) || 1;
@@ -922,7 +947,7 @@
     // UNIFIED DISPATCHER
     // ============================================
     function pickBackend() {
-        return (ENV.isIOS && voskConfigured()) ? 'vosk' : 'webspeech';
+        return voskConfigured() ? 'vosk' : 'webspeech';
     }
 
     function start() {
@@ -998,7 +1023,7 @@
         // Returns the underlying promise so callers (e.g. the loading
         // screen — see isModelCached() below) can await/race it directly.
         preload: function () {
-            if (!(ENV.isIOS && voskConfigured())) return Promise.resolve();
+            if (!voskConfigured()) return Promise.resolve();
             return ensureVoskModel().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
         // Cheap, fast check for whether the model FILE is already sitting
@@ -1011,7 +1036,7 @@
         // voice before, so getting it ready during a wait they're already
         // seeing is a better trade than making them wait again later.
         isModelCached: function () {
-            if (!(ENV.isIOS && voskConfigured()) || !window.caches) return Promise.resolve(false);
+            if (!voskConfigured() || !window.caches) return Promise.resolve(false);
             return caches.open(VOSK_CACHE_NAME)
                 .then(function (cache) { return cache.match(VOSK_MODEL_URL); })
                 .then(function (match) { return !!match; })

@@ -966,6 +966,8 @@ select {
     .tab-pane.active { animation: none; }
 }
 
+body.low-power-mode .tab-pane.active { animation: none; }
+
 .tab-bar {
     position: fixed;
     bottom: 0;
@@ -1032,6 +1034,8 @@ select {
 @media (prefers-reduced-motion: reduce) {
     .tab-item.active { animation: none; }
 }
+
+body.low-power-mode .tab-item.active { animation: none; }
 
 .tab-item i {
     font-size: 16px;
