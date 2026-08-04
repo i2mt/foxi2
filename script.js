@@ -916,8 +916,8 @@ function initializeApp() {
             if (chk) chk.checked = isABG;
             const note = document.getElementById('vbgModeNote');
             if (note) note.innerHTML = isABG
-                ? '<i class="fas fa-info-circle"></i> حالت <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">ABG</span>: مقادیر شریانی مستقیم تفسیر می‌شوند.'
-                : '<i class="fas fa-info-circle"></i> حالت <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">VBG</span>: <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">pH</span> وریدی معمولاً <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">۰.۰۳–۰.۰۵</span> کمتر از شریانی است. <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">pCO₂</span> وریدی <span dir="ltr" style="display:inline-block; unicode-bidi:isolate;">۶–۸ mmHg</span> بالاتر است.';
+                ? '<i class="fas fa-info-circle"></i> حالت ABG: مقادیر شریانی مستقیم تفسیر می‌شوند.'
+                : '<i class="fas fa-info-circle"></i> حالت VBG: pH وریدی معمولاً <span dir="ltr" style="unicode-bidi:isolate;">۰.۰۳–۰.۰۵</span> کمتر از شریانی است. pCO₂ وریدی <span dir="ltr" style="unicode-bidi:isolate;">۶–۸ mmHg</span> بالاتر است.';
         });
     });
     setupThemePicker();
