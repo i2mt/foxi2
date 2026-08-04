@@ -145,11 +145,15 @@
         return null;
     }
     function updateTtsAvailability() {
-        if (!els.ttsToggle) return;
-        const available = !!pickPersianVoice();
-        els.ttsToggle.style.display = available ? '' : 'none';
-        if (els.headerSpacer) els.headerSpacer.style.display = available ? '' : 'none';
-        if (!available && window.AppState && window.AppState.settings) {
+        // Spoken output has been disabled — it wasn't reading results back
+        // in a clear, natural way. Keeping this function (rather than
+        // deleting the toggle wiring) so it's a one-line revert if this
+        // gets revisited later, but the toggle stays hidden unconditionally
+        // and voiceOutput is forced off, including for anyone who has an
+        // old localStorage value from before this was turned off.
+        if (els.ttsToggle) els.ttsToggle.style.display = 'none';
+        if (els.headerSpacer) els.headerSpacer.style.display = 'none';
+        if (window.AppState && window.AppState.settings) {
             window.AppState.settings.voiceOutput = false;
         }
     }
@@ -168,6 +172,8 @@
         return typeof AppState !== 'undefined' && !!(AppState && AppState.settings && AppState.settings.voiceOutput);
     }
     function speak(message) {
+        return; // spoken output disabled — see updateTtsAvailability()
+        /* eslint-disable no-unreachable */
         if (!window.speechSynthesis || !isVoiceOutputOn()) return;
         const voice = pickPersianVoice();
         if (!voice) return; // no real Persian voice on this device — stay silent rather than mispronounce
@@ -190,12 +196,7 @@
         els.ttsToggle.setAttribute('aria-label', on ? 'پاسخ صوتی روشن است' : 'پاسخ صوتی خاموش است');
     }
     function toggleVoiceOutput() {
-        if (typeof AppState === 'undefined' || !AppState.settings) return;
-        AppState.settings.voiceOutput = !AppState.settings.voiceOutput;
-        if (typeof saveSettings === 'function') saveSettings();
-        updateTtsToggleIcon();
-        if (typeof haptic === 'function') haptic(15);
-        showResult(AppState.settings.voiceOutput ? 'پاسخ صوتی فعال شد 🔊' : 'پاسخ صوتی غیرفعال شد', 'info');
+        return; // spoken output disabled — see updateTtsAvailability()
     }
 
     // ============================================
