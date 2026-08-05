@@ -917,7 +917,7 @@ function initializeApp() {
             const note = document.getElementById('vbgModeNote');
             if (note) note.innerHTML = isABG
                 ? '<i class="fas fa-info-circle"></i> حالت ABG: مقادیر شریانی مستقیم تفسیر می‌شوند.'
-                : '<i class="fas fa-info-circle"></i> حالت VBG: pH وریدی معمولاً <span dir="ltr" style="unicode-bidi:isolate;">۰.۰۳–۰.۰۵</span> کمتر از شریانی است. pCO₂ وریدی <span dir="ltr" style="unicode-bidi:isolate;">۶–۸ mmHg</span> بالاتر است.';
+                : '<i class="fas fa-info-circle"></i> حالت VBG: pH وریدی معمولاً \u2068۰.۰۳–۰.۰۵\u2069 کمتر از شریانی است. pCO₂ وریدی \u2068۶–۸ mmHg\u2069 بالاتر است.';
         });
     });
     setupThemePicker();
@@ -2500,10 +2500,28 @@ function calculateBMI() {
     else if (bmi < 25)   { cat = 'طبیعی';       color = '#34d399'; }
     else if (bmi < 30)   { cat = 'اضافه وزن';   color = '#fbbf24'; }
     else                 { cat = 'چاقی';         color = '#f87171'; }
-    resultDiv.innerHTML = renderConverterResult([
+    let html = renderConverterResult([
         { label: 'BMI', value: PersianNumbers.formatNumber(bmi, 1) + ' kg/m²' },
         { label: 'وضعیت', value: `<span style="color:${color};font-weight:700;">${cat}</span>` }
     ]);
+    // Show how much weight would need to change to reach the normal BMI
+    // range (18.5–24.9) — only when outside it, since inside it there's
+    // nothing to advise beyond the "طبیعی" status already shown above.
+    const hM = height / 100;
+    if (bmi < 18.5) {
+        const targetMin = 18.5 * hM * hM;
+        const toGain = targetMin - weight;
+        if (toGain > 0) {
+            html += `<p class="tool-note"><i class="fas fa-info-circle"></i> برای رسیدن به محدوده طبیعی BMI، حدود ${PersianNumbers.formatNumber(toGain, 1)} کیلوگرم افزایش وزن لازم است.</p>`;
+        }
+    } else if (bmi >= 25) {
+        const targetMax = 24.9 * hM * hM;
+        const toLose = weight - targetMax;
+        if (toLose > 0) {
+            html += `<p class="tool-note"><i class="fas fa-info-circle"></i> برای رسیدن به محدوده طبیعی BMI، حدود ${PersianNumbers.formatNumber(toLose, 1)} کیلوگرم کاهش وزن لازم است.</p>`;
+        }
+    }
+    resultDiv.innerHTML = html;
     resultDiv.style.display = 'block';
     refreshAccordion(resultDiv);
 }
