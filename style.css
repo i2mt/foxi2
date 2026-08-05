@@ -1580,6 +1580,7 @@ body.low-power-mode .tab-item.active { animation: none; }
 .dose-input-wrapper input {
     width: 100%;
     padding: 12px 100px 12px 12px;
+    text-indent: 44px;
     background: var(--surface-elevated);
     border: 2px solid var(--border);
     border-radius: 10px;
@@ -2973,6 +2974,7 @@ body.low-power-mode .tab-item.active { animation: none; }
 
     .dose-input-wrapper input {
         padding: 10px 72px 10px 10px !important;
+        text-indent: 31px !important;
         font-size: 16px !important;
         border-radius: 8px;
     }
@@ -8199,6 +8201,12 @@ html {
     border: 1.5px solid var(--border);
     border-radius: 8px;
     padding: 8px 100px 8px 12px;
+    /* text-align:center centers within the padding box, which is
+       asymmetric here (100px reserved on the right for the unit label,
+       12px on the left) — that shifts the centered number visibly left
+       of the box's actual visual center. text-indent nudges it back by
+       half the padding difference: (100-12)/2 = 44px. */
+    text-indent: 44px;
     font-size: 15px;
     font-weight: 600;
 }
