@@ -8414,6 +8414,23 @@ html {
     gap: 6px;
 }
 
+/* Oxygen cylinder size presets (5 buttons) — the general 60px min-width
+   above wraps a 5th button to a new row on narrow phones. Scoped to just
+   this container so other preset groups elsewhere keep their normal
+   sizing. */
+#oxySizePresets {
+    flex-wrap: nowrap;
+}
+#oxySizePresets .volume-preset-btn {
+    min-width: 0;
+    flex: 1 1 0;
+    padding: 6px 2px;
+    font-size: 12px;
+}
+#oxySizePresets .volume-preset-btn .unit-text {
+    font-size: 10px;
+}
+
 .manual-duration-row {
     margin-top: 8px;
     display: flex;
