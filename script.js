@@ -101,7 +101,10 @@ const AppState = {
         colorTheme: 'fox',
         themeMode: 'light',
         voiceOutput: false,
-        lowPowerMode: false
+        lowPowerMode: false,
+        toolsViewStyle: 'classic',
+        toolsFavorites: [],
+        toolsRecents: []
     },
     reverseMode: false
 };
@@ -2487,6 +2490,157 @@ function initializeTools() {
             sel.appendChild(opt);
         });
     });
+    applyToolsViewStyle();
+}
+
+// ============================================
+// TOOLS BROWSER — dual view style (classic / modern),
+// favorites, recents, and live search.
+//
+// This deliberately reuses the real accordion-item elements everywhere
+// rather than duplicating any tool's title/icon/logic in a second data
+// structure — favorites and recents are just lists of accordion-item
+// IDs, and rows shown for them are built by cloning that real item's
+// existing icon + title. There is exactly one source of truth per tool.
+// ============================================
+
+function recordToolRecent(itemId) {
+    if (!itemId) return;
+    let recents = AppState.settings.toolsRecents || [];
+    recents = recents.filter(id => id !== itemId);
+    recents.unshift(itemId);
+    recents = recents.slice(0, 5);
+    AppState.settings.toolsRecents = recents;
+    saveSettings();
+    if (AppState.settings.toolsViewStyle === 'modern') renderToolsQuickAccess();
+}
+
+function toggleToolFavorite(itemId) {
+    let favs = AppState.settings.toolsFavorites || [];
+    const idx = favs.indexOf(itemId);
+    if (idx === -1) { favs.push(itemId); haptic(15); }
+    else { favs.splice(idx, 1); }
+    AppState.settings.toolsFavorites = favs;
+    saveSettings();
+    document.querySelectorAll('.tool-fav-btn[data-tool-id="' + itemId + '"]').forEach(function (b) {
+        b.classList.toggle('active', favs.indexOf(itemId) !== -1);
+    });
+    if (AppState.settings.toolsViewStyle === 'modern') renderToolsQuickAccess();
+}
+
+function openToolById(itemId) {
+    const item = document.getElementById(itemId);
+    if (!item) return;
+    const header = item.querySelector('.accordion-header');
+    if (!header) return;
+    if (!item.classList.contains('open')) toggleAccordion(header);
+    else item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildToolQuickRow(itemId) {
+    const source = document.getElementById(itemId);
+    if (!source) return null;
+    const iconWrap = source.querySelector('.accordion-icon-wrap');
+    const title = source.querySelector('.accordion-title');
+    if (!iconWrap || !title) return null;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'tool-quick-row';
+    const styleAttr = iconWrap.getAttribute('style') || '';
+    row.innerHTML = '<div class="accordion-icon-wrap" style="' + styleAttr + '">' + iconWrap.innerHTML + '</div>' +
+        '<span class="tool-quick-row-title">' + title.textContent + '</span>';
+    row.addEventListener('click', function () { openToolById(itemId); });
+    return row;
+}
+
+function renderToolsQuickAccess() {
+    const wrap = document.getElementById('toolsQuickAccess');
+    if (!wrap) return;
+    const favs = AppState.settings.toolsFavorites || [];
+    const recents = (AppState.settings.toolsRecents || []).filter(function (id) { return favs.indexOf(id) === -1; });
+    let html = '';
+    if (favs.length) {
+        html += '<div class="tools-quick-section-label"><i class="fas fa-star"></i> علاقه‌مندی‌ها</div><div class="tools-quick-row-list" id="toolsFavRowList"></div>';
+    }
+    if (recents.length) {
+        html += '<div class="tools-quick-section-label"><i class="fas fa-clock-rotate-left"></i> اخیراً استفاده‌شده</div><div class="tools-quick-row-list" id="toolsRecentRowList"></div>';
+    }
+    wrap.innerHTML = html;
+    wrap.style.display = (favs.length || recents.length) ? '' : 'none';
+    const favList = document.getElementById('toolsFavRowList');
+    if (favList) favs.forEach(function (id) { const row = buildToolQuickRow(id); if (row) favList.appendChild(row); });
+    const recentList = document.getElementById('toolsRecentRowList');
+    if (recentList) recents.forEach(function (id) { const row = buildToolQuickRow(id); if (row) recentList.appendChild(row); });
+}
+
+function injectToolFavoriteButtons() {
+    document.querySelectorAll('#toolsTab .accordion-header').forEach(function (header) {
+        if (header.querySelector('.tool-fav-btn')) return; // already injected, don't duplicate
+        const item = header.closest('.accordion-item');
+        if (!item) return;
+        const favs = AppState.settings.toolsFavorites || [];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tool-fav-btn' + (favs.indexOf(item.id) !== -1 ? ' active' : '');
+        btn.dataset.toolId = item.id;
+        btn.innerHTML = '<i class="fas fa-star"></i>';
+        btn.setAttribute('aria-label', 'افزودن به علاقه‌مندی‌ها');
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toggleToolFavorite(item.id);
+        });
+        const chevron = header.querySelector('.accordion-chevron');
+        if (chevron) header.insertBefore(btn, chevron);
+        else header.appendChild(btn);
+    });
+}
+
+function filterToolsSearch(query) {
+    const q = (query || '').trim().toLowerCase();
+    const sections = document.querySelectorAll('#toolsTab .accordion-section');
+    sections.forEach(function (sec) {
+        if (!q) {
+            sec.style.display = '';
+            sec.querySelectorAll('.accordion-item').forEach(function (item) { item.style.display = ''; });
+            return;
+        }
+        let anyVisible = false;
+        sec.querySelectorAll('.accordion-item').forEach(function (item) {
+            const title = item.querySelector('.accordion-title');
+            const sub = item.querySelector('.accordion-sub');
+            const text = ((title ? title.textContent : '') + ' ' + (sub ? sub.textContent : '')).toLowerCase();
+            const match = text.indexOf(q) !== -1;
+            item.style.display = match ? '' : 'none';
+            if (match) anyVisible = true;
+        });
+        sec.style.display = anyVisible ? '' : 'none';
+    });
+}
+
+function setToolsViewStyle(style) {
+    AppState.settings.toolsViewStyle = style;
+    saveSettings();
+    applyToolsViewStyle();
+}
+
+function applyToolsViewStyle() {
+    const container = document.querySelector('.tools-container');
+    if (!container) return;
+    const style = AppState.settings.toolsViewStyle || 'classic';
+    container.classList.toggle('tools-modern', style === 'modern');
+    document.querySelectorAll('.tools-view-switch-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.style === style);
+    });
+    const searchBar = document.getElementById('toolsSearchBar');
+    if (searchBar) searchBar.style.display = style === 'modern' ? '' : 'none';
+    if (style === 'modern') {
+        injectToolFavoriteButtons();
+        renderToolsQuickAccess();
+    } else {
+        const input = document.getElementById('toolsSearchInput');
+        if (input) input.value = '';
+        filterToolsSearch('');
+    }
 }
 
 function calculateBMI() {
@@ -3601,6 +3755,7 @@ function toggleAccordion(headerBtn) {
         addAccordionFloatBar(item, headerBtn);
         history.pushState({ accordionOpen: true }, '');
         setTimeout(() => item.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+        recordToolRecent(item.id);
     }
 }
 
@@ -3957,6 +4112,8 @@ window.resetBurns = resetBurns;
 window.updateParkland = updateParkland;
 window.restoreFromHistory = restoreFromHistory;
 window.updateDoseRangeIndicator = updateDoseRangeIndicator;
+window.setToolsViewStyle = setToolsViewStyle;
+window.filterToolsSearch = filterToolsSearch;
 
 // ============================================
 // USER NAME & GREETING BANNER

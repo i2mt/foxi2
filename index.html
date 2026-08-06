@@ -401,6 +401,28 @@
             <div class="tab-pane" id="toolsTab">
                 <div class="tools-container">
 
+                    <!-- View style switcher: classic (today's plain grouped list)
+                         vs modern (denser rows + favorites/recents + search) -->
+                    <div class="tools-view-switcher">
+                        <button type="button" class="tools-view-switch-btn active" data-style="classic" onclick="setToolsViewStyle('classic')">
+                            <i class="fas fa-list"></i> کلاسیک
+                        </button>
+                        <button type="button" class="tools-view-switch-btn" data-style="modern" onclick="setToolsViewStyle('modern')">
+                            <i class="fas fa-table-cells"></i> جدید
+                        </button>
+                    </div>
+
+                    <!-- Favorites / Recents — modern mode only, populated by JS
+                         from the real accordion items, hidden when empty -->
+                    <div class="tools-quick-access" id="toolsQuickAccess" style="display:none;"></div>
+
+                    <!-- Floating search bar — modern mode only, pinned above the
+                         bottom tab bar so it's always reachable without scrolling -->
+                    <div class="tools-search-bar" id="toolsSearchBar" style="display:none;">
+                        <i class="fas fa-magnifying-glass"></i>
+                        <input type="text" id="toolsSearchInput" placeholder="جستجوی ابزارها…" oninput="filterToolsSearch(this.value)">
+                    </div>
+
                     <!-- Section 1: Patient Assessment -->
                     <div class="accordion-section">
                         <div class="accordion-section-header">
