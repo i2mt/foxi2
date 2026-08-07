@@ -663,7 +663,6 @@ const DOM = {
     closeHistory: document.getElementById('closeHistory'),
     largeFontToggle: document.getElementById('largeFontToggle'),
     lowPowerModeToggle: document.getElementById('lowPowerModeToggle'),
-    modernShellToggle: document.getElementById('modernShellToggle'),
     doseAlertToggle: document.getElementById('doseAlertToggle'),
     compatAlertToggle: document.getElementById('compatAlertToggle'),
     saveHistoryToggle: document.getElementById('saveHistoryToggle'),
@@ -959,7 +958,9 @@ function loadSettings() {
     if (DOM.darkModeToggle) DOM.darkModeToggle.checked = AppState.settings.darkMode;
     if (DOM.largeFontToggle) DOM.largeFontToggle.checked = AppState.settings.largeFont;
     if (DOM.lowPowerModeToggle) DOM.lowPowerModeToggle.checked = AppState.settings.lowPowerMode;
-    if (DOM.modernShellToggle) DOM.modernShellToggle.checked = AppState.settings.appShellStyle === 'modern';
+    document.querySelectorAll('#appShellStyleBtns .theme-mode-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.shellStyle === (AppState.settings.appShellStyle || 'classic'));
+    });
     if (DOM.doseAlertToggle) DOM.doseAlertToggle.checked = AppState.settings.doseAlerts;
     if (DOM.compatAlertToggle) DOM.compatAlertToggle.checked = AppState.settings.compatAlerts;
     if (DOM.saveHistoryToggle) DOM.saveHistoryToggle.checked = AppState.settings.saveHistory;
@@ -967,6 +968,13 @@ function loadSettings() {
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
+    // One-time initial navigation for a returning user who already had
+    // the modern shell on from a previous session. Deliberately only
+    // here (loadSettings runs once, at true page load) and not inside
+    // applySettings() (which also runs on every unrelated settings
+    // change mid-session) — otherwise toggling low power mode or a
+    // theme color would unexpectedly bounce the person back to Home.
+    if (AppState.settings.appShellStyle === 'modern') switchTab('home');
 }
 
 function saveSettings() {
@@ -1802,15 +1810,8 @@ function setupSettingsEventListeners() {
         });
     }
 
-    // Modern app shell toggle
-    const modernShellToggle = document.getElementById('modernShellToggle');
-    if (modernShellToggle) {
-        modernShellToggle.addEventListener('change', function() {
-            AppState.settings.appShellStyle = this.checked ? 'modern' : 'classic';
-            saveSettings();
-            applyAppShellStyle();
-        });
-    }
+    // Modern app shell style is set via setAppShellStyle(), wired to the
+    // segmented control's onclick attributes in the HTML directly.
 
     // Dose alerts
     const doseAlertToggle = document.getElementById('doseAlertToggle');
@@ -2519,7 +2520,11 @@ function initializeTools() {
             sel.appendChild(opt);
         });
     });
-    applyToolsViewStyle();
+    // Favorite stars stay available on every tool regardless of which app
+    // shell is active — needed so the modern shell's Favorites screen
+    // always has something to show, even for someone who never switches
+    // out of the classic tab layout.
+    injectToolFavoriteButtons();
 }
 
 // ============================================
@@ -2644,54 +2649,6 @@ function injectToolFavoriteButtons() {
         if (chevron) header.insertBefore(btn, chevron);
         else header.appendChild(btn);
     });
-}
-
-function filterToolsSearch(query) {
-    const q = (query || '').trim().toLowerCase();
-    const sections = document.querySelectorAll('#toolsTab .accordion-section');
-    sections.forEach(function (sec) {
-        if (!q) {
-            sec.style.display = '';
-            sec.querySelectorAll('.accordion-item').forEach(function (item) { item.style.display = ''; });
-            return;
-        }
-        let anyVisible = false;
-        sec.querySelectorAll('.accordion-item').forEach(function (item) {
-            const title = item.querySelector('.accordion-title');
-            const sub = item.querySelector('.accordion-sub');
-            const text = ((title ? title.textContent : '') + ' ' + (sub ? sub.textContent : '')).toLowerCase();
-            const match = text.indexOf(q) !== -1;
-            item.style.display = match ? '' : 'none';
-            if (match) anyVisible = true;
-        });
-        sec.style.display = anyVisible ? '' : 'none';
-    });
-}
-
-function setToolsViewStyle(style) {
-    AppState.settings.toolsViewStyle = style;
-    saveSettings();
-    applyToolsViewStyle();
-}
-
-function applyToolsViewStyle() {
-    const container = document.querySelector('.tools-container');
-    if (!container) return;
-    const style = AppState.settings.toolsViewStyle || 'classic';
-    container.classList.toggle('tools-modern', style === 'modern');
-    document.querySelectorAll('.tools-view-switch-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.style === style);
-    });
-    const searchBar = document.getElementById('toolsSearchBar');
-    if (searchBar) searchBar.style.display = style === 'modern' ? '' : 'none';
-    if (style === 'modern') {
-        injectToolFavoriteButtons();
-        renderToolsQuickAccess();
-    } else {
-        const input = document.getElementById('toolsSearchInput');
-        if (input) input.value = '';
-        filterToolsSearch('');
-    }
 }
 
 // ============================================
@@ -2844,17 +2801,33 @@ function renderFavoritesFullList() {
     favs.forEach(function (id) { const row = buildToolQuickRow(id); if (row) list.appendChild(row); });
 }
 
+function setAppShellStyle(style) {
+    AppState.settings.appShellStyle = style;
+    saveSettings();
+    document.querySelectorAll('#appShellStyleBtns .theme-mode-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.shellStyle === style);
+    });
+    applyAppShellStyle();
+    // Explicit, unconditional navigation right here — deliberately not
+    // inside applyAppShellStyle() itself, so switching styles always
+    // takes the person to a sensible starting screen regardless of
+    // whatever tab they happened to be on, with no state-dependent
+    // branching that could silently no-op.
+    switchTab(style === 'modern' ? 'home' : 'calculator');
+}
+
 function applyAppShellStyle() {
+    // Purely idempotent: safe to call any time (page load, settings sync,
+    // etc.) without side effects on the current screen. Actually
+    // switching screens on a real style change is handled explicitly by
+    // whatever changed the setting (see the settings control below) —
+    // keeping that out of this function avoids any state-dependent
+    // branching here.
     const style = AppState.settings.appShellStyle || 'classic';
     const classicBar = document.querySelector('.tab-bar');
     const modernBar = document.getElementById('tabBarModern');
     if (classicBar) classicBar.style.display = style === 'modern' ? 'none' : '';
     if (modernBar) modernBar.style.display = style === 'modern' ? '' : 'none';
-    if (style === 'modern' && ['home', 'search', 'favorites'].indexOf(AppState.currentTab) === -1) {
-        switchTab('home');
-    } else if (style === 'classic' && ['home', 'search', 'favorites'].indexOf(AppState.currentTab) !== -1) {
-        switchTab('calculator');
-    }
 }
 
 function calculateBMI() {
@@ -4326,9 +4299,8 @@ window.resetBurns = resetBurns;
 window.updateParkland = updateParkland;
 window.restoreFromHistory = restoreFromHistory;
 window.updateDoseRangeIndicator = updateDoseRangeIndicator;
-window.setToolsViewStyle = setToolsViewStyle;
-window.filterToolsSearch = filterToolsSearch;
 window.runGlobalSearch = runGlobalSearch;
+window.setAppShellStyle = setAppShellStyle;
 
 // ============================================
 // USER NAME & GREETING BANNER

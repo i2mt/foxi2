@@ -9705,47 +9705,13 @@ input[style*="display:none"] {
 
 
 /* ============================================
-   TOOLS BROWSER — dual view style
-   "classic" = today's plain grouped list (unchanged, default).
-   "modern"  = denser iOS-Settings-style grouped rows + a favorites/
-   recents quick-access strip + a floating search bar. No backdrop-filter
-   or GPU-heavy effects here on purpose — keeps this usable on low-RAM
-   devices without needing to gate it behind low power mode.
+   Favorite stars on every tool, and the shared "quick row" building
+   block used by the modern app shell's Home/Search/Favorites screens
+   (see further down) to display favorited/recent/found tools. Stars
+   stay available regardless of which app shell is active — otherwise
+   the modern shell's Favorites screen would have no way to ever gain
+   content for someone who stays on the classic tab layout.
    ============================================ */
-
-.tools-view-switcher {
-    display: flex;
-    gap: 6px;
-    background: var(--surface-elevated);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 4px;
-    margin: 4px 0 12px;
-    direction: rtl;
-}
-
-.tools-view-switch-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 6px;
-    border: none;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-family: var(--font-persian);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: var(--transition);
-}
-
-.tools-view-switch-btn.active {
-    background: var(--gradient-primary);
-    color: #fff;
-}
 
 /* ---- Favorites / Recents quick-access ---- */
 .tools-quick-access {
@@ -9822,101 +9788,11 @@ input[style*="display:none"] {
     font-size: 15px;
     cursor: pointer;
     flex-shrink: 0;
-    display: none; /* only shown in modern mode */
-}
-
-.tools-modern .tool-fav-btn {
     display: inline-flex;
 }
 
 .tool-fav-btn.active {
     color: #f59e0b;
-}
-
-/* ---- Modern mode: merge each section's items into one grouped card,
-   iOS-Settings style — inset dividers between rows instead of separate
-   bordered cards with gaps, tighter single-line rows. ---- */
-.tools-modern .accordion-list {
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-    background: var(--surface);
-}
-
-.tools-modern .accordion-item {
-    border: none;
-    border-radius: 0;
-    box-shadow: none !important;
-}
-
-.tools-modern .accordion-item.open .accordion-header {
-    background: var(--surface-elevated);
-    box-shadow: inset 3px 0 0 var(--primary);
-}
-
-.tools-modern .accordion-item:not(:last-child) {
-    border-bottom: 1px solid var(--border);
-}
-
-.tools-modern .accordion-header {
-    padding: 11px 14px;
-}
-
-.tools-modern .accordion-icon-wrap {
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-    font-size: 14px;
-}
-
-.tools-modern .accordion-sub {
-    display: none; /* denser single-line rows, like iOS Settings */
-}
-
-/* ---- Floating search bar, pinned above the bottom tab bar ---- */
-.tools-search-bar {
-    position: fixed;
-    left: 16px;
-    right: 16px;
-    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    background: var(--surface-elevated);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-    z-index: 500;
-    direction: rtl;
-}
-
-.tools-search-bar i {
-    color: var(--text-tertiary);
-    font-size: 14px;
-}
-
-.tools-search-bar input {
-    flex: 1;
-    border: none;
-    background: transparent;
-    outline: none;
-    font-family: var(--font-persian);
-    font-size: 14px;
-    color: var(--text-primary);
-    direction: rtl;
-    text-align: right;
-}
-
-.tools-search-bar input::placeholder {
-    color: var(--text-tertiary);
-}
-
-/* Leave scroll room at the bottom of the tab so the floating search bar
-   never sits on top of the last section's content. */
-.tools-modern.tools-container {
-    padding-bottom: 76px;
 }
 
 /* ============================================

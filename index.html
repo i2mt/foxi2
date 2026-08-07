@@ -401,28 +401,6 @@
             <div class="tab-pane" id="toolsTab">
                 <div class="tools-container">
 
-                    <!-- View style switcher: classic (today's plain grouped list)
-                         vs modern (denser rows + favorites/recents + search) -->
-                    <div class="tools-view-switcher">
-                        <button type="button" class="tools-view-switch-btn active" data-style="classic" onclick="setToolsViewStyle('classic')">
-                            <i class="fas fa-list"></i> کلاسیک
-                        </button>
-                        <button type="button" class="tools-view-switch-btn" data-style="modern" onclick="setToolsViewStyle('modern')">
-                            <i class="fas fa-table-cells"></i> جدید
-                        </button>
-                    </div>
-
-                    <!-- Favorites / Recents — modern mode only, populated by JS
-                         from the real accordion items, hidden when empty -->
-                    <div class="tools-quick-access" id="toolsQuickAccess" style="display:none;"></div>
-
-                    <!-- Floating search bar — modern mode only, pinned above the
-                         bottom tab bar so it's always reachable without scrolling -->
-                    <div class="tools-search-bar" id="toolsSearchBar" style="display:none;">
-                        <i class="fas fa-magnifying-glass"></i>
-                        <input type="text" id="toolsSearchInput" placeholder="جستجوی ابزارها…" oninput="filterToolsSearch(this.value)">
-                    </div>
-
                     <!-- Section 1: Patient Assessment -->
                     <div class="accordion-section">
                         <div class="accordion-section-header">
@@ -1865,12 +1843,19 @@
                         </div>
                         <label class="switch"><input type="checkbox" id="lowPowerModeToggle"><span class="slider"></span></label>
                     </div>
-                    <div class="setting-item">
+                    <div class="setting-item" style="flex-direction:column; align-items:stretch; gap:10px;">
                         <div class="setting-label-stack">
-                            <span>رابط کاربری جدید</span>
-                            <span class="setting-sublabel">ناوبری بر پایه خانه، جستجو و دسته‌بندی به‌جای تب‌های فعلی</span>
+                            <span>سبک رابط کاربری</span>
+                            <span class="setting-sublabel">ناوبری کلاسیک (تب‌های فعلی) یا رابط جدید بر پایه خانه، جستجو و دسته‌بندی</span>
                         </div>
-                        <label class="switch"><input type="checkbox" id="modernShellToggle"><span class="slider"></span></label>
+                        <div class="theme-mode-btns" id="appShellStyleBtns">
+                            <button type="button" class="theme-mode-btn active" data-shell-style="classic" onclick="setAppShellStyle('classic')">
+                                <i class="fas fa-list"></i> کلاسیک
+                            </button>
+                            <button type="button" class="theme-mode-btn" data-shell-style="modern" onclick="setAppShellStyle('modern')">
+                                <i class="fas fa-house"></i> جدید
+                            </button>
+                        </div>
                     </div>
                     <div class="setting-item">
                         <div class="setting-label-stack">
