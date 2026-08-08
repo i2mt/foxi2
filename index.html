@@ -1735,37 +1735,6 @@
             <div class="voice-history-list" id="voiceHistoryList"></div>
         </div>
 
-    <!-- ============================================
-         MODERN SHELL — Home / Search / Favorites screens.
-         These are pure navigation/launcher screens: they never duplicate
-         a calculator's markup or logic. Tapping into anything here just
-         reveals the SAME calculatorTab / drugsTab / toolsTab content that
-         classic mode already uses — there's exactly one implementation
-         of every calculator regardless of which shell shows it.
-         ============================================ -->
-    <div class="tab-pane" id="homeTab" style="display:none;">
-        <button type="button" class="home-search-entry" onclick="switchTab('search')">
-            <i class="fas fa-magnifying-glass"></i>
-            <span>جستجوی همه ابزارها و داروها…</span>
-        </button>
-        <div class="tools-quick-access" id="homeQuickAccess" style="display:none;"></div>
-        <div class="home-section-label">دسته‌بندی‌ها</div>
-        <div class="home-category-grid" id="homeCategoryGrid"></div>
-    </div>
-
-    <div class="tab-pane" id="searchTab" style="display:none;">
-        <div class="modern-search-bar">
-            <i class="fas fa-magnifying-glass"></i>
-            <input type="text" id="globalSearchInput" placeholder="جستجوی ابزارها، داروها و محاسبه‌گرها…" oninput="runGlobalSearch(this.value)" autofocus>
-        </div>
-        <div id="globalSearchResults"></div>
-    </div>
-
-    <div class="tab-pane" id="favoritesTab" style="display:none;">
-        <div class="home-section-label">علاقه‌مندی‌ها</div>
-        <div id="favoritesFullList"></div>
-    </div>
-
 </div>
 </div>
     </div>
@@ -1785,16 +1754,6 @@
         <button class="tab-item" data-tab="drugs"><i class="fas fa-book-medical"></i><span>مرجع</span></button>
         <button class="tab-item" data-tab="tools"><i class="fas fa-tools"></i><span>ابزارها</span></button>
         <button class="tab-item" data-tab="voice"><i class="fas fa-microphone"></i><span>دستیار</span></button>
-    </div>
-
-    <!-- Modern shell's own bottom nav — shown instead of .tab-bar above
-         when Settings > "رابط کاربری جدید" is on. Same fixed-positioning
-         rationale as .tab-bar, so it's placed the same way. -->
-    <div class="tab-bar-modern" id="tabBarModern" style="display:none;">
-        <button class="tab-item-modern active" data-modern-tab="home" onclick="switchTab('home')"><i class="fas fa-house"></i><span>خانه</span></button>
-        <button class="tab-item-modern" data-modern-tab="search" onclick="switchTab('search')"><i class="fas fa-magnifying-glass"></i><span>جستجو</span></button>
-        <button class="tab-item-modern" data-modern-tab="favorites" onclick="switchTab('favorites')"><i class="fas fa-star"></i><span>علاقه‌مندی</span></button>
-        <button class="tab-item-modern" data-modern-tab="settings" onclick="document.getElementById('settingsBtn').click()"><i class="fas fa-cog"></i><span>تنظیمات</span></button>
     </div>
 
     <!-- Settings Modal -->
@@ -1843,20 +1802,6 @@
                             <span id="lowPowerModeAutoNote" class="setting-sublabel" style="opacity:.7;">بر اساس مشخصات گوشی به‌صورت خودکار تنظیم شده — در صورت نیاز می‌توانید دستی تغییرش دهید</span>
                         </div>
                         <label class="switch"><input type="checkbox" id="lowPowerModeToggle"><span class="slider"></span></label>
-                    </div>
-                    <div class="setting-item" style="flex-direction:column; align-items:stretch; gap:10px;">
-                        <div class="setting-label-stack">
-                            <span>سبک رابط کاربری</span>
-                            <span class="setting-sublabel">ناوبری کلاسیک (تب‌های فعلی) یا رابط جدید بر پایه خانه، جستجو و دسته‌بندی</span>
-                        </div>
-                        <div class="theme-mode-btns" id="appShellStyleBtns">
-                            <button type="button" class="theme-mode-btn active" data-shell-style="classic" onclick="setAppShellStyle('classic')">
-                                <i class="fas fa-list"></i> کلاسیک
-                            </button>
-                            <button type="button" class="theme-mode-btn" data-shell-style="modern" onclick="setAppShellStyle('modern')">
-                                <i class="fas fa-house"></i> جدید
-                            </button>
-                        </div>
                     </div>
                     <div class="setting-item">
                         <div class="setting-label-stack">
