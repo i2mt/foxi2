@@ -268,6 +268,8 @@
     let voskStopTimer = null;
     let voskSilenceWatchdog = null;
     let triedVoskFallback = false; // reset at the start of each fresh start() call
+    let modelLoadCancelled = false; // set by cancelPreload() below — lets the loading screen actually STOP a background model download/instantiation instead of just walking away from it
+    let activeModelXhr = null;      // reference to the in-flight download so cancelPreload() can abort it immediately, rather than waiting for the 25s stall timer
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -578,7 +580,9 @@
 
         function attempt(attemptNum) {
             return new Promise(function (resolve, reject) {
+                if (modelLoadCancelled) { reject(new Error('cancelled')); return; }
                 const xhr = new XMLHttpRequest();
+                activeModelXhr = xhr;
                 xhr.open('GET', url, true);
                 xhr.responseType = 'arraybuffer';
                 if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
@@ -632,6 +636,7 @@
 
                 xhr.send();
             }).catch(function (err) {
+                if (modelLoadCancelled) throw err; // deliberate cancel — stop retrying, don't keep burning CPU/network in the background
                 if (attemptNum >= MAX_ATTEMPTS) throw err;
                 // Brief pause before retrying — resumes from `loaded` bytes
                 // via the Range header above, not from scratch.
@@ -646,6 +651,7 @@
     function ensureVoskModel() {
         if (voskModel) return Promise.resolve(voskModel);
         if (voskModelLoadPromise) return voskModelLoadPromise;
+        modelLoadCancelled = false; // fresh load attempt — clear any earlier cancellation (e.g. from the loading screen giving up on an opportunistic preload)
         emit('model-loading');
 
         function loadBlob() {
@@ -1025,6 +1031,24 @@
         preload: function () {
             if (!voskConfigured()) return Promise.resolve();
             return ensureVoskModel().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
+        },
+        // Actually stops an opportunistic preload in progress — called by the
+        // loading screen when it gives up waiting (see script.js). Without
+        // this, the old behavior was to just stop AWAITING the promise while
+        // the download/WASM instantiation kept running in the background,
+        // which is exactly what caused the app to feel laggy right after
+        // opening it on slow devices: the loading screen would move on, but
+        // the phone was still quietly downloading 53MB and spinning up a
+        // WASM worker underneath. This aborts the in-flight request (if any)
+        // immediately and stops the retry loop from starting another one.
+        // Safe to call even if nothing is in flight (no-op then). A later
+        // genuine load — the person actually opening the Voice tab — starts
+        // clean via the modelLoadCancelled reset in ensureVoskModel() above.
+        cancelPreload: function () {
+            if (voskModel) return; // already finished loading — nothing to cancel, and definitely don't throw away a ready model
+            modelLoadCancelled = true;
+            if (activeModelXhr) { try { activeModelXhr.abort(); } catch (e) {} }
+            voskModelLoadPromise = null;
         },
         // Cheap, fast check for whether the model FILE is already sitting
         // in the Cache API from a previous session — this is NOT the same
