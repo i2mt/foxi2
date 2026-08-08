@@ -191,11 +191,7 @@ const AppState = {
         themeMode: 'light',
         voiceOutput: false,
         lowPowerMode: false,
-        lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
-        toolsViewStyle: 'classic',
-        appShellStyle: 'classic',
-        toolsFavorites: [],
-        toolsRecents: []
+        lowPowerModeManual: false // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
     },
     reverseMode: false
 };
@@ -1100,9 +1096,7 @@ function loadSettings() {
     if (DOM.lowPowerModeToggle) DOM.lowPowerModeToggle.checked = AppState.settings.lowPowerMode;
     const lowPowerAutoNote = document.getElementById('lowPowerModeAutoNote');
     if (lowPowerAutoNote) lowPowerAutoNote.style.display = AppState.settings.lowPowerModeManual ? 'none' : '';
-    document.querySelectorAll('#appShellStyleBtns .theme-mode-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.shellStyle === (AppState.settings.appShellStyle || 'classic'));
-    });
+
     if (DOM.doseAlertToggle) DOM.doseAlertToggle.checked = AppState.settings.doseAlerts;
     if (DOM.compatAlertToggle) DOM.compatAlertToggle.checked = AppState.settings.compatAlerts;
     if (DOM.saveHistoryToggle) DOM.saveHistoryToggle.checked = AppState.settings.saveHistory;
@@ -1110,13 +1104,6 @@ function loadSettings() {
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
-    // One-time initial navigation for a returning user who already had
-    // the modern shell on from a previous session. Deliberately only
-    // here (loadSettings runs once, at true page load) and not inside
-    // applySettings() (which also runs on every unrelated settings
-    // change mid-session) — otherwise toggling low power mode or a
-    // theme color would unexpectedly bounce the person back to Home.
-    if (AppState.settings.appShellStyle === 'modern') switchTab('home');
 }
 
 function saveSettings() {
@@ -1145,7 +1132,6 @@ function applySettings() {
     else document.body.classList.remove('large-font');
     if (AppState.settings.lowPowerMode) document.body.classList.add('low-power-mode');
     else document.body.classList.remove('low-power-mode');
-    applyAppShellStyle();
     const savedColor = AppState.settings.colorTheme || 'default';
     applyTheme(savedColor);
     fixVolumeButtonColors();
@@ -1955,9 +1941,6 @@ function setupSettingsEventListeners() {
         });
     }
 
-    // Modern app shell style is set via setAppShellStyle(), wired to the
-    // segmented control's onclick attributes in the HTML directly.
-
     // Dose alerts
     const doseAlertToggle = document.getElementById('doseAlertToggle');
     if (doseAlertToggle) {
@@ -2398,21 +2381,6 @@ function switchTab(tabName) {
         // session even on pages that have nothing to do with voice.
         window.VoiceEngine.releaseModel();
     }
-
-    // Modern-shell-only panes: keep the new bottom nav's active state in
-    // sync, and render each screen's content right before showing it
-    // (cheap enough to just rebuild every time rather than caching, and
-    // guarantees favorites/recents are never stale).
-    document.querySelectorAll('.tab-item-modern').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.modernTab === tabName);
-    });
-    if (tabName === 'home') renderHomeScreen();
-    if (tabName === 'search') {
-        const input = document.getElementById('globalSearchInput');
-        if (input) { input.value = ''; input.focus(); }
-        runGlobalSearch('');
-    }
-    if (tabName === 'favorites') renderFavoritesFullList();
 }
 
 // ============================================
@@ -2665,314 +2633,9 @@ function initializeTools() {
             sel.appendChild(opt);
         });
     });
-    // Favorite stars stay available on every tool regardless of which app
-    // shell is active — needed so the modern shell's Favorites screen
-    // always has something to show, even for someone who never switches
-    // out of the classic tab layout.
-    injectToolFavoriteButtons();
-}
-
-// ============================================
-// TOOLS BROWSER — dual view style (classic / modern),
-// favorites, recents, and live search.
-//
-// This deliberately reuses the real accordion-item elements everywhere
-// rather than duplicating any tool's title/icon/logic in a second data
-// structure — favorites and recents are just lists of accordion-item
-// IDs, and rows shown for them are built by cloning that real item's
-// existing icon + title. There is exactly one source of truth per tool.
-// ============================================
-
-function recordToolRecent(itemId) {
-    if (!itemId) return;
-    let recents = AppState.settings.toolsRecents || [];
-    recents = recents.filter(id => id !== itemId);
-    recents.unshift(itemId);
-    recents = recents.slice(0, 5);
-    AppState.settings.toolsRecents = recents;
-    saveSettings();
-    if (AppState.settings.toolsViewStyle === 'modern') renderToolsQuickAccess();
-}
-
-function toggleToolFavorite(itemId) {
-    let favs = AppState.settings.toolsFavorites || [];
-    const idx = favs.indexOf(itemId);
-    if (idx === -1) { favs.push(itemId); haptic(15); }
-    else { favs.splice(idx, 1); }
-    AppState.settings.toolsFavorites = favs;
-    saveSettings();
-    document.querySelectorAll('.tool-fav-btn[data-tool-id="' + itemId + '"]').forEach(function (b) {
-        b.classList.toggle('active', favs.indexOf(itemId) !== -1);
-    });
-    if (AppState.settings.toolsViewStyle === 'modern') renderToolsQuickAccess();
-}
-
-// The two "categories" that aren't accordion tools at all — they're
-// whole existing tabs (calculatorTab, drugsTab). Kept as a small fixed
-// lookup since, unlike the 21 real tools, there's no shared icon+title
-// DOM shape to clone them from.
-const PSEUDO_TOOL_META = {
-    calculatorTab: { icon: 'fa-syringe', gradient: 'linear-gradient(135deg,#f59e0b,#ea580c)', title: 'محاسبه دوز دارو' },
-    drugsTab: { icon: 'fa-book-medical', gradient: 'linear-gradient(135deg,#0ea5e9,#6366f1)', title: 'مرجع دارویی' }
-};
-
-function openToolById(itemId) {
-    if (itemId === 'calculatorTab') { switchTab('calculator'); return; }
-    if (itemId === 'drugsTab') { switchTab('drugs'); return; }
-    // Real accordion tools live inside toolsTab, which may currently be a
-    // hidden pane (e.g. navigating here from Home/Search/Favorites) —
-    // make it visible first, then open the specific item within it.
-    if (AppState.currentTab !== 'tools') switchTab('tools');
-    const item = document.getElementById(itemId);
-    if (!item) return;
-    const header = item.querySelector('.accordion-header');
-    if (!header) return;
-    if (!item.classList.contains('open')) toggleAccordion(header);
-    else item.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function buildToolQuickRow(itemId) {
-    const pseudo = PSEUDO_TOOL_META[itemId];
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'tool-quick-row';
-    if (pseudo) {
-        row.innerHTML = '<div class="accordion-icon-wrap" style="background:' + pseudo.gradient + '"><i class="fas ' + pseudo.icon + '"></i></div>' +
-            '<span class="tool-quick-row-title">' + pseudo.title + '</span>';
-        row.addEventListener('click', function () { openToolById(itemId); });
-        return row;
-    }
-    const source = document.getElementById(itemId);
-    if (!source) return null;
-    const iconWrap = source.querySelector('.accordion-icon-wrap');
-    const title = source.querySelector('.accordion-title');
-    if (!iconWrap || !title) return null;
-    const styleAttr = iconWrap.getAttribute('style') || '';
-    row.innerHTML = '<div class="accordion-icon-wrap" style="' + styleAttr + '">' + iconWrap.innerHTML + '</div>' +
-        '<span class="tool-quick-row-title">' + title.textContent + '</span>';
-    row.addEventListener('click', function () { openToolById(itemId); });
-    return row;
-}
-
-function renderToolsQuickAccess() {
-    const wrap = document.getElementById('toolsQuickAccess');
-    if (!wrap) return;
-    const favs = AppState.settings.toolsFavorites || [];
-    const recents = (AppState.settings.toolsRecents || []).filter(function (id) { return favs.indexOf(id) === -1; });
-    let html = '';
-    if (favs.length) {
-        html += '<div class="tools-quick-section-label"><i class="fas fa-star"></i> علاقه‌مندی‌ها</div><div class="tools-quick-row-list" id="toolsFavRowList"></div>';
-    }
-    if (recents.length) {
-        html += '<div class="tools-quick-section-label"><i class="fas fa-clock-rotate-left"></i> اخیراً استفاده‌شده</div><div class="tools-quick-row-list" id="toolsRecentRowList"></div>';
-    }
-    wrap.innerHTML = html;
-    wrap.style.display = (favs.length || recents.length) ? '' : 'none';
-    const favList = document.getElementById('toolsFavRowList');
-    if (favList) favs.forEach(function (id) { const row = buildToolQuickRow(id); if (row) favList.appendChild(row); });
-    const recentList = document.getElementById('toolsRecentRowList');
-    if (recentList) recents.forEach(function (id) { const row = buildToolQuickRow(id); if (row) recentList.appendChild(row); });
-}
-
-function injectToolFavoriteButtons() {
-    document.querySelectorAll('#toolsTab .accordion-header').forEach(function (header) {
-        if (header.querySelector('.tool-fav-btn')) return; // already injected, don't duplicate
-        const item = header.closest('.accordion-item');
-        if (!item) return;
-        const favs = AppState.settings.toolsFavorites || [];
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'tool-fav-btn' + (favs.indexOf(item.id) !== -1 ? ' active' : '');
-        btn.dataset.toolId = item.id;
-        btn.innerHTML = '<i class="fas fa-star"></i>';
-        btn.setAttribute('aria-label', 'افزودن به علاقه‌مندی‌ها');
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            toggleToolFavorite(item.id);
-        });
-        const chevron = header.querySelector('.accordion-chevron');
-        if (chevron) header.insertBefore(btn, chevron);
-        else header.appendChild(btn);
-    });
-}
-
-// ============================================
-// MODERN APP SHELL — Home / Search / Favorites, replacing the classic
-// Calculator/Drugs/Tools/Voice bottom nav entirely when enabled. Every
-// category and search result here is just a pointer (an accordion-item
-// id, or one of the two pseudo-ids below) into the SAME existing tabs —
-// nothing about any calculator is reimplemented for this shell.
-// ============================================
-
-const TOOL_CATEGORIES = [
-    { id: 'calculator', label: 'محاسبه دوز دارو', icon: 'fa-syringe', gradient: 'linear-gradient(135deg,#f59e0b,#ea580c)', items: ['calculatorTab'] },
-    { id: 'drugref', label: 'مرجع دارویی', icon: 'fa-book-medical', gradient: 'linear-gradient(135deg,#0ea5e9,#6366f1)', items: ['drugsTab'] },
-    { id: 'scores', label: 'نمرات و ارزیابی بالینی', icon: 'fa-clipboard-list', gradient: 'linear-gradient(135deg,#6366f1,#8b5cf6)', items: ['gcsAccordionItem', 'rassAccordionItem', 'bradenAccordionItem', 'morseAccordionItem'] },
-    { id: 'respiratory', label: 'تنفس و اکسیژن', icon: 'fa-lungs', gradient: 'linear-gradient(135deg,#0ea5e9,#38bdf8)', items: ['oxygenAccordionItem', 'ventilatorAccordionItem', 'vbgAccordionItem'] },
-    { id: 'bodymetrics', label: 'سنجه‌های بدن', icon: 'fa-weight-scale', gradient: 'linear-gradient(135deg,#10b981,#34d399)', items: ['bmiAccordionItem', 'bsaAccordionItem', 'ibwAccordionItem', 'crclAccordionItem'] },
-    { id: 'burnsnutrition', label: 'سوختگی و تغذیه', icon: 'fa-fire', gradient: 'linear-gradient(135deg,#f97316,#fb923c)', items: ['burnsAccordionItem', 'nutritionAccordionItem'] },
-    { id: 'infusion', label: 'دارو و انفوزیون', icon: 'fa-droplet', gradient: 'linear-gradient(135deg,#ec4899,#f472b6)', items: ['ysiteAccordionItem', 'dripAccordionItem'] },
-    { id: 'converters', label: 'مبدل‌های واحد', icon: 'fa-right-left', gradient: 'linear-gradient(135deg,#fa709a,#fee140)', items: ['unitAccordionItem', 'electrolyteAccordionItem', 'percentageAccordionItem', 'tempAccordionItem', 'weightAccordionItem', 'pressureAccordionItem'] }
-];
-
-function getAllSearchableEntries() {
-    // Every real tool/tab this shell can point to, each with a display
-    // title/sub pulled from the actual DOM (or PSEUDO_TOOL_META for the
-    // two whole-tab entries) — never a second hardcoded copy of a title.
-    const entries = [];
-    TOOL_CATEGORIES.forEach(function (cat) {
-        cat.items.forEach(function (id) {
-            const pseudo = PSEUDO_TOOL_META[id];
-            if (pseudo) {
-                entries.push({ id: id, title: pseudo.title, sub: '', category: cat.label });
-                return;
-            }
-            const el = document.getElementById(id);
-            if (!el) return;
-            const title = el.querySelector('.accordion-title');
-            const sub = el.querySelector('.accordion-sub');
-            entries.push({
-                id: id,
-                title: title ? title.textContent : '',
-                sub: sub ? sub.textContent : '',
-                category: cat.label
-            });
-        });
-    });
-    return entries;
-}
-
-function renderHomeScreen() {
-    const wrap = document.getElementById('homeQuickAccess');
-    if (wrap) {
-        const favs = AppState.settings.toolsFavorites || [];
-        const recents = (AppState.settings.toolsRecents || []).filter(function (id) { return favs.indexOf(id) === -1; });
-        let html = '';
-        if (favs.length) html += '<div class="tools-quick-section-label"><i class="fas fa-star"></i> علاقه‌مندی‌ها</div><div class="tools-quick-row-list" id="homeFavRowList"></div>';
-        if (recents.length) html += '<div class="tools-quick-section-label"><i class="fas fa-clock-rotate-left"></i> اخیراً استفاده‌شده</div><div class="tools-quick-row-list" id="homeRecentRowList"></div>';
-        wrap.innerHTML = html;
-        wrap.style.display = (favs.length || recents.length) ? '' : 'none';
-        const favList = document.getElementById('homeFavRowList');
-        if (favList) favs.forEach(function (id) { const row = buildToolQuickRow(id); if (row) favList.appendChild(row); });
-        const recentList = document.getElementById('homeRecentRowList');
-        if (recentList) recents.forEach(function (id) { const row = buildToolQuickRow(id); if (row) recentList.appendChild(row); });
-    }
-    const grid = document.getElementById('homeCategoryGrid');
-    if (!grid) return;
-    grid.innerHTML = '';
-    TOOL_CATEGORIES.forEach(function (cat) {
-        const tile = document.createElement('button');
-        tile.type = 'button';
-        tile.className = 'home-category-tile';
-        tile.innerHTML = '<div class="accordion-icon-wrap" style="background:' + cat.gradient + '"><i class="fas ' + cat.icon + '"></i></div>' +
-            '<span>' + cat.label + '</span>';
-        tile.addEventListener('click', function () { openCategory(cat.id); });
-        grid.appendChild(tile);
-    });
-}
-
-function openCategory(categoryId) {
-    const cat = TOOL_CATEGORIES.find(function (c) { return c.id === categoryId; });
-    if (!cat) return;
-    if (cat.items.length === 1) { openToolById(cat.items[0]); return; }
-    switchTab('tools');
-    filterToolsByCategory(cat.items);
-}
-
-function filterToolsByCategory(itemIds) {
-    const sections = document.querySelectorAll('#toolsTab .accordion-section');
-    sections.forEach(function (sec) {
-        let anyVisible = false;
-        sec.querySelectorAll('.accordion-item').forEach(function (item) {
-            const match = itemIds.indexOf(item.id) !== -1;
-            item.style.display = match ? '' : 'none';
-            if (match) anyVisible = true;
-        });
-        sec.style.display = anyVisible ? '' : 'none';
-    });
-    // Reflect the active filter in the search box too, and give an easy
-    // way back to the full list.
-    const input = document.getElementById('toolsSearchInput');
-    if (input) input.value = '';
-}
-
-function runGlobalSearch(query) {
-    const resultsEl = document.getElementById('globalSearchResults');
-    if (!resultsEl) return;
-    const q = (query || '').trim().toLowerCase();
-    resultsEl.innerHTML = '';
-    let entries;
-    let heading = '';
-    if (!q) {
-        const recents = AppState.settings.toolsRecents || [];
-        if (!recents.length) { resultsEl.innerHTML = '<p class="tool-note" style="text-align:center;">برای جستجو تایپ کنید</p>'; return; }
-        entries = getAllSearchableEntries().filter(function (e) { return recents.indexOf(e.id) !== -1; });
-        heading = 'اخیراً استفاده‌شده';
-    } else {
-        entries = getAllSearchableEntries().filter(function (e) {
-            return (e.title + ' ' + e.sub).toLowerCase().indexOf(q) !== -1;
-        });
-        heading = entries.length ? '' : '';
-    }
-    if (heading) {
-        const label = document.createElement('div');
-        label.className = 'tools-quick-section-label';
-        label.textContent = heading;
-        resultsEl.appendChild(label);
-    }
-    if (!entries.length) {
-        resultsEl.innerHTML += '<p class="tool-note" style="text-align:center;">نتیجه‌ای یافت نشد</p>';
-        return;
-    }
-    const list = document.createElement('div');
-    list.className = 'tools-quick-row-list';
-    entries.forEach(function (e) {
-        const row = buildToolQuickRow(e.id);
-        if (row) list.appendChild(row);
-    });
-    resultsEl.appendChild(list);
-}
-
-function renderFavoritesFullList() {
-    const wrap = document.getElementById('favoritesFullList');
-    if (!wrap) return;
-    const favs = AppState.settings.toolsFavorites || [];
-    if (!favs.length) {
-        wrap.innerHTML = '<p class="tool-note" style="text-align:center;">هنوز چیزی به علاقه‌مندی‌ها اضافه نکرده‌اید — روی ستاره کنار هر ابزار بزنید</p>';
-        return;
-    }
-    wrap.innerHTML = '<div class="tools-quick-row-list" id="favFullRowList"></div>';
-    const list = document.getElementById('favFullRowList');
-    favs.forEach(function (id) { const row = buildToolQuickRow(id); if (row) list.appendChild(row); });
-}
-
-function setAppShellStyle(style) {
-    AppState.settings.appShellStyle = style;
-    saveSettings();
-    document.querySelectorAll('#appShellStyleBtns .theme-mode-btn').forEach(function (btn) {
-        btn.classList.toggle('active', btn.dataset.shellStyle === style);
-    });
-    applyAppShellStyle();
-    // Explicit, unconditional navigation right here — deliberately not
-    // inside applyAppShellStyle() itself, so switching styles always
-    // takes the person to a sensible starting screen regardless of
-    // whatever tab they happened to be on, with no state-dependent
-    // branching that could silently no-op.
-    switchTab(style === 'modern' ? 'home' : 'calculator');
-}
-
-function applyAppShellStyle() {
-    // Purely idempotent: safe to call any time (page load, settings sync,
-    // etc.) without side effects on the current screen. Actually
-    // switching screens on a real style change is handled explicitly by
-    // whatever changed the setting (see the settings control below) —
-    // keeping that out of this function avoids any state-dependent
-    // branching here.
-    const style = AppState.settings.appShellStyle || 'classic';
-    const classicBar = document.querySelector('.tab-bar');
-    const modernBar = document.getElementById('tabBarModern');
-    if (classicBar) classicBar.style.display = style === 'modern' ? 'none' : '';
-    if (modernBar) modernBar.style.display = style === 'modern' ? '' : 'none';
+    // Favorite-star / recents tracking used to feed the modern home shell,
+    // which has been removed — classic mode never had a screen to surface
+    // them, so there's nothing left to initialize here.
 }
 
 function calculateBMI() {
@@ -4087,7 +3750,6 @@ function toggleAccordion(headerBtn) {
         addAccordionFloatBar(item, headerBtn);
         history.pushState({ accordionOpen: true }, '');
         setTimeout(() => item.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
-        recordToolRecent(item.id);
     }
 }
 
@@ -4444,8 +4106,6 @@ window.resetBurns = resetBurns;
 window.updateParkland = updateParkland;
 window.restoreFromHistory = restoreFromHistory;
 window.updateDoseRangeIndicator = updateDoseRangeIndicator;
-window.runGlobalSearch = runGlobalSearch;
-window.setAppShellStyle = setAppShellStyle;
 
 // ============================================
 // USER NAME & GREETING BANNER
