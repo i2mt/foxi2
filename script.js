@@ -75,6 +75,95 @@ function checkForWhatsNewOnLoad() {
     }
 }
 
+// ============================================
+// AUTOMATIC LOW-END DEVICE DETECTION
+// ============================================
+// Best-effort heuristic used ONLY to pick a sensible default for Low Power
+// Mode the first time (and every time thereafter) the app runs, as long as
+// the person hasn't manually touched the toggle in Settings — see
+// lowPowerModeManual below. deviceMemory/hardwareConcurrency are static
+// hardware facts, so re-checking on every launch is cheap and always gives
+// the same answer for a given phone.
+//
+// Known limitation: navigator.deviceMemory is Chromium/Android-only —
+// Safari/iOS never exposes it, so on iPhones this falls back to
+// hardwareConcurrency alone, which is a much weaker signal since Apple
+// doesn't vary core counts much across tiers. Someone on an older-but-not-
+// ancient iPhone that still lags may need to flip the toggle manually —
+// this is a "get most people a good default," not a guarantee.
+function detectLowEndDevice() {
+    try {
+        const mem = navigator.deviceMemory; // GB of RAM, Chromium/Android only
+        const cores = navigator.hardwareConcurrency; // supported almost everywhere
+
+        if (typeof mem === 'number' && mem <= 3) return true;
+        if (typeof cores === 'number' && cores <= 4) return true;
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Runs synchronously at script load — before any DOMContentLoaded handler,
+// including the one that reads localStorage into AppState.settings — so
+// that by the time the rest of the app looks at appSettings.lowPowerMode,
+// the auto-detected value (if applicable) is already sitting in
+// localStorage and gets picked up like any other saved setting, with no
+// special-casing needed elsewhere.
+//
+// Also runs a "did the app actually finish loading last time?" watchdog.
+// appSettings.__loadWatchdog is set here, at the very start of every
+// launch, and only cleared by hideLoadingScreen() once loading genuinely
+// completes. If it's still set when we get here, the PREVIOUS launch never
+// made it that far — hung, crashed, got force-closed, whatever the cause —
+// which is a much more direct signal that this device/session is
+// struggling than any static hardware guess. When that happens we force
+// Low Power Mode on for this launch (unless the person set it manually),
+// so a device that got stuck once doesn't get stuck again on the very next
+// open — critically, this decision is made BEFORE the loading screen (and
+// therefore before any Vosk warmup) even starts, so it protects the next
+// launch even if that one never reaches Settings either.
+(function autoDetectLowPowerModeIfNeeded() {
+    try {
+        const raw = localStorage.getItem('appSettings');
+        const saved = raw ? JSON.parse(raw) : {};
+
+        const lastLoadNeverFinished = !!saved.__loadWatchdog;
+        saved.__loadWatchdog = Date.now();
+
+        if (!saved.lowPowerModeManual) {
+            const auto = lastLoadNeverFinished ? true : detectLowEndDevice();
+            saved.lowPowerMode = auto;
+        }
+        localStorage.setItem('appSettings', JSON.stringify(saved));
+    } catch (e) { /* localStorage unavailable — defaults apply as before */ }
+})();
+
+// Best-effort REAL-TIME responsiveness probe, running alongside the loading
+// screen animation. Static device-tier guessing (deviceMemory/cores) can
+// miss plenty of devices — especially iPhones, which don't expose
+// deviceMemory at all — so this measures actual frame timing on THIS launch
+// and lets a device that proves itself slow right now override the guess,
+// even if it looked fine on paper. Five samples finish well before
+// finishLoadingWithOptionalVoskWarmup() is called (~2.4s into the loading
+// sequence), so the result is ready in time to matter.
+let __measuredFrameGapMs = null;
+(function measureFrameResponsiveness() {
+    let last = null;
+    const samples = [];
+    function tick(ts) {
+        if (last !== null) samples.push(ts - last);
+        last = ts;
+        if (samples.length < 5) {
+            requestAnimationFrame(tick);
+        } else {
+            samples.sort(function (a, b) { return a - b; });
+            __measuredFrameGapMs = samples[Math.floor(samples.length / 2)]; // median — one bad frame shouldn't skew this
+        }
+    }
+    try { requestAnimationFrame(tick); } catch (e) { /* no rAF — leave __measuredFrameGapMs null, just skip this signal */ }
+})();
+
 const AppState = {
     selectedDrug: 'heparin',
     infusionMethod: 'syringe',
@@ -102,6 +191,7 @@ const AppState = {
         themeMode: 'light',
         voiceOutput: false,
         lowPowerMode: false,
+        lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
         toolsViewStyle: 'classic',
         appShellStyle: 'classic',
         toolsFavorites: [],
@@ -185,6 +275,15 @@ const AppState = {
 
     window.hideLoadingScreen = function() {
         const screen = document.getElementById('loadingScreen');
+        // Loading has genuinely finished — clear the watchdog set at script
+        // start, regardless of whether the screen element itself is still
+        // there, so next launch doesn't wrongly think this one got stuck.
+        try {
+            const raw = localStorage.getItem('appSettings');
+            const saved = raw ? JSON.parse(raw) : {};
+            delete saved.__loadWatchdog;
+            localStorage.setItem('appSettings', JSON.stringify(saved));
+        } catch (e) { /* non-fatal */ }
         if (!screen) return;
         screen.classList.add('fade-out');
         setTimeout(() => {
@@ -242,8 +341,33 @@ const AppState = {
         } catch (e) { return false; }
     }
 
+    // Persists a fresh "this device is struggling" finding so it protects
+    // every launch from now on, not just this one — without ever touching
+    // a value the person set manually in Settings. Used when a live signal
+    // (real frame jank, or the warmup itself timing out) proves a device is
+    // slow even though the static device-tier guess said otherwise.
+    function forceLowPowerModeIfNotManual() {
+        try {
+            const raw = localStorage.getItem('appSettings');
+            const saved = raw ? JSON.parse(raw) : {};
+            if (saved.lowPowerModeManual) return;
+            saved.lowPowerMode = true;
+            localStorage.setItem('appSettings', JSON.stringify(saved));
+            AppState.settings.lowPowerMode = true; // keep the in-memory copy in sync too, in case Settings gets opened later this same session
+        } catch (e) { /* non-fatal */ }
+    }
+
     function finishLoadingWithOptionalVoskWarmup() {
-        if (isLowPowerMode() || !window.VoiceEngine || typeof window.VoiceEngine.isModelCached !== 'function') {
+        // Live signal wins over the static guess: if THIS launch is
+        // already visibly janky (slow frame timing measured since page
+        // start — see measureFrameResponsiveness above), don't add a heavy
+        // WASM warmup on top of it, no matter what deviceMemory/cores said.
+        // 40ms ≈ sub-25fps, comfortably above normal jitter on any real
+        // device but a clear sign the main thread is struggling right now.
+        const liveJank = typeof __measuredFrameGapMs === 'number' && __measuredFrameGapMs > 40;
+        if (liveJank) forceLowPowerModeIfNotManual();
+
+        if (liveJank || isLowPowerMode() || !window.VoiceEngine || typeof window.VoiceEngine.isModelCached !== 'function') {
             setTimeout(window.hideLoadingScreen, 300);
             return;
         }
@@ -254,8 +378,24 @@ const AppState = {
             }
             loadingProgress(97, 'در حال آماده‌سازی موتور صوتی...');
             const warmup = window.VoiceEngine.preload();
-            const timeout = new Promise(function (resolve) { setTimeout(resolve, 10000); });
+            let warmupFinished = false;
+            warmup.then(function () { warmupFinished = true; });
+            const timeout = new Promise(function (resolve) { setTimeout(resolve, 6000); });
             Promise.race([warmup, timeout]).then(function () {
+                if (!warmupFinished) {
+                    // It didn't finish in a reasonable window — this phone
+                    // just demonstrated it can't casually absorb the warmup,
+                    // regardless of what any heuristic guessed beforehand.
+                    // Actually STOP the in-flight download/instantiation
+                    // (instead of leaving it running in the background,
+                    // which is what used to cause lag persisting well after
+                    // the loading screen was gone) and lock in Low Power
+                    // Mode so this doesn't get attempted again next launch.
+                    if (window.VoiceEngine && typeof window.VoiceEngine.cancelPreload === 'function') {
+                        window.VoiceEngine.cancelPreload();
+                    }
+                    forceLowPowerModeIfNotManual();
+                }
                 setTimeout(window.hideLoadingScreen, 300);
             });
         }).catch(function () {
@@ -958,6 +1098,8 @@ function loadSettings() {
     if (DOM.darkModeToggle) DOM.darkModeToggle.checked = AppState.settings.darkMode;
     if (DOM.largeFontToggle) DOM.largeFontToggle.checked = AppState.settings.largeFont;
     if (DOM.lowPowerModeToggle) DOM.lowPowerModeToggle.checked = AppState.settings.lowPowerMode;
+    const lowPowerAutoNote = document.getElementById('lowPowerModeAutoNote');
+    if (lowPowerAutoNote) lowPowerAutoNote.style.display = AppState.settings.lowPowerModeManual ? 'none' : '';
     document.querySelectorAll('#appShellStyleBtns .theme-mode-btn').forEach(function (btn) {
         btn.classList.toggle('active', btn.dataset.shellStyle === (AppState.settings.appShellStyle || 'classic'));
     });
@@ -1805,6 +1947,9 @@ function setupSettingsEventListeners() {
     if (lowPowerModeToggle) {
         lowPowerModeToggle.addEventListener('change', function() {
             AppState.settings.lowPowerMode = this.checked;
+            AppState.settings.lowPowerModeManual = true; // person chose explicitly — auto-detection stops touching this from now on
+            const lowPowerAutoNote = document.getElementById('lowPowerModeAutoNote');
+            if (lowPowerAutoNote) lowPowerAutoNote.style.display = 'none';
             saveSettings();
             applySettings();
         });
