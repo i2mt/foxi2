@@ -2352,30 +2352,6 @@ body.low-power-mode .tab-item.active { animation: none; }
     max-height: calc(90vh - 80px);
 }
 
-.settings-group {
-    margin-bottom: var(--spacing-xl);
-}
-
-.settings-group h4 {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-md);
-    font-size: 1.1rem;
-    color: var(--primary);
-    direction: rtl;
-}
-
-.setting-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-sm) 0;
-    border-bottom: 1px solid var(--border);
-    direction: rtl;
-    min-height: 44px;
-}
-
 .switch {
     position: relative;
     display: inline-block;
@@ -2421,32 +2397,6 @@ body.low-power-mode .tab-item.active { animation: none; }
 
 .switch input:checked+.slider:before {
     transform: translateX(-20px);
-}
-
-.setting-btn {
-    width: 100%;
-    padding: 1rem;
-    background: var(--surface-elevated);
-    border: 2px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: var(--transition);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    font-weight: 600;
-    margin-top: var(--spacing-sm);
-    direction: rtl;
-    min-height: 44px;
-    font-family: var(--font-persian);
-}
-
-.setting-btn:hover {
-    background: var(--primary-light);
-    border-color: var(--primary);
-    color: var(--primary);
 }
 
 .toast {
@@ -3586,26 +3536,6 @@ body.low-power-mode .tab-item.active { animation: none; }
     direction: rtl;
 }
 
-.about-info {
-    padding: 12px;
-    background: var(--surface-elevated);
-    border-radius: 10px;
-    margin-bottom: 12px;
-    direction: rtl;
-}
-
-.about-info p {
-    padding: 6px 0;
-    border-bottom: 1px dashed var(--border-light);
-    font-size: 14px;
-    display: flex;
-    justify-content: space-between;
-}
-
-.about-info p:last-child {
-    border-bottom: none;
-}
-
 .manual-inputs-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -4711,178 +4641,6 @@ input[type="search"]::placeholder {
     padding: 12px 16px 0 !important;
     overflow-y: auto;
     padding-bottom: max(20px, env(safe-area-inset-bottom)) !important;
-}
-
-.settings-group {
-    margin-bottom: 14px !important;
-    padding-bottom: 14px !important;
-    border-bottom: 1px solid var(--border);
-}
-
-.settings-group:last-of-type {
-    margin-bottom: 0 !important;
-    border-bottom: none;
-}
-
-.settings-hint {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    line-height: 1.7;
-    margin: 0 0 10px 0;
-}
-
-.settings-group h4 {
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    color: var(--text-tertiary) !important;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px !important;
-    margin-top: 0 !important;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.setting-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 0 !important;
-    border-bottom: 1px solid var(--border-light);
-    min-height: unset !important;
-}
-
-.setting-item:last-of-type {
-    border-bottom: none;
-}
-
-.setting-item span {
-    font-size: 13px !important;
-    color: var(--text-primary);
-}
-
-.settings-btn-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.setting-btn {
-    padding: 8px 10px !important;
-    font-size: 11px !important;
-    border-radius: 8px !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    min-height: unset !important;
-}
-
-.setting-contact-btn {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: linear-gradient(135deg, #0088cc, #00aaff);
-    color: white;
-    border-radius: 10px;
-    padding: 10px 14px;
-    text-decoration: none;
-    direction: rtl;
-    transition: var(--transition);
-}
-
-.setting-contact-btn:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-}
-
-.setting-contact-btn .fab.fa-telegram {
-    font-size: 22px;
-    flex-shrink: 0;
-}
-
-.setting-contact-btn span:first-of-type {
-    flex: 1;
-    font-size: 13px;
-    font-weight: 600;
-    font-family: var(--font-persian);
-}
-
-.contact-handle {
-    font-size: 12px;
-    font-family: var(--font-latin);
-    opacity: 0.85;
-    background: rgba(255, 255, 255, 0.15);
-    padding: 2px 8px;
-    border-radius: 20px;
-    flex-shrink: 0;
-    direction: ltr !important;
-    unicode-bidi: isolate;
-}
-
-.about-info {
-    background: var(--surface-elevated) !important;
-    border-radius: 10px !important;
-    overflow: hidden;
-    margin-bottom: 8px !important;
-    padding: 0 !important;
-}
-
-.about-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 7px 12px;
-    border-bottom: 1px solid var(--border-light);
-    direction: rtl;
-    font-size: 12px;
-}
-
-.about-row:last-child {
-    border-bottom: none;
-}
-
-.about-row span:first-child {
-    color: var(--text-secondary);
-    font-weight: 500;
-}
-
-.about-row span:last-child {
-    color: var(--text-primary);
-    font-weight: 600;
-    font-family: var(--font-latin);
-}
-
-.settings-credits {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 10px 12px;
-    font-size: 11px;
-    color: var(--text-secondary);
-    direction: ltr;
-    font-family: var(--font-latin);
-    background: var(--surface-elevated);
-    border-radius: 8px;
-    margin-top: 8px;
-    text-align: center;
-    line-height: 1.6;
-    border: 1px solid var(--border);
-}
-
-.settings-credits i {
-    font-size: 11px;
-    color: var(--primary);
-}
-
-.settings-credits strong {
-    font-weight: 700;
-    color: var(--text-primary);
-    letter-spacing: 0.2px;
 }
 
 @media (max-width: 768px) {
@@ -7256,28 +7014,6 @@ html {
 /* ============================================
    THEME COLOR PICKER
    ============================================ */
-.theme-picker-section {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-}
-
-.theme-picker-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-persian);
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 10px;
-    direction: rtl;
-}
-
-.theme-picker-label i {
-    color: var(--primary);
-    font-size: 13px;
-}
-
 .theme-swatches {
     display: flex;
     gap: 6px;
@@ -7602,10 +7338,14 @@ html {
 }
 
 /* ============================================
-   SETTINGS FIXES & NEW COMPONENTS
+   SETTINGS MODAL — layout & spacing
+   One coherent rhythm for the whole panel:
+     16px between groups, 10px from a group's
+     heading to its first row, 11px vertical
+     padding on every row (toggle rows and the
+     stacked/button rows alike), 6px for small
+     internal gaps, 3px for a label→sublabel pair.
    ============================================ */
-
-/* Fix modal scroll — content must not clip the body */
 .modal-content {
     overflow: hidden !important;
     display: flex !important;
@@ -7619,32 +7359,240 @@ html {
     overscroll-behavior: contain !important;
 }
 
-/* Setting row that stacks label above control */
+.settings-group {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-group:last-of-type {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.settings-group h4 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    direction: rtl;
+}
+
+.settings-hint {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-tertiary);
+}
+
+/* Every row in the panel shares the same 11px vertical rhythm,
+   whether it's a simple toggle, a stacked label+sublabel, or the
+   label-above-control layout used by the theme-mode buttons. */
+.setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border-light);
+    direction: rtl;
+}
+
+.setting-item:last-of-type {
+    border-bottom: none;
+}
+
+.setting-item span {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
 .setting-item--block {
-    flex-direction: column !important;
-    align-items: flex-end !important;
+    flex-direction: column;
+    align-items: flex-end;
     gap: 8px;
-    padding: 10px 0 !important;
+    padding: 11px 0;
 }
 
 .setting-label-full {
+    width: 100%;
     font-size: 13px;
     color: var(--text-primary);
-    width: 100%;
     text-align: right;
 }
 
-/* Sub-label below setting span */
 .setting-label-stack {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
 }
 
 .setting-sublabel {
     font-size: 11px;
     color: var(--text-tertiary);
     font-family: var(--font-persian);
+}
+
+.settings-btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.setting-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 8px 10px;
+    font-size: 11px;
+    border-radius: 8px;
+    background: var(--surface-elevated);
+    border: 2px solid var(--border);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: var(--font-persian);
+    direction: rtl;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.setting-btn:hover {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.setting-contact-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: linear-gradient(135deg, #0088cc, #00aaff);
+    color: white;
+    border-radius: 10px;
+    text-decoration: none;
+    direction: rtl;
+    transition: var(--transition);
+}
+
+.setting-contact-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.setting-contact-btn .fab.fa-telegram {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.setting-contact-btn span:first-of-type {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-persian);
+}
+
+.contact-handle {
+    font-size: 12px;
+    font-family: var(--font-latin);
+    opacity: 0.85;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 8px;
+    border-radius: 20px;
+    flex-shrink: 0;
+    direction: ltr !important;
+    unicode-bidi: isolate;
+}
+
+.about-info {
+    background: var(--surface-elevated);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.about-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--border-light);
+    direction: rtl;
+    font-size: 12px;
+}
+
+.about-row:last-child {
+    border-bottom: none;
+}
+
+.about-row span:first-child {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.about-row span:last-child {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: var(--font-latin);
+}
+
+.settings-credits {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    text-align: center;
+    direction: ltr;
+    font-family: var(--font-latin);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.settings-credits i {
+    font-size: 11px;
+    color: var(--primary);
+}
+
+.settings-credits strong {
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.2px;
+}
+
+/* ---- Theme picker (color swatches) ---- */
+.theme-picker-section {
+    margin-top: 11px;
+    padding-top: 11px;
+    border-top: 1px solid var(--border);
+}
+
+.theme-picker-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-family: var(--font-persian);
+    direction: rtl;
+}
+
+.theme-picker-label i {
+    font-size: 13px;
+    color: var(--primary);
 }
 
 /* ---- Theme mode 3-button row ---- */
@@ -7703,7 +7651,7 @@ html {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 6px 0 2px;
+    padding: 0 0 11px;
     direction: rtl;
 }
 
