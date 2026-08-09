@@ -1781,13 +1781,13 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-palette"></i> ظاهر</h4>
 
-                    <!-- Theme mode: 3 buttons -->
-                    <div class="setting-item setting-item--block">
-                        <span class="setting-label-full">حالت نمایش</span>
+                    <!-- Theme mode: compact icon-only 3-way switch, same row as its label -->
+                    <div class="setting-item">
+                        <span>حالت نمایش</span>
                         <div class="theme-mode-btns" id="themeModeButtons">
-                            <button class="theme-mode-btn" data-mode="light"><i class="fas fa-sun"></i> روشن</button>
-                            <button class="theme-mode-btn" data-mode="dark"><i class="fas fa-moon"></i> تاریک</button>
-                            <button class="theme-mode-btn" data-mode="auto"><i class="fas fa-circle-half-stroke"></i> خودکار</button>
+                            <button class="theme-mode-btn" data-mode="light" title="روشن" aria-label="روشن"><i class="fas fa-sun"></i></button>
+                            <button class="theme-mode-btn" data-mode="dark" title="تاریک" aria-label="تاریک"><i class="fas fa-moon"></i></button>
+                            <button class="theme-mode-btn" data-mode="auto" title="خودکار" aria-label="خودکار"><i class="fas fa-circle-half-stroke"></i></button>
                         </div>
                     </div>
 
@@ -1797,9 +1797,8 @@
                     </div>
                     <div class="setting-item">
                         <div class="setting-label-stack">
-                            <span>حالت کم‌مصرف</span>
-                            <span class="setting-sublabel">کاهش جلوه‌های گرافیکی دستیار صوتی برای گوشی‌های با رم کم</span>
-                            <span id="lowPowerModeAutoNote" class="setting-sublabel" style="opacity:.7;">بر اساس مشخصات گوشی به‌صورت خودکار تنظیم شده — در صورت نیاز می‌توانید دستی تغییرش دهید</span>
+                            <span>حالت کم‌مصرف <span id="lowPowerModeAutoNote" class="setting-badge" style="display:none;">خودکار</span></span>
+                            <span class="setting-sublabel">برای گوشی‌های ضعیف</span>
                         </div>
                         <label class="switch"><input type="checkbox" id="lowPowerModeToggle"><span class="slider"></span></label>
                     </div>
@@ -1881,9 +1880,17 @@
                 <!-- Voice Assistant Learning Log -->
                 <div class="settings-group">
                     <h4><i class="fas fa-microphone-lines"></i> بهبود دستیار صوتی</h4>
-                    <p class="settings-hint">FoxiMed عبارت‌هایی که دستیار صوتی متوجه نشده را فقط روی همین گوشی ذخیره می‌کند (بدون ارسال به سرور). می‌توانید این فهرست را برای بررسی و بهبود بعدی ارسال کنید.</p>
+                    <p class="settings-hint">عبارت‌هایی که دستیار صوتی متوجه نشده روی گوشی ذخیره می‌شود تا برای بررسی ارسال شود.</p>
+                    <div class="setting-item">
+                        <div class="setting-label-stack">
+                            <span>ارسال خودکار به تلگرام</span>
+                            <span class="setting-sublabel">هر ۲۰ مورد جدید خودش ارسال می‌شود</span>
+                        </div>
+                        <label class="switch"><input type="checkbox" id="voiceLogAutoTelegramToggle"><span class="slider"></span></label>
+                    </div>
                     <div class="settings-btn-row">
-                        <button class="setting-btn gradient" id="exportVoiceLogBtn"><i class="fas fa-file-export"></i> خروجی گرفتن از فهرست</button>
+                        <button class="setting-btn gradient" id="sendVoiceLogBtn"><i class="fab fa-telegram"></i> ارسال به تلگرام</button>
+                        <button class="setting-btn" id="exportVoiceLogBtn"><i class="fas fa-file-export"></i> خروجی گرفتن</button>
                         <button class="setting-btn" id="clearVoiceLogBtn"><i class="fas fa-trash"></i> پاک کردن فهرست</button>
                     </div>
                 </div>
