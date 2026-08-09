@@ -7030,15 +7030,16 @@ html {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 7px 5px;
+    padding: 7px 4px;
     border-radius: 12px;
     border: 2px solid var(--border);
     background: var(--surface-elevated);
     cursor: pointer;
     transition: all 0.2s ease;
     flex: 0 0 auto;
-    min-width: 48px;
+    width: 58px;
 }
 
 .theme-swatch:hover {
@@ -7061,11 +7062,14 @@ html {
 }
 
 .swatch-name {
+    width: 100%;
     font-family: var(--font-persian);
     font-size: 9.5px;
     color: var(--text-secondary);
     text-align: center;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .theme-swatch.active .swatch-name {
@@ -7412,18 +7416,16 @@ html {
     color: var(--text-primary);
 }
 
-.setting-item--block {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 11px 0;
-}
-
-.setting-label-full {
-    width: 100%;
-    font-size: 13px;
-    color: var(--text-primary);
-    text-align: right;
+.setting-badge {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--primary);
+    background: var(--primary-light);
+    border-radius: 20px;
+    vertical-align: middle;
 }
 
 .setting-label-stack {
@@ -7599,25 +7601,24 @@ html {
 .theme-mode-btns {
     display: flex;
     gap: 6px;
-    width: 100%;
+    width: auto;
     direction: rtl;
 }
 
 .theme-mode-btn {
-    flex: 1;
-    padding: 8px 4px;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
     border: 1.5px solid var(--border);
-    border-radius: 10px;
+    border-radius: 9px;
     background: var(--bg-primary);
     color: var(--text-secondary);
-    font-family: var(--font-persian);
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 13px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
     transition: var(--transition);
 }
 
