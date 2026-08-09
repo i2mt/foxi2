@@ -191,7 +191,8 @@ const AppState = {
         themeMode: 'light',
         voiceOutput: false,
         lowPowerMode: false,
-        lowPowerModeManual: false // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
+        lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
+        voiceLogAutoTelegram: false // off by default — see voice-commands.js: automatic sending is a different privacy posture than the manual-export design, so it only runs once explicitly turned on
     },
     reverseMode: false
 };
@@ -1095,12 +1096,14 @@ function loadSettings() {
     if (DOM.largeFontToggle) DOM.largeFontToggle.checked = AppState.settings.largeFont;
     if (DOM.lowPowerModeToggle) DOM.lowPowerModeToggle.checked = AppState.settings.lowPowerMode;
     const lowPowerAutoNote = document.getElementById('lowPowerModeAutoNote');
-    if (lowPowerAutoNote) lowPowerAutoNote.style.display = AppState.settings.lowPowerModeManual ? 'none' : '';
+    if (lowPowerAutoNote) lowPowerAutoNote.style.display = AppState.settings.lowPowerModeManual ? 'none' : 'inline-block';
 
     if (DOM.doseAlertToggle) DOM.doseAlertToggle.checked = AppState.settings.doseAlerts;
     if (DOM.compatAlertToggle) DOM.compatAlertToggle.checked = AppState.settings.compatAlerts;
     if (DOM.saveHistoryToggle) DOM.saveHistoryToggle.checked = AppState.settings.saveHistory;
     if (DOM.hapticToggle) DOM.hapticToggle.checked = AppState.settings.hapticFeedback !== false;
+    const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
+    if (voiceLogAutoTelegramToggle) voiceLogAutoTelegramToggle.checked = !!AppState.settings.voiceLogAutoTelegram;
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
@@ -1993,6 +1996,67 @@ function setupSettingsEventListeners() {
     const exportDataBtn = document.getElementById('exportDataBtn');
     if (exportDataBtn) {
         exportDataBtn.addEventListener('click', exportHistory);
+    }
+
+    // Voice assistant "unrecognized phrases" learning log — auto-send
+    // toggle, manual Telegram send, plain-text export, and clear.
+    const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
+    if (voiceLogAutoTelegramToggle) {
+        voiceLogAutoTelegramToggle.addEventListener('change', function() {
+            AppState.settings.voiceLogAutoTelegram = this.checked;
+            saveSettings();
+        });
+    }
+
+    const sendVoiceLogBtn = document.getElementById('sendVoiceLogBtn');
+    if (sendVoiceLogBtn) {
+        sendVoiceLogBtn.addEventListener('click', function() {
+            if (!window.VoiceCommands || typeof window.VoiceCommands.sendUnrecognizedLogToTelegram !== 'function') return;
+            const log = typeof window.VoiceCommands.getUnrecognizedLog === 'function' ? window.VoiceCommands.getUnrecognizedLog() : [];
+            if (!log.length) {
+                showToast('اطلاع', 'فهرست خالی است — چیزی برای ارسال وجود ندارد', 'info');
+                return;
+            }
+            const origHTML = sendVoiceLogBtn.innerHTML;
+            sendVoiceLogBtn.disabled = true;
+            sendVoiceLogBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ارسال...';
+            window.VoiceCommands.sendUnrecognizedLogToTelegram(false).then(function (result) {
+                if (result && result.ok) {
+                    showToast('ارسال شد', result.sent + ' عبارت با موفقیت به تلگرام ارسال شد', 'success');
+                } else {
+                    showToast('خطا در ارسال', 'اتصال برقرار نشد — دوباره امتحان کنید یا از «خروجی گرفتن» استفاده کنید', 'error');
+                }
+            }).finally(function () {
+                sendVoiceLogBtn.disabled = false;
+                sendVoiceLogBtn.innerHTML = origHTML;
+            });
+        });
+    }
+
+    const exportVoiceLogBtn = document.getElementById('exportVoiceLogBtn');
+    if (exportVoiceLogBtn) {
+        exportVoiceLogBtn.addEventListener('click', function() {
+            if (!window.VoiceCommands || typeof window.VoiceCommands.exportUnrecognizedLogAsText !== 'function') return;
+            const text = window.VoiceCommands.exportUnrecognizedLogAsText();
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `FoxiMed-VoiceLog-${new Date().toISOString().slice(0,10)}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    }
+
+    const clearVoiceLogBtn = document.getElementById('clearVoiceLogBtn');
+    if (clearVoiceLogBtn) {
+        clearVoiceLogBtn.addEventListener('click', function() {
+            if (!window.VoiceCommands || typeof window.VoiceCommands.clearUnrecognizedLog !== 'function') return;
+            if (confirm('آیا از پاک کردن فهرست عبارات درک‌نشده اطمینان دارید؟')) {
+                window.VoiceCommands.clearUnrecognizedLog();
+                showToast('پاک شد', 'فهرست عبارات درک‌نشده حذف شد', 'success');
+            }
+        });
     }
 
     // Theme mode dropdown (if still present – fallback)
