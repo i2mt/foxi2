@@ -7,12 +7,16 @@
         Android / desktop / macOS Safari, where it's fast and needs no
         download.
 
-     2. "vosk" — an offline, on-device WASM speech engine (vosk-browser,
-        https://github.com/ccoreilly/vosk-browser). Used on iOS, because
+     2. "koochik" — an offline, on-device ONNX speech engine (Shenava
+        Koochik v1.0, a Persian FastConformer CTC model, run in-browser
+        via onnxruntime-web — see koochik-asr.js). Used on iOS, because
         Apple's WebKit SpeechRecognition implementation is unreliable —
         especially once the PWA is installed to the Home Screen, where it
-        frequently fails outright. Vosk never touches that API at all, so
-        it works the same whether the app is in a Safari tab or installed.
+        frequently fails outright. Koochik never touches that API at all,
+        so it works the same whether the app is in a Safari tab or
+        installed. (This replaced an earlier Vosk-based backend — Koochik
+        benchmarked meaningfully more accurate on Persian, at ~70x faster
+        decode.)
 
    Both backends are driven through the exact same public, event-driven
    API, so neither voice-commands.js nor voice-ui.js need to know which
@@ -27,60 +31,83 @@
    Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
                     'model-loading', 'model-ready'
 
-   --- SETUP REQUIRED FOR THE VOSK (iOS) BACKEND ---
-   Set VOSK_MODEL_URL below to your own hosted `.tar.gz` Persian Vosk
-   model. Until that's set, iOS falls back to the native API + the
-   existing "open in Safari / type instead" guidance, so nothing breaks
-   if you deploy before the model is ready.
+   --- SETUP REQUIRED FOR THE KOOCHIK (iOS) BACKEND ---
+   Set KOOCHIK_MODEL_URL / KOOCHIK_TOKENS_URL / KOOCHIK_MEL_FILTERS_URL
+   below to your own hosted copies of the three Koochik assets. Until
+   those are set, iOS falls back to the native API + the existing
+   "open in Safari / type instead" guidance, so nothing breaks if you
+   deploy before the model is ready.
 
-   WHICH MODEL: use vosk-model-small-fa-0.42 (53MB), not -0.5 (60MB).
-   Despite the lower version number, alphacephei's own published word
-   error rates show 0.42 is the noticeably better-trained generation —
-   roughly 25-45% fewer word errors than 0.5 on their own benchmarks
-   (CV17: 23.4 vs 31.2 / Fleurs: 14.0 vs 26.2) — while also being a
-   smaller download. There's no real reason to use 0.5 instead.
-   (A non-"small" vosk-model-fa-0.42 also exists with even better
-   accuracy, but at 1.6GB it's impractical for a web app — skip it.)
-   Get it from https://alphacephei.com/vosk/models.
+   WHICH MODEL: Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16 — the 114M-param
+   FastConformer CTC export (NOT the v1.5 RNNT export, which is a
+   different encoder/decoder/joiner split this engine doesn't use).
 
-   Gotchas worth knowing (verified against the actual vosk-browser v0.0.8
-   source, not just its README, since the README example is slightly
-   out of date):
-     - The model file MUST be `.tar.gz`, not the `.zip` alphacephei.com
-       distributes. Unzip it, rename the folder to exactly `model`, then:
-           tar -czf vosk-model-small-fa-0.42.tar.gz model
-       (the library's virtual filesystem expects the top-level folder to
-       be literally named "model" — keeping the original folder name is
-       a common silent-failure cause).
-     - `new model.KaldiRecognizer(sampleRate)` requires the sample rate
-       argument — the README's own snippet omits it, but the published
-       type definitions and compiled source both require it.
-     - Host the file on the SAME origin as the rest of FoxiMed (e.g. next
-       to index.html) so there's no CORS step to configure at all.
-     - Set a long Cache-Control (e.g. max-age=31536000, immutable) on that
-       file at your host so repeat visits don't re-download ~53MB.
-     - This part of the rebuild could not be end-to-end tested here (no
-       iOS device, no microphone, no real network fetch of the model in
-       this sandbox) — the integration matches the verified library
-       source exactly, but please test for real on an iOS device before
-       relying on it.
+   You need three files, hosted same-origin (no CORS step) with a long
+   Cache-Control (e.g. max-age=31536000, immutable) so repeat visits
+   don't re-download:
+     1. The Koochik ONNX model file (fp16) — this is likely well over
+        100MB; confirm the real download size before shipping and
+        decide if that's acceptable on your users' connections. This
+        is bigger than the old Vosk model (53MB) even though it
+        decodes far faster once loaded.
+     2. tokens.json — array of 1025 token strings indexed by id
+        (id 1024 is the CTC blank).
+     3. mel_filters_slaney_80x257.json — Koochik's own exported Slaney
+        mel filterbank. Use their file as-is; don't re-derive it.
+
+   This integration could not be end-to-end tested here (no iOS device,
+   no microphone, no real model download in this sandbox, and the exact
+   asset URLs are placeholders below) — the code follows the model's
+   documented tensor contract and preprocessing spec exactly, but please
+   test for real on-device before relying on it.
    ============================================ */
 (function (window) {
     'use strict';
 
-    // Mehdi: put your hosted, same-origin .tar.gz model URL here.
-    // Leave empty to keep the current native-API/banner behavior on iOS.
-    const VOSK_MODEL_URL = 'https://raw.githubusercontent.com/i2mt/foxi2/refs/heads/main/icons/vosk-model-small-fa-0.5.tar.gz';
-    const VOSK_LIB_URL = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
+    // Mehdi: put your asset URLs here.
+    //
+    // MODEL: the ~230MB fp16 file is too big for a normal GitHub push
+    // (GitHub blocks non-LFS files over 100MB), so this points at Hugging
+    // Face's own CDN directly rather than self-hosting it — that CDN is
+    // built for exactly this (it's what transformers.js-style browser ML
+    // apps do), has proper CORS, and no meaningful bandwidth cap. Use the
+    // "_embedded.onnx" single-file export, not the split
+    // ".onnx" + ".onnx.data" pair — one URL, one fetch, no external-data
+    // loading to wire up.
+    //   IMPORTANT: verify this exact filename against the repo's own file
+    //   listing (huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/
+    //   tree/main) before relying on it — I couldn't independently
+    //   confirm it from here, only cross-check what you were told
+    //   elsewhere, so a typo or a renamed file would fail silently as a
+    //   404 without this being caught first.
+    // TOKENS / MEL FILTERS: these are tiny (~15KB / ~91KB) — bundle them
+    // with the rest of the app instead (e.g. an icons/ subfolder like
+    // your other static assets), so they ship with your normal deploy
+    // and get precached by the service worker like everything else. No
+    // reason to fetch these from a different origin.
+    // Leave KOOCHIK_MODEL_URL empty to keep the current native-API/banner
+    // behavior on iOS.
+    const KOOCHIK_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/shenava_koochik_1_0_ctc_fixed2005_len_att70_13_fp16_full_io_embedded.onnx';
+    const KOOCHIK_TOKENS_URL = './icons/koochik-tokens.json';
+    const KOOCHIK_MEL_FILTERS_URL = './icons/mel_filters_slaney_80x257.json';
+    const KOOCHIK_ORT_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
     // no real downside to being patient here, it only delays the *failure*
     // message on a genuinely dead connection, it doesn't block anything
     // else in the app.
-    const VOSK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; the retry logic below handles ordinary stalls long before this
-    const VOSK_CACHE_NAME = 'foximed-vosk-model-v1';
+    const KOOCHIK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; a ~230MB fetch legitimately needs more headroom than the old 53MB Vosk model did
+    const KOOCHIK_CACHE_NAME = 'foximed-koochik-model-v1';
+    // How often to re-run inference on the buffered audio to produce a
+    // live-feeling partial result. Koochik is an offline (non-streaming)
+    // CTC model under the hood — "streaming" here means periodically
+    // re-decoding the growing buffer, the same approach Shenava's own
+    // browser demo uses. Kept modest since each decode is ~10ms of
+    // compute but there's still buffer-materialization overhead.
+    const KOOCHIK_PARTIAL_INTERVAL_MS = 700;
 
-    function voskConfigured() { return !!VOSK_MODEL_URL; }
+    function koochikConfigured() { return !!(KOOCHIK_MODEL_URL && KOOCHIK_TOKENS_URL && KOOCHIK_MEL_FILTERS_URL); }
 
     // ============================================
     // ENVIRONMENT DETECTION
@@ -129,11 +156,11 @@
                 message: 'دسترسی به میکروفون فقط روی HTTPS کار می‌کند. آدرس سایت را بررسی کنید.'
             };
         }
-        if (voskConfigured()) {
-            if (voskFailInfo) return voskFailInfo;
-            // Vosk doesn't touch WebKit's SpeechRecognition at all, so the
-            // standalone-PWA restriction simply doesn't apply here.
-            return { status: 'ok', code: 'vosk', title: null, message: null };
+        if (koochikConfigured()) {
+            if (koochikFailInfo) return koochikFailInfo;
+            // Koochik doesn't touch WebKit's SpeechRecognition at all, so
+            // the standalone-PWA restriction simply doesn't apply here.
+            return { status: 'ok', code: 'koochik', title: null, message: null };
         }
         if (!ENV.hasSpeechRecognition) {
             return {
@@ -210,24 +237,24 @@
                 title: 'پاسخی دریافت نشد',
                 message: 'به‌نظر می‌رسد تشخیص صدا پاسخ نداد. دوباره تلاش کنید یا دستور را تایپ کنید.'
             },
-            'vosk-lib-failed': {
-                code: 'vosk-lib-failed',
+            'koochik-lib-failed': {
+                code: 'koochik-lib-failed',
                 title: 'بارگذاری موتور صوتی ناموفق بود',
                 message: 'کتابخانه تشخیص گفتار آفلاین بارگذاری نشد. اتصال اینترنت را برای اولین بارگذاری بررسی کنید یا دستور را تایپ کنید.'
             },
-            'vosk-model-failed': {
-                code: 'vosk-model-failed',
+            'koochik-model-failed': {
+                code: 'koochik-model-failed',
                 title: 'مدل صوتی آفلاین بارگذاری نشد',
                 message: 'دانلود یا بارگذاری مدل تشخیص گفتار ناموفق بود. اتصال اینترنت را بررسی کنید یا دستور را تایپ کنید.'
             },
-            'vosk-not-configured': {
-                code: 'vosk-not-configured',
+            'koochik-not-configured': {
+                code: 'koochik-not-configured',
                 title: null,
                 message: null,
                 silent: true
             },
-            'vosk-runtime': {
-                code: 'vosk-runtime',
+            'koochik-runtime': {
+                code: 'koochik-runtime',
                 title: 'خطا در تشخیص گفتار آفلاین',
                 message: 'مشکلی در پردازش صدا رخ داد. دوباره تلاش کنید یا دستور را تایپ کنید.'
             }
@@ -252,24 +279,24 @@
     let rafId = null;
     const listeners = {};
 
-    // --- Vosk backend state ---
-    let voskActive = false;
-    let voskLoading = false;
-    let voskCancelRequested = false;
-    let voskLibLoadPromise = null;
-    let voskModel = null;
-    let voskModelLoadPromise = null;
-    let voskFailInfo = null;     // set if model/lib failed to load this session
-    let voskRecognizer = null;
-    let voskAudioCtx = null;
-    let voskSource = null;
-    let voskProcessor = null;
-    let voskStream = null;
-    let voskStopTimer = null;
-    let voskSilenceWatchdog = null;
-    let triedVoskFallback = false; // reset at the start of each fresh start() call
+    // --- Koochik backend state ---
+    let koochikActive = false;
+    let koochikLoading = false;
+    let koochikCancelRequested = false;
+    let koochikEngine = null;
+    let koochikEngineLoadPromise = null;
+    let koochikFailInfo = null;     // set if model/lib failed to load this session
+    let koochikAudioCtx = null;
+    let koochikSource = null;
+    let koochikProcessor = null;
+    let koochikStream = null;
+    let koochikStopTimer = null;
+    let koochikSilenceWatchdog = null;
+    let koochikPartialTimer = null;
+    let koochikDecodeInFlight = false;
+    let koochikLastEmitted = '';
+    let triedKoochikFallback = false; // reset at the start of each fresh start() call
     let modelLoadCancelled = false; // set by cancelPreload() below — lets the loading screen actually STOP a background model download/instantiation instead of just walking away from it
-    let activeModelXhr = null;      // reference to the in-flight download so cancelPreload() can abort it immediately, rather than waiting for the 25s stall timer
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -281,23 +308,23 @@
 
     // If native recognition shows a clear sign of being broken on this
     // device — not just "didn't hear anything" — silently switch to the
-    // Vosk backend instead of just reporting an error, IF it's configured.
-    // This is what actually makes voice "certainly work" across the wide
-    // variety of Android devices/OEM browsers out there: native speech
-    // recognition quality and availability varies a lot by device (missing
-    // language packs, OEM browser quirks, etc.), but Vosk doesn't depend on
-    // any of that — it ships its own model, so it works the same way
-    // everywhere once downloaded. Only one fallback attempt per start() —
-    // this never ping-pongs between backends.
-    function maybeFallbackToVosk(errorCode) {
-        if (triedVoskFallback) return false;
-        if (!voskConfigured()) return false;
-        if (errorCode === 'network' && !voskModel) return false; // would just fail again with no model cached yet
+    // Koochik backend instead of just reporting an error, IF it's
+    // configured. This is what actually makes voice "certainly work"
+    // across the wide variety of Android devices/OEM browsers out there:
+    // native speech recognition quality and availability varies a lot by
+    // device (missing language packs, OEM browser quirks, etc.), but
+    // Koochik doesn't depend on any of that — it ships its own model, so
+    // it works the same way everywhere once downloaded. Only one fallback
+    // attempt per start() — this never ping-pongs between backends.
+    function maybeFallbackToKoochik(errorCode) {
+        if (triedKoochikFallback) return false;
+        if (!koochikConfigured()) return false;
+        if (errorCode === 'network' && !koochikEngine) return false; // would just fail again with no model cached yet
         const FALLBACK_CODES = { 'service-not-allowed': 1, 'language-not-supported': 1, 'timeout': 1, 'network': 1 };
         if (!FALLBACK_CODES[errorCode]) return false;
-        triedVoskFallback = true;
+        triedKoochikFallback = true;
         stopWebSpeech();
-        startVosk();
+        startKoochik();
         return true;
     }
 
@@ -305,7 +332,7 @@
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
             if (active) {
-                if (maybeFallbackToVosk('timeout')) return;
+                if (maybeFallbackToKoochik('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -461,7 +488,7 @@
                 startWebSpeech('fa');
                 return;
             }
-            if (maybeFallbackToVosk(event.error)) return;
+            if (maybeFallbackToKoochik(event.error)) return;
             const info = classifyError(event.error);
             if (!info.silent) emit('error', info);
             stopWebSpeech();
@@ -497,7 +524,7 @@
         // iOS versions), recover instead of leaving the UI stuck "listening".
         startWatchdog = setTimeout(function () {
             if (!active) {
-                if (maybeFallbackToVosk('timeout')) return;
+                if (maybeFallbackToKoochik('timeout')) return;
                 emit('error', classifyError('timeout'));
                 stopWebSpeech();
             }
@@ -517,384 +544,170 @@
     }
 
     // ============================================
-    // BACKEND 2: VOSK (offline, on-device — used on iOS)
+    // BACKEND 2: KOOCHIK (offline, on-device CTC ASR — used on iOS)
+    // Driven by koochik-asr.js, which owns feature extraction, ONNX
+    // inference (via onnxruntime-web), and greedy CTC decoding. This
+    // file only owns: mic capture, buffering audio into the engine,
+    // deciding when to ask for a partial vs. final decode, and mapping
+    // engine output onto the same event contract webspeech/vosk used.
     // ============================================
-    function loadScriptOnce(url) {
-        const existing = document.querySelector('script[data-foximed-src="' + url + '"]');
-        if (existing) {
-            if (existing.dataset.loaded === 'true') return Promise.resolve();
-            return new Promise(function (resolve, reject) {
-                existing.addEventListener('load', resolve);
-                existing.addEventListener('error', function () { reject(new Error('script-load-failed')); });
-            });
-        }
-        return new Promise(function (resolve, reject) {
-            const s = document.createElement('script');
-            s.src = url;
-            s.async = true;
-            s.dataset.foximedSrc = url;
-            s.onload = function () { s.dataset.loaded = 'true'; resolve(); };
-            s.onerror = function () { reject(new Error('script-load-failed')); };
-            document.head.appendChild(s);
-        });
-    }
+    function ensureKoochikEngine() {
+        if (koochikEngine) return Promise.resolve(koochikEngine);
+        if (koochikEngineLoadPromise) return koochikEngineLoadPromise;
 
-    function ensureVoskLib() {
-        if (window.Vosk) return Promise.resolve();
-        if (!voskLibLoadPromise) voskLibLoadPromise = loadScriptOnce(VOSK_LIB_URL);
-        return voskLibLoadPromise;
-    }
+        modelLoadCancelled = false; // fresh load attempt — clear any earlier cancellation
 
-    // Fetches the model with real byte-level progress, and — this is the
-    // important part for unstable connections — automatically retries on
-    // a stall or dropped connection by resuming from where it left off via
-    // an HTTP Range request, instead of restarting the whole 53MB from
-    // zero. Falls back to a full restart only if the server doesn't honor
-    // Range requests. A single fixed timeout can't fix "the connection
-    // drops partway through" — this is built specifically for that case.
-    //
-    // Uses XMLHttpRequest rather than fetch()+ReadableStream on purpose:
-    // XHR's `progress` event is a much older, simpler mechanism that
-    // doesn't depend on the Streams API being fully supported — fetch's
-    // streaming response body (`response.body.getReader()`) has a less
-    // consistent track record across Safari versions, which matters here
-    // given everything else we've already run into on iOS specifically.
-    //
-    // responseType is 'arraybuffer', not 'blob' — confirmed via real
-    // on-device testing that this is the more memory-predictable choice
-    // on iOS WebKit. Letting the browser manage Blob materialization
-    // internally during a large streamed response appears less reliable
-    // than collecting raw bytes ourselves and constructing exactly one
-    // Blob at the very end.
-    function fetchModelWithProgress(url, onProgress) {
-        const MAX_ATTEMPTS = 6;
-        const STALL_TIMEOUT_MS = 25000; // no new data for 25s on one attempt -> abort & retry
-        let chunks = [];
-        let loaded = 0;
-        let total = 0;
+        const loadChain = window.KoochikASR
+            ? Promise.resolve()
+            : Promise.reject(classifyError('koochik-lib-failed'));
 
-        function parseRangeTotal(rangeHeader) {
-            const match = rangeHeader && rangeHeader.match(/\/(\d+)$/);
-            return match ? parseInt(match[1], 10) : null;
-        }
-
-        function attempt(attemptNum) {
-            return new Promise(function (resolve, reject) {
-                if (modelLoadCancelled) { reject(new Error('cancelled')); return; }
-                const xhr = new XMLHttpRequest();
-                activeModelXhr = xhr;
-                xhr.open('GET', url, true);
-                xhr.responseType = 'arraybuffer';
-                if (loaded > 0) xhr.setRequestHeader('Range', 'bytes=' + loaded + '-');
-
-                let stallTimer = null;
-                function armStall() {
-                    if (stallTimer) clearTimeout(stallTimer);
-                    stallTimer = setTimeout(function () { xhr.abort(); }, STALL_TIMEOUT_MS);
-                }
-                armStall();
-
-                let lastProgressEmit = 0;
-                const PROGRESS_THROTTLE_MS = 150; // ~6 UI updates/sec — smooth, but far fewer DOM writes than raw XHR progress events (which can fire dozens of times/sec and each one forces a style recalc)
-                xhr.onprogress = function (e) {
-                    armStall(); // reset the stall timer on every raw event, independent of UI throttling below
-                    if (!total) {
-                        const isPartial = xhr.status === 206;
-                        total = (isPartial ? parseRangeTotal(xhr.getResponseHeader('Content-Range')) : e.total) || 0;
-                    }
-                    const now = Date.now();
-                    if (now - lastProgressEmit < PROGRESS_THROTTLE_MS) return;
-                    lastProgressEmit = now;
-                    const currentLoaded = loaded + e.loaded;
-                    if (typeof onProgress === 'function') {
-                        onProgress({ loaded: currentLoaded, total: total, percent: total ? Math.round(currentLoaded / total * 100) : null });
-                    }
-                };
-
-                xhr.onload = function () {
-                    clearTimeout(stallTimer);
-                    if (xhr.status !== 200 && xhr.status !== 206) {
-                        reject(new Error('http-' + xhr.status));
-                        return;
-                    }
-                    const responseData = xhr.response;
-                    if (!responseData) { reject(new Error('empty-response')); return; }
-                    if (xhr.status === 206 && loaded > 0) {
-                        chunks.push(new Uint8Array(responseData));
-                        loaded += responseData.byteLength;
-                    } else {
-                        // Either the first attempt, or the server ignored
-                        // our Range request and sent the whole file again.
-                        chunks = [new Uint8Array(responseData)];
-                        loaded = responseData.byteLength;
-                    }
-                    total = total || loaded;
-                    resolve();
-                };
-                xhr.onerror = function () { clearTimeout(stallTimer); reject(new Error('xhr-network-error')); };
-                xhr.onabort = function () { clearTimeout(stallTimer); reject(new Error('xhr-stalled')); };
-
-                xhr.send();
-            }).catch(function (err) {
-                if (modelLoadCancelled) throw err; // deliberate cancel — stop retrying, don't keep burning CPU/network in the background
-                if (attemptNum >= MAX_ATTEMPTS) throw err;
-                // Brief pause before retrying — resumes from `loaded` bytes
-                // via the Range header above, not from scratch.
-                return new Promise(function (resolve) { setTimeout(resolve, 1500); })
-                    .then(function () { return attempt(attemptNum + 1); });
-            });
-        }
-
-        return attempt(1).then(function () { return new Blob(chunks); });
-    }
-
-    function ensureVoskModel() {
-        if (voskModel) return Promise.resolve(voskModel);
-        if (voskModelLoadPromise) return voskModelLoadPromise;
-        modelLoadCancelled = false; // fresh load attempt — clear any earlier cancellation (e.g. from the loading screen giving up on an opportunistic preload)
-        emit('model-loading');
-
-        function loadBlob() {
-            if (!window.caches) return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            return caches.open(VOSK_CACHE_NAME).then(function (cache) {
-                return cache.match(VOSK_MODEL_URL).then(function (cached) {
-                    if (cached) {
-                        emit('model-progress', { loaded: 1, total: 1, percent: 100, fromCache: true });
-                        return cached.blob();
-                    }
-                    return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress).then(function (blob) {
-                        try {
-                            const putPromise = cache.put(VOSK_MODEL_URL, new Response(blob));
-                            if (putPromise && typeof putPromise.catch === 'function') {
-                                putPromise.catch(function () { /* quota or unsupported — non-fatal, model still works this session */ });
-                            }
-                        } catch (e) { /* synchronous failure — also non-fatal */ }
-                        return blob;
-                    });
-                });
-            }).catch(function () {
-                // Cache API unavailable for some reason — fetch without it.
-                return fetchModelWithProgress(VOSK_MODEL_URL, onModelProgress);
-            });
-        }
-        function onModelProgress(progress) { emit('model-progress', progress); }
-
-        const loadChain = ensureVoskLib()
-            .catch(function () { throw classifyError('vosk-lib-failed'); })
-            .then(loadBlob)
-            .then(function (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                // Deliberately NEVER revoked. The model object returned by
-                // createModel() is cached (see voskModel below) and reused
-                // for every subsequent listening session for the rest of
-                // the page's life — not just this first one — and it's
-                // genuinely unclear from static analysis of vosk-browser's
-                // bundled code (the actual worker-side extraction logic
-                // lives in a separate file this couldn't fully inspect)
-                // whether the worker ever needs to re-reference this URL
-                // after its initial load. An earlier version of this file
-                // revoked the URL right after createModel() resolved, on
-                // the assumption that was safe — that turned out to be the
-                // most likely cause of a real regression where recognition
-                // would start but silently never produce any result at
-                // all. The browser reclaims blob URLs automatically when
-                // the page unloads, so leaving this one alive for the
-                // page's lifetime costs comparatively little.
-                return window.Vosk.createModel(blobUrl).catch(function () {
-                    // Not verifiable without a live device: some browsers'
-                    // internal Worker may be unable to resolve a blob: URL
-                    // created on the main thread. If creating the model
-                    // from our pre-fetched blob fails, fall back to letting
-                    // the library fetch the plain URL itself directly —
-                    // by now it's likely sitting in the normal browser HTTP
-                    // cache anyway from the fetch we just did.
-                    return window.Vosk.createModel(VOSK_MODEL_URL);
+        koochikEngineLoadPromise = loadChain
+            .then(function () {
+                return window.KoochikASR.load({
+                    modelUrl: KOOCHIK_MODEL_URL,
+                    tokensUrl: KOOCHIK_TOKENS_URL,
+                    melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
+                    ortLibUrl: KOOCHIK_ORT_LIB_URL,
+                    ortWasmBaseUrl: KOOCHIK_ORT_WASM_BASE_URL,
+                    cacheName: KOOCHIK_CACHE_NAME
+                }, function (progress) {
+                    if (modelLoadCancelled) return;
+                    emit('model-progress', progress);
                 });
             })
-            .then(function (model) {
-                voskModel = model;
-                voskFailInfo = null;
-                // Catch errors that occur *after* the initial load too
-                // (e.g. a Worker crash mid-session), not just load failure.
-                model.on('error', function () {
-                    emit('error', classifyError('vosk-runtime'));
-                });
+            .then(function (engine) {
+                if (modelLoadCancelled) { throw new Error('cancelled'); }
+                koochikEngine = engine;
+                koochikFailInfo = null;
                 emit('model-ready');
-                return model;
-            });
-
-        // The retry logic above already handles ordinary stalls/drops —
-        // this outer cap only exists to eventually give up on something
-        // truly stuck (e.g. eight straight Range-resume cycles still going
-        // nowhere), so it's set generously rather than tuned tightly.
-        const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () { reject(classifyError('vosk-model-failed')); }, VOSK_MODEL_TIMEOUT_MS);
-        });
-
-        voskModelLoadPromise = Promise.race([loadChain, timeoutChain])
+                return engine;
+            })
             .catch(function (err) {
-                voskModelLoadPromise = null;
-                const info = (err && err.code) ? err : classifyError('vosk-model-failed');
-                voskFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+                koochikEngineLoadPromise = null;
+                const info = (err && err.code) ? err : classifyError('koochik-model-failed');
+                if (!(err && err.message === 'cancelled')) {
+                    koochikFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
+                }
                 throw info;
             });
-        return voskModelLoadPromise;
+
+        // Outer backstop, same role as the old Vosk timeout — the model
+        // file is fetched with browser-native fetch() (which the browser
+        // itself already retries/resumes reasonably well via HTTP cache),
+        // so this exists purely to eventually give up on something truly
+        // stuck rather than to drive retries itself.
+        const timeoutChain = new Promise(function (_, reject) {
+            setTimeout(function () { reject(classifyError('koochik-model-failed')); }, KOOCHIK_MODEL_TIMEOUT_MS);
+        });
+        return Promise.race([koochikEngineLoadPromise, timeoutChain]);
     }
 
-    function startVosk() {
-        if (voskActive || voskLoading) return;
-        if (!voskConfigured()) {
+    function startKoochik() {
+        if (koochikActive || koochikLoading) return;
+        if (!koochikConfigured()) {
             // Silent — getSupportInfo() already steered the UI toward the
             // native-API / banner path in this case, so this should not
             // normally be reachable.
-            emit('error', classifyError('vosk-not-configured'));
+            emit('error', classifyError('koochik-not-configured'));
             return;
         }
 
-        voskLoading = true;
-        voskCancelRequested = false;
+        koochikLoading = true;
+        koochikCancelRequested = false;
 
-        ensureVoskModel().then(function (model) {
-            if (voskCancelRequested) { voskLoading = false; return; }
-            let recognizer;
-            // Bias the decoder toward FoxiMed's actual vocabulary (drug
-            // names, command words, numbers, units) — it can still freely
-            // combine these in whatever order someone speaks them, it's
-            // not limited to exact pre-written phrases.
-            //
-            // OFF BY DEFAULT as of this version: real testing showed it
-            // can force wrong output for anything outside the list rather
-            // than just biasing toward known words — e.g. saying "سلام"
-            // (not in the vocabulary at all) was heard as "صد تا", which
-            // *is* built entirely from two words that ARE in the list
-            // ("صد" and "تا"). That's the constrained grammar forcing a
-            // best-fit substitution instead of recognizing normal speech.
-            // Add ?grammar=1 to the URL to opt back in and experiment —
-            // worth retrying once the vocabulary list covers more of what
-            // people actually say, including casual speech, not just
-            // clinical terms.
-            let grammar = null;
-            let forceGrammarOn = false;
-            try { forceGrammarOn = new URLSearchParams(window.location.search).get('grammar') === '1'; } catch (e) {}
-            if (forceGrammarOn) {
-                try {
-                    if (window.VoiceCommands && typeof window.VoiceCommands.getGrammar === 'function') {
-                        grammar = window.VoiceCommands.getGrammar();
-                    }
-                } catch (e) { grammar = null; }
-            }
-
-            try {
-                recognizer = grammar ? new model.KaldiRecognizer(16000, grammar) : new model.KaldiRecognizer(16000);
-            } catch (e) {
-                try {
-                    recognizer = new model.KaldiRecognizer(16000); // retry without grammar
-                } catch (e2) {
-                    voskLoading = false;
-                    emit('error', classifyError('vosk-runtime'));
-                    return;
-                }
-            }
-            voskRecognizer = recognizer;
-
-            recognizer.on('partialresult', function (message) {
-                const partial = message && message.result && message.result.partial;
-                if (partial && partial.trim()) {
-                    armVoskSilenceWatchdog();
-                    emit('interim', partial.trim());
-                }
-            });
-            recognizer.on('result', function (message) {
-                const text = message && message.result && message.result.text;
-                if (text && text.trim()) {
-                    emit('final', text.trim());
-                }
-                finishVosk();
-            });
-            recognizer.on('error', function () {
-                emit('error', classifyError('vosk-runtime'));
-                finishVosk();
-            });
+        ensureKoochikEngine().then(function (engine) {
+            if (koochikCancelRequested) { koochikLoading = false; return; }
+            engine.reset();
+            koochikLastEmitted = '';
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 16000 }
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
             }).then(function (stream) {
-                voskLoading = false;
-                if (voskCancelRequested || voskRecognizer !== recognizer) {
-                    // stop() was called before the mic permission resolved
+                koochikLoading = false;
+                if (koochikCancelRequested) {
                     try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
-                    try { recognizer.remove(); } catch (e) {}
-                    if (voskRecognizer === recognizer) voskRecognizer = null;
                     return;
                 }
-                voskStream = stream;
+                koochikStream = stream;
                 const AC = window.AudioContext || window.webkitAudioContext;
-                voskAudioCtx = new AC();
-                voskSource = voskAudioCtx.createMediaStreamSource(stream);
-                // ScriptProcessorNode is deprecated but is what vosk-browser's
-                // own documented example uses, and it's still broadly
-                // supported (including current iOS Safari). It must be
-                // connected through to a destination for onaudioprocess to
-                // reliably fire in every browser, hence the (silent, since
-                // echoCancellation is on) connection below.
-                voskProcessor = voskAudioCtx.createScriptProcessor(4096, 1, 1);
-                let acceptWaveformFailureReported = false;
-                // Android's audio subsystem delivers silence/garbage for a
-                // brief period right after a stream opens, which otherwise
-                // shows up as "hears nothing the first time, works on
-                // retry". Give it a short warm-up window before feeding
-                // audio into the recognizer — the audio-level meter is
-                // purely cosmetic and stays unaffected by this guard.
+                koochikAudioCtx = new AC();
+                koochikSource = koochikAudioCtx.createMediaStreamSource(stream);
+                // ScriptProcessorNode is deprecated but broadly supported,
+                // including current iOS Safari — same choice the Vosk
+                // backend made, kept for the same reason. Must be
+                // connected through to a destination for onaudioprocess
+                // to reliably fire in every browser.
+                koochikProcessor = koochikAudioCtx.createScriptProcessor(4096, 1, 1);
                 const streamStartTime = Date.now();
-                voskProcessor.onaudioprocess = function (event) {
+                koochikProcessor.onaudioprocess = function (event) {
                     try {
+                        // Same 350ms warm-up guard as the old Vosk path —
+                        // Android's audio subsystem delivers silence/
+                        // garbage right after a stream opens.
                         if (Date.now() - streamStartTime >= 350) {
-                            recognizer.acceptWaveform(event.inputBuffer);
+                            engine.feed(event.inputBuffer.getChannelData(0), koochikAudioCtx.sampleRate);
                         }
                     } catch (e) {
-                        // Surfaced rather than silently swallowed: a
-                        // previous version of this file caught this
-                        // completely silently, which meant a real
-                        // regression elsewhere (revoking the model's blob
-                        // URL too early) produced "mic opens, zero
-                        // transcript, ever" with no error and nothing to
-                        // debug from. Rate-limited to once per session so a
-                        // persistently-failing case doesn't spam a new
-                        // error roughly 4 times a second.
-                        if (!acceptWaveformFailureReported) {
-                            acceptWaveformFailureReported = true;
-                            emit('error', classifyError('vosk-runtime'));
-                        }
+                        emit('error', classifyError('koochik-runtime'));
                     }
-                    emitVoskAudioLevel(event.inputBuffer);
+                    emitKoochikAudioLevel(event.inputBuffer);
                 };
-                voskSource.connect(voskProcessor);
-                voskProcessor.connect(voskAudioCtx.destination);
+                koochikSource.connect(koochikProcessor);
+                koochikProcessor.connect(koochikAudioCtx.destination);
 
-                voskActive = true;
-                armVoskSilenceWatchdog();
+                koochikActive = true;
+                armKoochikSilenceWatchdog();
                 emit('start');
+                schedulePartialDecode(engine);
             }).catch(function (err) {
-                voskLoading = false;
+                koochikLoading = false;
                 const code = (err && err.name === 'NotAllowedError') ? 'not-allowed'
-                    : (err && err.name === 'NotFoundError') ? 'audio-capture' : 'vosk-runtime';
+                    : (err && err.name === 'NotFoundError') ? 'audio-capture' : 'koochik-runtime';
                 emit('error', classifyError(code));
-                try { recognizer.remove(); } catch (e) {}
-                voskRecognizer = null;
             });
         }).catch(function (info) {
-            voskLoading = false;
-            emit('error', info && info.code ? info : classifyError('vosk-model-failed'));
+            koochikLoading = false;
+            emit('error', info && info.code ? info : classifyError('koochik-model-failed'));
         });
     }
 
-    let lastAudioLevelEmit = 0;
-    const AUDIO_LEVEL_THROTTLE_MS = 125;
+    // Periodically re-decodes the buffered audio so far to produce a
+    // live-feeling "interim" result — Koochik is a fixed-window offline
+    // CTC model under the hood, not a truly incremental streaming model,
+    // so "streaming" here means re-running the (very fast, ~10ms) forward
+    // pass on the growing buffer at a modest interval. Skips overlapping
+    // itself if a decode is still in flight.
+    function schedulePartialDecode(engine) {
+        if (koochikPartialTimer) clearTimeout(koochikPartialTimer);
+        koochikPartialTimer = setTimeout(function () {
+            if (!koochikActive) return;
+            if (koochikDecodeInFlight || engine.bufferedSeconds() < 0.4) {
+                schedulePartialDecode(engine);
+                return;
+            }
+            koochikDecodeInFlight = true;
+            engine.decode().then(function (text) {
+                koochikDecodeInFlight = false;
+                if (!koochikActive) return;
+                if (text && text !== koochikLastEmitted) {
+                    koochikLastEmitted = text;
+                    armKoochikSilenceWatchdog();
+                    emit('interim', text);
+                }
+                schedulePartialDecode(engine);
+            }).catch(function () {
+                koochikDecodeInFlight = false;
+                if (koochikActive) schedulePartialDecode(engine);
+            });
+        }, KOOCHIK_PARTIAL_INTERVAL_MS);
+    }
 
-    function emitVoskAudioLevel(buffer) {
-        if (Date.now() - lastAudioLevelEmit < AUDIO_LEVEL_THROTTLE_MS) return;
-        lastAudioLevelEmit = Date.now();
+    let lastKoochikAudioLevelEmit = 0;
+
+    function emitKoochikAudioLevel(buffer) {
+        if (Date.now() - lastKoochikAudioLevelEmit < AUDIO_LEVEL_THROTTLE_MS) return;
+        lastKoochikAudioLevelEmit = Date.now();
         const data = buffer.getChannelData(0);
         const bars = 12;
         const chunk = Math.floor(data.length / bars) || 1;
@@ -910,42 +723,54 @@
         emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
     }
 
-    function armVoskSilenceWatchdog() {
-        if (voskSilenceWatchdog) clearTimeout(voskSilenceWatchdog);
-        voskSilenceWatchdog = setTimeout(function () {
-            if (voskActive) {
+    function armKoochikSilenceWatchdog() {
+        if (koochikSilenceWatchdog) clearTimeout(koochikSilenceWatchdog);
+        koochikSilenceWatchdog = setTimeout(function () {
+            if (koochikActive) {
                 emit('error', classifyError('timeout'));
-                stopVosk();
+                stopKoochik();
             }
         }, 8000);
     }
 
-    function stopVosk() {
-        if (voskLoading) {
-            voskCancelRequested = true; // unwound inside startVosk()'s pending chain
+    function stopKoochik() {
+        if (koochikLoading) {
+            koochikCancelRequested = true; // unwound inside startKoochik()'s pending chain
             return;
         }
-        if (!voskActive && !voskRecognizer) return;
-        if (voskSilenceWatchdog) { clearTimeout(voskSilenceWatchdog); voskSilenceWatchdog = null; }
-        if (voskRecognizer) {
-            // Ask for whatever was captured so far before tearing down, so a
-            // manual stop mid-sentence doesn't just throw the words away.
-            try { voskRecognizer.retrieveFinalResult(); } catch (e) {}
-            voskStopTimer = setTimeout(finishVosk, 1200);
+        if (!koochikActive) return;
+        if (koochikSilenceWatchdog) { clearTimeout(koochikSilenceWatchdog); koochikSilenceWatchdog = null; }
+        if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
+        // Run one last decode over whatever was captured before tearing
+        // down, so a manual stop mid-sentence doesn't just throw the
+        // words away — mirrors the old Vosk retrieveFinalResult() step.
+        const engine = koochikEngine;
+        if (engine && engine.bufferedSeconds() > 0.15) {
+            koochikStopTimer = setTimeout(finishKoochik, 1200);
+            engine.decode().then(function (text) {
+                if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
+                if (text && text.trim()) emit('final', text.trim());
+                finishKoochik();
+            }).catch(function () {
+                if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
+                finishKoochik();
+            });
         } else {
-            finishVosk();
+            finishKoochik();
         }
     }
 
-    function finishVosk() {
-        if (voskStopTimer) { clearTimeout(voskStopTimer); voskStopTimer = null; }
-        const wasActive = voskActive;
-        voskActive = false;
-        if (voskProcessor) { try { voskProcessor.disconnect(); } catch (e) {} voskProcessor = null; }
-        if (voskSource) { try { voskSource.disconnect(); } catch (e) {} voskSource = null; }
-        if (voskAudioCtx) { try { voskAudioCtx.close(); } catch (e) {} voskAudioCtx = null; }
-        if (voskStream) { try { voskStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} voskStream = null; }
-        if (voskRecognizer) { try { voskRecognizer.remove(); } catch (e) {} voskRecognizer = null; }
+    function finishKoochik() {
+        if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
+        if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
+        const wasActive = koochikActive;
+        koochikActive = false;
+        koochikDecodeInFlight = false;
+        if (koochikProcessor) { try { koochikProcessor.disconnect(); } catch (e) {} koochikProcessor = null; }
+        if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
+        if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
+        if (koochikStream) { try { koochikStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} koochikStream = null; }
+        if (koochikEngine) { try { koochikEngine.reset(); } catch (e) {} }
         if (wasActive) emit('end');
     }
 
@@ -953,30 +778,30 @@
     // UNIFIED DISPATCHER
     // ============================================
     function pickBackend() {
-        return voskConfigured() ? 'vosk' : 'webspeech';
+        return koochikConfigured() ? 'koochik' : 'webspeech';
     }
 
     function start() {
-        if (active || voskActive || voskLoading) return;
-        triedVoskFallback = false;
-        if (pickBackend() === 'vosk') startVosk(); else startWebSpeech();
+        if (active || koochikActive || koochikLoading) return;
+        triedKoochikFallback = false;
+        if (pickBackend() === 'koochik') startKoochik(); else startWebSpeech();
     }
 
     function stop() {
         // Check actual runtime state rather than just the static platform
-        // choice — a session that fell back from webspeech to Vosk mid-
-        // flight (see maybeFallbackToVosk) is now genuinely running Vosk
-        // even on a platform where pickBackend() would normally say
-        // "webspeech", so stopping the wrong one would leave it running.
-        if (voskActive || voskLoading) { stopVosk(); return; }
+        // choice — a session that fell back from webspeech to Koochik mid-
+        // flight (see maybeFallbackToKoochik) is now genuinely running
+        // Koochik even on a platform where pickBackend() would normally
+        // say "webspeech", so stopping the wrong one would leave it running.
+        if (koochikActive || koochikLoading) { stopKoochik(); return; }
         if (active) { stopWebSpeech(); return; }
-        if (pickBackend() === 'vosk') stopVosk(); else stopWebSpeech();
+        if (pickBackend() === 'koochik') stopKoochik(); else stopWebSpeech();
     }
 
     // Stop listening if the app is backgrounded/locked — prevents a
     // recognition session (and an open mic) from lingering forever.
     document.addEventListener('visibilitychange', function () {
-        if (document.hidden && (active || voskActive || voskLoading)) stop();
+        if (document.hidden && (active || koochikActive || koochikLoading)) stop();
     });
 
     window.addEventListener('offline', function () {
@@ -984,8 +809,8 @@
             emit('error', classifyError('network'));
             stop();
         }
-        // Note: the Vosk backend deliberately keeps running when offline —
-        // once its model is loaded it needs no network at all.
+        // Note: the Koochik backend deliberately keeps running when
+        // offline — once its model is loaded it needs no network at all.
     });
 
     // ============================================
@@ -996,7 +821,7 @@
         getSupportInfo: getSupportInfo,
         start: start,
         stop: stop,
-        isActive: function () { return active || voskActive || voskLoading; },
+        isActive: function () { return active || koochikActive || koochikLoading; },
         on: on,
         openInSafari: function () {
             // Standalone PWAs on iOS have no tabs/windows of their own, so
@@ -1007,48 +832,47 @@
             try { window.open(window.location.href, '_blank'); }
             catch (e) { window.location.href = window.location.href; }
         },
-        // Silently kick off the Vosk model download/instantiation in the
-        // background — called from script.js when the person actually
+        // Silently kick off the Koochik model download/instantiation in
+        // the background — called from script.js when the person actually
         // opens the Voice tab, ahead of them tapping the mic itself. Uses
-        // the exact same ensureVoskModel()/voskModelLoadPromise caching as
-        // the normal on-demand path, so this is fully safe to call
-        // proactively: if the person taps the mic before this finishes,
-        // that call reuses this same in-flight promise rather than
-        // starting a second, duplicate download. If it fails silently in
-        // the background (offline, etc.), nothing is shown to the person
-        // here — the normal on-demand path will surface a real error only
-        // if they actually try to use voice and it's genuinely unavailable.
-        // Deliberately NOT triggered unconditionally at app startup — an
-        // earlier version of this did that, and downloading 53MB plus
-        // running heavy WASM instantiation automatically on every single
-        // app launch (even sessions that never touch voice at all) turned
-        // out to be a real, reported cause of lag/hangs, competing with
-        // the rest of the app's own startup work at exactly the most
-        // resource-contended moment. Tying it to an actual Voice-tab visit
-        // keeps the "get ahead of the mic tap" benefit without that cost.
-        // Returns the underlying promise so callers (e.g. the loading
-        // screen — see isModelCached() below) can await/race it directly.
+        // the exact same ensureKoochikEngine()/koochikEngineLoadPromise
+        // caching as the normal on-demand path, so this is fully safe to
+        // call proactively: if the person taps the mic before this
+        // finishes, that call reuses this same in-flight promise rather
+        // than starting a second, duplicate download. If it fails
+        // silently in the background (offline, etc.), nothing is shown to
+        // the person here — the normal on-demand path will surface a real
+        // error only if they actually try to use voice and it's genuinely
+        // unavailable. Deliberately NOT triggered unconditionally at app
+        // startup — downloading a large model plus running heavy WASM
+        // instantiation automatically on every single app launch (even
+        // sessions that never touch voice at all) is a real cause of lag/
+        // hangs, competing with the rest of the app's own startup work at
+        // exactly the most resource-contended moment. Tying it to an
+        // actual Voice-tab visit keeps the "get ahead of the mic tap"
+        // benefit without that cost. Returns the underlying promise so
+        // callers (e.g. the loading screen — see isModelCached() below)
+        // can await/race it directly.
         preload: function () {
-            if (!voskConfigured()) return Promise.resolve();
-            return ensureVoskModel().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
+            if (!koochikConfigured()) return Promise.resolve();
+            return ensureKoochikEngine().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
-        // Actually stops an opportunistic preload in progress — called by the
-        // loading screen when it gives up waiting (see script.js). Without
-        // this, the old behavior was to just stop AWAITING the promise while
-        // the download/WASM instantiation kept running in the background,
-        // which is exactly what caused the app to feel laggy right after
-        // opening it on slow devices: the loading screen would move on, but
-        // the phone was still quietly downloading 53MB and spinning up a
-        // WASM worker underneath. This aborts the in-flight request (if any)
-        // immediately and stops the retry loop from starting another one.
-        // Safe to call even if nothing is in flight (no-op then). A later
-        // genuine load — the person actually opening the Voice tab — starts
-        // clean via the modelLoadCancelled reset in ensureVoskModel() above.
+        // Actually stops an opportunistic preload in progress — called by
+        // the loading screen when it gives up waiting (see script.js).
+        // Note: unlike the old Vosk path, this does NOT abort an in-flight
+        // fetch() — the underlying asset fetches in koochik-asr.js aren't
+        // wired to an AbortController, so a preload already in flight will
+        // finish downloading in the background even after this is called;
+        // it just stops this module from awaiting or acting on the
+        // result. Worth adding an AbortController if that background
+        // download turns out to be a real cost in practice. Safe to call
+        // even if nothing is in flight (no-op then). A later genuine load
+        // — the person actually opening the Voice tab — starts clean via
+        // the modelLoadCancelled reset in ensureKoochikEngine() above.
         cancelPreload: function () {
-            if (voskModel) return; // already finished loading — nothing to cancel, and definitely don't throw away a ready model
+            if (koochikEngine) return; // already finished loading — nothing to cancel, and definitely don't throw away a ready engine
             modelLoadCancelled = true;
-            if (activeModelXhr) { try { activeModelXhr.abort(); } catch (e) {} }
-            voskModelLoadPromise = null;
+            koochikEngineLoadPromise = null;
         },
         // Cheap, fast check for whether the model FILE is already sitting
         // in the Cache API from a previous session — this is NOT the same
@@ -1060,34 +884,33 @@
         // voice before, so getting it ready during a wait they're already
         // seeing is a better trade than making them wait again later.
         isModelCached: function () {
-            if (!voskConfigured() || !window.caches) return Promise.resolve(false);
-            return caches.open(VOSK_CACHE_NAME)
-                .then(function (cache) { return cache.match(VOSK_MODEL_URL); })
+            if (!koochikConfigured() || !window.caches) return Promise.resolve(false);
+            return caches.open(KOOCHIK_CACHE_NAME)
+                .then(function (cache) { return cache.match(KOOCHIK_MODEL_URL); })
                 .then(function (match) { return !!match; })
                 .catch(function () { return false; });
         },
-        // Frees the loaded Vosk model and its Web Worker from memory.
+        // Frees the loaded Koochik engine (ONNX session) from memory.
         // Not called unconditionally — keeping the model warm after
         // leaving the Voice tab is the normal default, since it makes
-        // returning to voice instant. But that resident WASM model (and
-        // worker) competes with the rest of the app for RAM even on
-        // pages that have nothing to do with voice, which matters on
-        // low-memory devices. Intended to be called from script.js only
-        // when Settings > "حالت کم‌مصرف" (low power mode) is on, right
-        // after the person leaves the Voice tab.
+        // returning to voice instant. But that resident session competes
+        // with the rest of the app for RAM even on pages that have
+        // nothing to do with voice, which matters on low-memory devices.
+        // Intended to be called from script.js only when Settings >
+        // "حالت کم‌مصرف" (low power mode) is on, right after the person
+        // leaves the Voice tab.
         // Safe to call any time: no-ops while actively listening or
         // mid-load. The next start()/preload() call transparently
         // re-initializes from the model file already sitting in the
-        // Cache API (no re-download — just a few seconds of WASM
-        // startup instead of being instant).
+        // Cache API (no re-download — just session creation again).
         releaseModel: function () {
-            if (voskActive || voskLoading) return;
-            if (voskModel) {
-                try { voskModel.terminate(); } catch (e) { /* best-effort cleanup */ }
-                voskModel = null;
+            if (koochikActive || koochikLoading) return;
+            if (koochikEngine) {
+                try { koochikEngine.destroy(); } catch (e) { /* best-effort cleanup */ }
+                koochikEngine = null;
             }
-            voskModelLoadPromise = null;
-            voskFailInfo = null;
+            koochikEngineLoadPromise = null;
+            koochikFailInfo = null;
         }
     };
 
