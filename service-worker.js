@@ -3,7 +3,7 @@
 // Always tries to fetch the latest version.
 // Falls back to cache only when offline.
 
-const CACHE_NAME = 'FoxiMed_v5.0.0';
+const CACHE_NAME = 'FoxiMed_v5.0.1';
 
 const urlsToCache = [
     './',
@@ -12,6 +12,7 @@ const urlsToCache = [
     './voice-assistant.css',
     './script.js',
     './voice-recognition.js',
+    './koochik-asr.js',
     './voice-commands.js',
     './voice-ui.js',
     './converters.js',
@@ -48,7 +49,10 @@ self.addEventListener('activate', event => {
         caches.keys().then(cacheNames =>
             Promise.all(
                 cacheNames
-                    .filter(name => name !== CACHE_NAME)
+                    // Only retire older FoxiMed app-shell caches. Do NOT
+                    // delete independent runtime caches such as the large
+                    // Koochik model cache (foximed-koochik-model-v1).
+                    .filter(name => name.startsWith('FoxiMed_v') && name !== CACHE_NAME)
                     .map(name => caches.delete(name))
             )
         )
@@ -69,7 +73,7 @@ self.addEventListener('activate', event => {
 // point of view even though a plain direct navigation to the same URL
 // (which never goes through this handler at all) works fine. The model
 // file already has its own, separate, deliberate caching strategy in
-// voice-recognition.js — it doesn't need (or want) this handler's help too.
+// koochik-asr.js — it doesn't need (or want) this handler's help too.
 const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i];
 
 self.addEventListener('fetch', event => {

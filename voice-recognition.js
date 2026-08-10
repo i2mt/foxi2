@@ -3,20 +3,13 @@
    ============================================
    Low-level speech capture layer with TWO interchangeable backends:
 
-     1. "webspeech" — the native browser SpeechRecognition API. Used on
-        Android / desktop / macOS Safari, where it's fast and needs no
-        download.
+     1. "koochik" — the primary backend on ALL supported devices: an
+        on-device ONNX speech engine (Shenava Koochik v1.0, Persian
+        FastConformer CTC) running in-browser via onnxruntime-web.
 
-     2. "koochik" — an offline, on-device ONNX speech engine (Shenava
-        Koochik v1.0, a Persian FastConformer CTC model, run in-browser
-        via onnxruntime-web — see koochik-asr.js). Used on iOS, because
-        Apple's WebKit SpeechRecognition implementation is unreliable —
-        especially once the PWA is installed to the Home Screen, where it
-        frequently fails outright. Koochik never touches that API at all,
-        so it works the same whether the app is in a Safari tab or
-        installed. (This replaced an earlier Vosk-based backend — Koochik
-        benchmarked meaningfully more accurate on Persian, at ~70x faster
-        decode.)
+     2. "webspeech" — retained only as a fallback if Koochik is deliberately
+        deconfigured. Normal FoxiMed voice recognition now uses the same
+        Koochik model on iOS, Android, desktop and installed PWAs.
 
    Both backends are driven through the exact same public, event-driven
    API, so neither voice-commands.js nor voice-ui.js need to know which
@@ -31,12 +24,11 @@
    Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
                     'model-loading', 'model-ready'
 
-   --- SETUP REQUIRED FOR THE KOOCHIK (iOS) BACKEND ---
-   Set KOOCHIK_MODEL_URL / KOOCHIK_TOKENS_URL / KOOCHIK_MEL_FILTERS_URL
-   below to your own hosted copies of the three Koochik assets. Until
-   those are set, iOS falls back to the native API + the existing
-   "open in Safari / type instead" guidance, so nothing breaks if you
-   deploy before the model is ready.
+   --- KOOCHIK BACKEND (ALL DEVICES) ---
+   The model and its two official sidecars are loaded directly from the
+   Shenava Koochik Hugging Face export and cached after the first successful
+   load. This keeps the large ~230 MB ONNX file out of the normal Git repo
+   and avoids hand-copying the token/filter JSON files.
 
    WHICH MODEL: Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16 — the 114M-param
    FastConformer CTC export (NOT the v1.5 RNNT export, which is a
@@ -64,32 +56,13 @@
 (function (window) {
     'use strict';
 
-    // Mehdi: put your asset URLs here.
-    //
-    // MODEL: the ~230MB fp16 file is too big for a normal GitHub push
-    // (GitHub blocks non-LFS files over 100MB), so this points at Hugging
-    // Face's own CDN directly rather than self-hosting it — that CDN is
-    // built for exactly this (it's what transformers.js-style browser ML
-    // apps do), has proper CORS, and no meaningful bandwidth cap. Use the
-    // "_embedded.onnx" single-file export, not the split
-    // ".onnx" + ".onnx.data" pair — one URL, one fetch, no external-data
-    // loading to wire up.
-    //   IMPORTANT: verify this exact filename against the repo's own file
-    //   listing (huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/
-    //   tree/main) before relying on it — I couldn't independently
-    //   confirm it from here, only cross-check what you were told
-    //   elsewhere, so a typo or a renamed file would fail silently as a
-    //   404 without this being caught first.
-    // TOKENS / MEL FILTERS: these are tiny (~15KB / ~91KB) — bundle them
-    // with the rest of the app instead (e.g. an icons/ subfolder like
-    // your other static assets), so they ship with your normal deploy
-    // and get precached by the service worker like everything else. No
-    // reason to fetch these from a different origin.
-    // Leave KOOCHIK_MODEL_URL empty to keep the current native-API/banner
-    // behavior on iOS.
+    // Official Shenava Koochik v1.0 FP16 export. The ~230 MB embedded
+    // ONNX stays on Hugging Face instead of the normal Git repository.
+    // The official tokens and mel-filter sidecars come from the same repo
+    // and are cached by koochik-asr.js after first successful use.
     const KOOCHIK_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/shenava_koochik_1_0_ctc_fixed2005_len_att70_13_fp16_full_io_embedded.onnx';
-    const KOOCHIK_TOKENS_URL = './icons/koochik-tokens.json';
-    const KOOCHIK_MEL_FILTERS_URL = './icons/mel_filters_slaney_80x257.json';
+    const KOOCHIK_TOKENS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/tokens.json';
+    const KOOCHIK_MEL_FILTERS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/mel_filters_slaney_80x257.json';
     const KOOCHIK_ORT_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
     const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
     // How long to wait for the model download before giving up. Raise this
@@ -106,6 +79,9 @@
     // browser demo uses. Kept modest since each decode is ~10ms of
     // compute but there's still buffer-materialization overhead.
     const KOOCHIK_PARTIAL_INTERVAL_MS = 700;
+    const KOOCHIK_SILENCE_FINALIZE_MS = 900;
+    const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
+    const KOOCHIK_MIN_SPEECH_RMS = 0.008;
 
     function koochikConfigured() { return !!(KOOCHIK_MODEL_URL && KOOCHIK_TOKENS_URL && KOOCHIK_MEL_FILTERS_URL); }
 
@@ -224,7 +200,7 @@
             'network': {
                 code: 'network',
                 title: 'اتصال اینترنت لازم است',
-                message: 'تشخیص صدا برخلاف بقیه FoxiMed به اینترنت نیاز دارد. لطفاً اتصال خود را بررسی کنید یا دستور را تایپ کنید.'
+                message: 'برای اولین بارگذاری موتور صوتی اتصال اینترنت لازم است. پس از ذخیره‌شدن مدل، پردازش صدا روی خود دستگاه انجام می‌شود.'
             },
             'aborted': {
                 code: 'aborted',
@@ -294,9 +270,15 @@
     let koochikSilenceWatchdog = null;
     let koochikPartialTimer = null;
     let koochikDecodeInFlight = false;
+    let koochikDecodePromise = null;
     let koochikLastEmitted = '';
+    let koochikStopping = false;
+    let koochikSpeechSeen = false;
+    let koochikLastVoiceAt = 0;
+    let koochikNoiseFloor = 0.004;
+    let koochikLoadAbortController = null;
+    let koochikLoadGeneration = 0;
     let triedKoochikFallback = false; // reset at the start of each fresh start() call
-    let modelLoadCancelled = false; // set by cancelPreload() below — lets the loading screen actually STOP a background model download/instantiation instead of just walking away from it
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -544,7 +526,7 @@
     }
 
     // ============================================
-    // BACKEND 2: KOOCHIK (offline, on-device CTC ASR — used on iOS)
+    // BACKEND 1: KOOCHIK (primary on-device CTC ASR — all devices)
     // Driven by koochik-asr.js, which owns feature extraction, ONNX
     // inference (via onnxruntime-web), and greedy CTC decoding. This
     // file only owns: mic capture, buffering audio into the engine,
@@ -555,51 +537,70 @@
         if (koochikEngine) return Promise.resolve(koochikEngine);
         if (koochikEngineLoadPromise) return koochikEngineLoadPromise;
 
-        modelLoadCancelled = false; // fresh load attempt — clear any earlier cancellation
+        const generation = ++koochikLoadGeneration;
+        const controller = new AbortController();
+        koochikLoadAbortController = controller;
+        emit('model-loading');
 
         const loadChain = window.KoochikASR
-            ? Promise.resolve()
+            ? window.KoochikASR.load({
+                modelUrl: KOOCHIK_MODEL_URL,
+                tokensUrl: KOOCHIK_TOKENS_URL,
+                melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
+                ortLibUrl: KOOCHIK_ORT_LIB_URL,
+                ortWasmBaseUrl: KOOCHIK_ORT_WASM_BASE_URL,
+                cacheName: KOOCHIK_CACHE_NAME,
+                signal: controller.signal
+            }, function (progress) {
+                if (generation !== koochikLoadGeneration || controller.signal.aborted) return;
+                emit('model-progress', progress);
+            })
             : Promise.reject(classifyError('koochik-lib-failed'));
 
-        koochikEngineLoadPromise = loadChain
-            .then(function () {
-                return window.KoochikASR.load({
-                    modelUrl: KOOCHIK_MODEL_URL,
-                    tokensUrl: KOOCHIK_TOKENS_URL,
-                    melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
-                    ortLibUrl: KOOCHIK_ORT_LIB_URL,
-                    ortWasmBaseUrl: KOOCHIK_ORT_WASM_BASE_URL,
-                    cacheName: KOOCHIK_CACHE_NAME
-                }, function (progress) {
-                    if (modelLoadCancelled) return;
-                    emit('model-progress', progress);
-                });
-            })
+        let timeoutId = null;
+        const timeoutChain = new Promise(function (_, reject) {
+            timeoutId = setTimeout(function () {
+                if (generation === koochikLoadGeneration) controller.abort();
+                reject(classifyError('koochik-model-failed'));
+            }, KOOCHIK_MODEL_TIMEOUT_MS);
+        });
+
+        const promise = Promise.race([loadChain, timeoutChain])
             .then(function (engine) {
-                if (modelLoadCancelled) { throw new Error('cancelled'); }
+                if (timeoutId) clearTimeout(timeoutId);
+                if (generation !== koochikLoadGeneration || controller.signal.aborted) {
+                    try { engine && engine.destroy && engine.destroy(); } catch (e) {}
+                    const cancelled = new Error('cancelled');
+                    cancelled.code = 'cancelled';
+                    throw cancelled;
+                }
                 koochikEngine = engine;
                 koochikFailInfo = null;
                 emit('model-ready');
                 return engine;
             })
             .catch(function (err) {
-                koochikEngineLoadPromise = null;
+                if (timeoutId) clearTimeout(timeoutId);
+                if (generation === koochikLoadGeneration) {
+                    koochikEngineLoadPromise = null;
+                    koochikLoadAbortController = null;
+                }
+
+                const wasCancelled = err && (err.name === 'AbortError' || err.message === 'cancelled' || err.code === 'cancelled');
+                if (wasCancelled) {
+                    const cancelled = classifyError('aborted');
+                    throw cancelled;
+                }
+
                 const info = (err && err.code) ? err : classifyError('koochik-model-failed');
-                if (!(err && err.message === 'cancelled')) {
+                if (generation === koochikLoadGeneration) {
                     koochikFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 }
                 throw info;
             });
 
-        // Outer backstop, same role as the old Vosk timeout — the model
-        // file is fetched with browser-native fetch() (which the browser
-        // itself already retries/resumes reasonably well via HTTP cache),
-        // so this exists purely to eventually give up on something truly
-        // stuck rather than to drive retries itself.
-        const timeoutChain = new Promise(function (_, reject) {
-            setTimeout(function () { reject(classifyError('koochik-model-failed')); }, KOOCHIK_MODEL_TIMEOUT_MS);
-        });
-        return Promise.race([koochikEngineLoadPromise, timeoutChain]);
+        koochikEngineLoadPromise = promise;
+        return promise;
     }
 
     function startKoochik() {
@@ -619,6 +620,10 @@
             if (koochikCancelRequested) { koochikLoading = false; return; }
             engine.reset();
             koochikLastEmitted = '';
+            koochikStopping = false;
+            koochikSpeechSeen = false;
+            koochikLastVoiceAt = 0;
+            koochikNoiseFloor = 0.004;
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
@@ -646,7 +651,11 @@
                         // Android's audio subsystem delivers silence/
                         // garbage right after a stream opens.
                         if (Date.now() - streamStartTime >= 350) {
-                            engine.feed(event.inputBuffer.getChannelData(0), koochikAudioCtx.sampleRate);
+                            const samples = event.inputBuffer.getChannelData(0);
+                            if (!koochikStopping) {
+                                engine.feed(samples, koochikAudioCtx.sampleRate);
+                                updateKoochikVad(samples);
+                            }
                         }
                     } catch (e) {
                         emit('error', classifyError('koochik-runtime'));
@@ -657,7 +666,7 @@
                 koochikProcessor.connect(koochikAudioCtx.destination);
 
                 koochikActive = true;
-                armKoochikSilenceWatchdog();
+                armKoochikSessionLimit();
                 emit('start');
                 schedulePartialDecode(engine);
             }).catch(function (err) {
@@ -687,18 +696,20 @@
                 return;
             }
             koochikDecodeInFlight = true;
-            engine.decode().then(function (text) {
+            koochikDecodePromise = engine.decode();
+            koochikDecodePromise.then(function (text) {
                 koochikDecodeInFlight = false;
-                if (!koochikActive) return;
+                koochikDecodePromise = null;
+                if (!koochikActive || koochikStopping) return;
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
-                    armKoochikSilenceWatchdog();
                     emit('interim', text);
                 }
                 schedulePartialDecode(engine);
             }).catch(function () {
                 koochikDecodeInFlight = false;
-                if (koochikActive) schedulePartialDecode(engine);
+                koochikDecodePromise = null;
+                if (koochikActive && !koochikStopping) schedulePartialDecode(engine);
             });
         }, KOOCHIK_PARTIAL_INTERVAL_MS);
     }
@@ -723,22 +734,53 @@
         emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
     }
 
-    function armKoochikSilenceWatchdog() {
-        if (koochikSilenceWatchdog) clearTimeout(koochikSilenceWatchdog);
-        koochikSilenceWatchdog = setTimeout(function () {
-            if (koochikActive) {
-                emit('error', classifyError('timeout'));
+    function updateKoochikVad(samples) {
+        if (!koochikActive || koochikStopping || !samples || !samples.length) return;
+
+        let sumSq = 0;
+        for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
+        const rms = Math.sqrt(sumSq / samples.length);
+        const now = Date.now();
+        const threshold = Math.max(KOOCHIK_MIN_SPEECH_RMS, koochikNoiseFloor * 2.5);
+
+        if (rms >= threshold) {
+            koochikSpeechSeen = true;
+            koochikLastVoiceAt = now;
+        } else {
+            // Track background noise only while this block looks non-speech.
+            // The slow adaptation keeps the threshold useful across quiet
+            // rooms and noisier mobile microphones without a fixed dB guess.
+            koochikNoiseFloor = Math.max(0.001, Math.min(0.03, koochikNoiseFloor * 0.97 + rms * 0.03));
+            if (koochikSpeechSeen && koochikLastVoiceAt && (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS) {
                 stopKoochik();
             }
-        }, 8000);
+        }
+    }
+
+    function armKoochikSessionLimit() {
+        if (koochikSilenceWatchdog) clearTimeout(koochikSilenceWatchdog);
+        koochikSilenceWatchdog = setTimeout(function () {
+            // Koochik only retains ~20 seconds. Finalize before the fixed
+            // window rolls over instead of silently dropping the beginning.
+            if (koochikActive) stopKoochik();
+        }, KOOCHIK_MAX_UTTERANCE_MS);
     }
 
     function stopKoochik() {
+        if (koochikStopping) return;
         if (koochikLoading) {
-            koochikCancelRequested = true; // unwound inside startKoochik()'s pending chain
+            koochikCancelRequested = true;
+            koochikLoadGeneration++;
+            if (koochikLoadAbortController) {
+                try { koochikLoadAbortController.abort(); } catch (e) {}
+            }
+            koochikLoadAbortController = null;
+            koochikEngineLoadPromise = null;
+            koochikLoading = false;
             return;
         }
         if (!koochikActive) return;
+        koochikStopping = true;
         if (koochikSilenceWatchdog) { clearTimeout(koochikSilenceWatchdog); koochikSilenceWatchdog = null; }
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
         // Run one last decode over whatever was captured before tearing
@@ -746,8 +788,17 @@
         // words away — mirrors the old Vosk retrieveFinalResult() step.
         const engine = koochikEngine;
         if (engine && engine.bufferedSeconds() > 0.15) {
-            koochikStopTimer = setTimeout(finishKoochik, 1200);
-            engine.decode().then(function (text) {
+            koochikStopTimer = setTimeout(finishKoochik, 1800);
+
+            const waitForPartial = koochikDecodePromise
+                ? koochikDecodePromise.catch(function () { return ''; })
+                : Promise.resolve('');
+
+            waitForPartial.then(function () {
+                if (!koochikStopping || !engine) return '';
+                return engine.decode();
+            }).then(function (text) {
+                if (!koochikStopping) return;
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 if (text && text.trim()) emit('final', text.trim());
                 finishKoochik();
@@ -765,7 +816,11 @@
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
         const wasActive = koochikActive;
         koochikActive = false;
+        koochikStopping = false;
         koochikDecodeInFlight = false;
+        koochikDecodePromise = null;
+        koochikSpeechSeen = false;
+        koochikLastVoiceAt = 0;
         if (koochikProcessor) { try { koochikProcessor.disconnect(); } catch (e) {} koochikProcessor = null; }
         if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
         if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
@@ -778,6 +833,8 @@
     // UNIFIED DISPATCHER
     // ============================================
     function pickBackend() {
+        // Koochik is intentionally the default backend on every device.
+        // It runs locally in the browser through ONNX Runtime Web.
         return koochikConfigured() ? 'koochik' : 'webspeech';
     }
 
@@ -857,21 +914,17 @@
             if (!koochikConfigured()) return Promise.resolve();
             return ensureKoochikEngine().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
-        // Actually stops an opportunistic preload in progress — called by
-        // the loading screen when it gives up waiting (see script.js).
-        // Note: unlike the old Vosk path, this does NOT abort an in-flight
-        // fetch() — the underlying asset fetches in koochik-asr.js aren't
-        // wired to an AbortController, so a preload already in flight will
-        // finish downloading in the background even after this is called;
-        // it just stops this module from awaiting or acting on the
-        // result. Worth adding an AbortController if that background
-        // download turns out to be a real cost in practice. Safe to call
-        // even if nothing is in flight (no-op then). A later genuine load
-        // — the person actually opening the Voice tab — starts clean via
-        // the modelLoadCancelled reset in ensureKoochikEngine() above.
+        // Abort an opportunistic model load/download. The AbortController
+        // is passed all the way into fetch(), so this now stops the large
+        // Hugging Face transfer instead of merely ignoring its result.
         cancelPreload: function () {
-            if (koochikEngine) return; // already finished loading — nothing to cancel, and definitely don't throw away a ready engine
-            modelLoadCancelled = true;
+            if (koochikEngine) return;
+            koochikCancelRequested = true;
+            koochikLoadGeneration++;
+            if (koochikLoadAbortController) {
+                try { koochikLoadAbortController.abort(); } catch (e) {}
+            }
+            koochikLoadAbortController = null;
             koochikEngineLoadPromise = null;
         },
         // Cheap, fast check for whether the model FILE is already sitting
@@ -905,11 +958,23 @@
         // Cache API (no re-download — just session creation again).
         releaseModel: function () {
             if (koochikActive || koochikLoading) return;
+
+            // Low-power mode may call this while an opportunistic preload
+            // is still downloading. Abort that transfer before dropping the
+            // promise so it cannot continue consuming bandwidth/RAM unseen.
+            if (koochikEngineLoadPromise && !koochikEngine) {
+                koochikLoadGeneration++;
+                if (koochikLoadAbortController) {
+                    try { koochikLoadAbortController.abort(); } catch (e) {}
+                }
+            }
+
             if (koochikEngine) {
                 try { koochikEngine.destroy(); } catch (e) { /* best-effort cleanup */ }
                 koochikEngine = null;
             }
             koochikEngineLoadPromise = null;
+            koochikLoadAbortController = null;
             koochikFailInfo = null;
         }
     };

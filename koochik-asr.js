@@ -21,18 +21,15 @@
      reflect padding, preemphasis 0.97, Slaney mel scale, natural
      log with a 2^-24 floor, NO per-feature normalization.
 
-   You must host three assets alongside this file (same pattern as
-   the old Vosk model hosting — same-origin, long Cache-Control):
-     1. The Koochik ONNX model  (model.onnx, fp16)
-     2. tokens.json  — array of 1025 token strings indexed by id
-     3. mel_filters_slaney_80x257.json — the 80x257 Slaney filterbank
-        (use Koochik's own exported filters, not a re-derived one —
-        that's the single biggest source of silent accuracy loss).
+   Runtime assets are supplied by config. In FoxiMed they currently
+   point directly at the official Hugging Face export and are cached by
+   this loader after the first successful download. No hand-generated mel
+   filterbank is used: the official exported 80x257 matrix is loaded as-is.
 
    Public API:
      KoochikASR.load(config, onProgress) -> Promise<engine>
        config: { modelUrl, tokensUrl, melFiltersUrl, ortLibUrl,
-                 ortWasmBaseUrl, cacheName }
+                 ortWasmBaseUrl, cacheName, signal }
      engine.feed(float32Samples, sourceSampleRate)
      engine.decode() -> Promise<string>   // runs inference on the
                                            // currently buffered audio
@@ -309,43 +306,108 @@
     // simplified — Koochik's assets are fetched as three plain files
     // rather than one tarball).
     // ============================================
-    function fetchWithCache(url, cacheName, onProgress) {
-        function doFetch() {
-            return fetch(url).then(function (resp) {
-                if (!resp.ok) throw new Error('fetch-failed:' + url);
-                const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
-                if (!resp.body || !total || !onProgress) return resp.arrayBuffer();
-                const reader = resp.body.getReader();
-                const chunks = [];
-                let received = 0;
-                return new Promise(function (resolve, reject) {
-                    function pump() {
-                        reader.read().then(function (result) {
-                            if (result.done) {
-                                const blob = new Blob(chunks);
-                                blob.arrayBuffer().then(resolve, reject);
-                                return;
-                            }
-                            chunks.push(result.value);
-                            received += result.value.length;
-                            onProgress({ loaded: received, total: total, url: url });
-                            pump();
-                        }).catch(reject);
+    function abortError() {
+        try { return new DOMException('Aborted', 'AbortError'); }
+        catch (e) { const err = new Error('Aborted'); err.name = 'AbortError'; return err; }
+    }
+
+    function fetchWithCache(url, cacheName, onProgress, signal, responseType) {
+        responseType = responseType || 'arrayBuffer';
+
+        function readResponse(resp, fromCache) {
+            if (signal && signal.aborted) return Promise.reject(abortError());
+            if (fromCache && onProgress) {
+                onProgress({ loaded: 0, total: 0, percent: 100, url: url, fromCache: true });
+            }
+            if (responseType === 'json') return resp.json();
+
+            const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+            if (!resp.body || !total || !onProgress) return resp.arrayBuffer();
+
+            const reader = resp.body.getReader();
+            const chunks = [];
+            let received = 0;
+
+            function cancelReader() {
+                try { reader.cancel(); } catch (e) {}
+            }
+            if (signal) signal.addEventListener('abort', cancelReader, { once: true });
+
+            return new Promise(function (resolve, reject) {
+                function cleanup() {
+                    if (signal) signal.removeEventListener('abort', cancelReader);
+                }
+                function pump() {
+                    if (signal && signal.aborted) {
+                        cleanup();
+                        reject(abortError());
+                        return;
                     }
-                    pump();
+                    reader.read().then(function (result) {
+                        if (result.done) {
+                            cleanup();
+                            const blob = new Blob(chunks);
+                            blob.arrayBuffer().then(resolve, reject);
+                            return;
+                        }
+                        chunks.push(result.value);
+                        received += result.value.length;
+                        onProgress({
+                            loaded: received,
+                            total: total,
+                            percent: Math.min(100, Math.round(received * 100 / total)),
+                            url: url,
+                            fromCache: false
+                        });
+                        pump();
+                    }).catch(function (err) {
+                        cleanup();
+                        reject(err);
+                    });
+                }
+                pump();
+            });
+        }
+
+        function doFetch(cache) {
+            if (signal && signal.aborted) return Promise.reject(abortError());
+            return fetch(url, signal ? { signal: signal } : undefined).then(function (resp) {
+                if (!resp.ok) throw new Error('fetch-failed:' + url + ':' + resp.status);
+
+                // JSON sidecars are tiny, so cache the network response
+                // directly and parse a clone. For the ~230 MB model we
+                // avoid cloning the streamed response because that can
+                // cause a large transient memory spike on mobile Safari.
+                if (responseType === 'json') {
+                    const clone = resp.clone();
+                    const putPromise = cache
+                        ? cache.put(url, clone).catch(function () { /* quota/cache failure is non-fatal */ })
+                        : Promise.resolve();
+                    return readResponse(resp, false).then(function (data) {
+                        return putPromise.then(function () { return data; });
+                    });
+                }
+
+                return readResponse(resp, false).then(function (buf) {
+                    if (!cache || (signal && signal.aborted)) return buf;
+                    // Do not make an explicit buf.slice(0) copy. The Cache
+                    // API write is best-effort and may fail on quota-limited
+                    // browsers; inference can still proceed with this buffer.
+                    return cache.put(url, new Response(buf)).catch(function () {
+                        return undefined;
+                    }).then(function () { return buf; });
                 });
             });
         }
-        if (!window.caches) return doFetch();
+
+        if (!window.caches) return doFetch(null);
         return caches.open(cacheName).then(function (cache) {
+            if (signal && signal.aborted) throw abortError();
             return cache.match(url).then(function (cached) {
-                if (cached) return cached.arrayBuffer();
-                return doFetch().then(function (buf) {
-                    try { cache.put(url, new Response(buf.slice(0))); } catch (e) { /* quota — non-fatal */ }
-                    return buf;
-                });
+                if (cached) return readResponse(cached, true);
+                return doFetch(cache);
             });
-        }).catch(doFetch);
+        });
     }
 
     // ============================================
@@ -356,38 +418,85 @@
         const ortLibUrl = config.ortLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
         const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
+        const signal = config.signal || null;
 
         return loadScriptOnce(ortLibUrl)
             .then(function () {
+                if (signal && signal.aborted) throw abortError();
                 if (!window.ort) throw new Error('ort-missing-after-load');
                 window.ort.env.wasm.wasmPaths = ortWasmBaseUrl;
             })
             .then(function () {
                 return Promise.all([
-                    fetchWithCache(config.modelUrl, cacheName, onProgress ? function (p) { onProgress(Object.assign({ asset: 'model' }, p)); } : null),
-                    fetch(config.tokensUrl).then(function (r) { return r.json(); }),
-                    fetch(config.melFiltersUrl).then(function (r) { return r.json(); })
+                    fetchWithCache(
+                        config.modelUrl,
+                        cacheName,
+                        onProgress ? function (p) { onProgress(Object.assign({ asset: 'model' }, p)); } : null,
+                        signal,
+                        'arrayBuffer'
+                    ),
+                    fetchWithCache(config.tokensUrl, cacheName, null, signal, 'json'),
+                    fetchWithCache(config.melFiltersUrl, cacheName, null, signal, 'json')
                 ]);
             })
             .then(function (results) {
+                if (signal && signal.aborted) throw abortError();
+
                 const modelBuffer = results[0];
-                let tokens = results[1];
-                const melFilters = results[2];
-                if (tokens && !Array.isArray(tokens) && typeof tokens === 'object') {
-                    // Support a {"0": "...", "1": "..."} map shape too.
-                    const arr = [];
-                    Object.keys(tokens).forEach(function (k) { arr[parseInt(k, 10)] = tokens[k]; });
-                    tokens = arr;
+                const tokenData = results[1];
+                let tokens = tokenData;
+                let blankId = BLANK_ID;
+                let melFilters = results[2];
+
+                // Official Koochik tokens.json:
+                // { "blank_id": 1024, ..., "tokens": [ ... ] }
+                // Keep compatibility with a raw array or legacy numeric map.
+                if (tokenData && !Array.isArray(tokenData) && typeof tokenData === 'object') {
+                    if (Array.isArray(tokenData.tokens)) {
+                        tokens = tokenData.tokens;
+                        if (Number.isInteger(tokenData.blank_id)) blankId = tokenData.blank_id;
+                    } else {
+                        const arr = [];
+                        Object.keys(tokenData).forEach(function (k) {
+                            const id = parseInt(k, 10);
+                            if (!Number.isNaN(id)) arr[id] = tokenData[k];
+                        });
+                        tokens = arr;
+                    }
                 }
+
+                // Be tolerant if a future sidecar wraps the matrix in an
+                // object, while validating the exact dimensions Koochik needs.
+                if (!Array.isArray(melFilters) && melFilters && typeof melFilters === 'object') {
+                    if (Array.isArray(melFilters.mel_filters)) melFilters = melFilters.mel_filters;
+                    else if (Array.isArray(melFilters.filters)) melFilters = melFilters.filters;
+                }
+
+                if (!Array.isArray(tokens) || tokens.length < VOCAB_SIZE) {
+                    throw new Error('invalid-koochik-tokens');
+                }
+                if (!Array.isArray(melFilters) || melFilters.length !== N_MELS) {
+                    throw new Error('invalid-koochik-mel-filters');
+                }
+                for (let i = 0; i < melFilters.length; i++) {
+                    if (!melFilters[i] || melFilters[i].length !== N_FREQ_BINS) {
+                        throw new Error('invalid-koochik-mel-filters');
+                    }
+                }
+
                 return window.ort.InferenceSession.create(modelBuffer, {
                     executionProviders: ['wasm']
                 }).then(function (session) {
-                    return makeEngine(session, tokens, melFilters);
+                    if (signal && signal.aborted) {
+                        try { session.release && session.release(); } catch (e) {}
+                        throw abortError();
+                    }
+                    return makeEngine(session, tokens, melFilters, blankId);
                 });
             });
     }
 
-    function makeEngine(session, tokens, melFilters) {
+    function makeEngine(session, tokens, melFilters, blankId) {
         const resample = makeResampler(SAMPLE_RATE);
         let chunks = [];
         let totalLen = 0;
@@ -438,7 +547,7 @@
                         const el = Number(result.encoded_lengths.data[0]);
                         if (el > 0) usableSteps = Math.min(usableSteps, el);
                     }
-                    return decodeKoochikCtc(logitsF32, usableSteps, vocabSize, tokens, BLANK_ID);
+                    return decodeKoochikCtc(logitsF32, usableSteps, vocabSize, tokens, blankId);
                 });
             },
             destroy: function () {

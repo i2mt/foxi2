@@ -145,7 +145,7 @@ function detectLowEndDevice() {
 // deviceMemory at all — so this measures actual frame timing on THIS launch
 // and lets a device that proves itself slow right now override the guess,
 // even if it looked fine on paper. Five samples finish well before
-// finishLoadingWithOptionalVoskWarmup() is called (~2.4s into the loading
+// finishLoadingWithOptionalVoiceWarmup() is called (~2.4s into the loading
 // sequence), so the result is ready in time to matter.
 let __measuredFrameGapMs = null;
 (function measureFrameResponsiveness() {
@@ -301,7 +301,7 @@ const AppState = {
         function runStep() {
             if (i >= steps.length) {
                 clearInterval(tipInterval);
-                finishLoadingWithOptionalVoskWarmup();
+                finishLoadingWithOptionalVoiceWarmup();
                 return;
             }
             loadingProgress(steps[i].pct, steps[i].status);
@@ -354,7 +354,7 @@ const AppState = {
         } catch (e) { /* non-fatal */ }
     }
 
-    function finishLoadingWithOptionalVoskWarmup() {
+    function finishLoadingWithOptionalVoiceWarmup() {
         // Live signal wins over the static guess: if THIS launch is
         // already visibly janky (slow frame timing measured since page
         // start — see measureFrameResponsiveness above), don't add a heavy
@@ -2440,7 +2440,7 @@ function switchTab(tabName) {
     if (previousTab === 'voice' && tabName !== 'voice' && AppState.settings.lowPowerMode &&
         window.VoiceEngine && typeof window.VoiceEngine.releaseModel === 'function') {
         // Low power mode trades the "instant" re-entry to Voice for a
-        // lower memory footprint everywhere else in the app — the Vosk
+        // lower memory footprint everywhere else in the app — the Koochik
         // model otherwise stays resident in memory for the rest of the
         // session even on pages that have nothing to do with voice.
         window.VoiceEngine.releaseModel();
