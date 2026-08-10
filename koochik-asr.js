@@ -1,0 +1,452 @@
+/* ============================================
+   KoochikASR — Persian offline ASR engine
+   ============================================
+   Runs Shenava Koochik v1.0 (FastConformer CTC, ONNX fp16) entirely
+   in-browser via onnxruntime-web. No custom WASM build required —
+   this is a plain <script> CDN load, same shape as vosk-browser was.
+
+   Model: Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16
+     - Single CTC graph (NOT encoder/decoder/joiner RNNT — that's the
+       separate v1.5 export). Fixed input window of 2005 frames
+       (~20.04s of audio at 16kHz).
+     - inputs:  processed_signal        float16 [1, 80, 2005]
+                processed_signal_length int64   [1]
+     - outputs: logits                  float16 [1, 252, 1025]
+                encoded_lengths         int64   [1]
+     - blank_id: 1024, vocab size: 1025, output stride: 8
+
+   Feature extraction contract (preprocessor.json):
+     sample_rate 16000, n_fft 512, win_length 400, hop_length 160,
+     n_mels 80, Hann (non-periodic), center=true with 256-sample
+     reflect padding, preemphasis 0.97, Slaney mel scale, natural
+     log with a 2^-24 floor, NO per-feature normalization.
+
+   You must host three assets alongside this file (same pattern as
+   the old Vosk model hosting — same-origin, long Cache-Control):
+     1. The Koochik ONNX model  (model.onnx, fp16)
+     2. tokens.json  — array of 1025 token strings indexed by id
+     3. mel_filters_slaney_80x257.json — the 80x257 Slaney filterbank
+        (use Koochik's own exported filters, not a re-derived one —
+        that's the single biggest source of silent accuracy loss).
+
+   Public API:
+     KoochikASR.load(config, onProgress) -> Promise<engine>
+       config: { modelUrl, tokensUrl, melFiltersUrl, ortLibUrl,
+                 ortWasmBaseUrl, cacheName }
+     engine.feed(float32Samples, sourceSampleRate)
+     engine.decode() -> Promise<string>   // runs inference on the
+                                           // currently buffered audio
+     engine.reset()                       // clears the audio buffer
+     engine.bufferedSeconds()
+     engine.destroy()
+   ============================================ */
+(function (window) {
+    'use strict';
+
+    const SAMPLE_RATE = 16000;
+    const N_FFT = 512;
+    const WIN_LENGTH = 400;
+    const HOP_LENGTH = 160;
+    const N_MELS = 80;
+    const N_FREQ_BINS = 257; // N_FFT / 2 + 1
+    const FIXED_FRAMES = 2005;
+    const PREEMPHASIS = 0.97;
+    const CENTER_PAD = 256;
+    const WINDOW_OFFSET = (N_FFT - WIN_LENGTH) / 2; // 56
+    const LOG_ZERO_GUARD = Math.pow(2, -24);
+    const BLANK_ID = 1024;
+    const VOCAB_SIZE = 1025;
+    const MAX_SAMPLES = (FIXED_FRAMES - 1) * HOP_LENGTH; // ~20.04s @16kHz
+
+    // ============================================
+    // Dynamic script loading (same pattern as the old vosk.js load)
+    // ============================================
+    function loadScriptOnce(url) {
+        const existing = document.querySelector('script[src="' + url + '"]');
+        if (existing) {
+            if (existing.dataset.loaded === 'true') return Promise.resolve();
+            return new Promise(function (resolve, reject) {
+                existing.addEventListener('load', function () { resolve(); });
+                existing.addEventListener('error', function () { reject(new Error('script-load-failed')); });
+            });
+        }
+        return new Promise(function (resolve, reject) {
+            const s = document.createElement('script');
+            s.src = url;
+            s.async = true;
+            s.onload = function () { s.dataset.loaded = 'true'; resolve(); };
+            s.onerror = function () { reject(new Error('script-load-failed')); };
+            document.head.appendChild(s);
+        });
+    }
+
+    // ============================================
+    // fp16 <-> fp32 conversion
+    // Manual bit-level conversion rather than relying on the native
+    // Float16Array constructor — that's still missing on some current
+    // iOS Safari versions, and this is the one browser we most need
+    // to work reliably.
+    // ============================================
+    function float32ToFloat16Bits(value) {
+        const floatView = new Float32Array(1);
+        const int32View = new Int32Array(floatView.buffer);
+        floatView[0] = value;
+        const x = int32View[0];
+
+        let bits = (x >> 16) & 0x8000; // sign
+        let m = (x >> 12) & 0x07ff;    // mantissa (11 bits incl. implicit leading bit region)
+        const e = (x >> 23) & 0xff;    // exponent
+
+        if (e >= 103) {
+            bits |= ((e - 112) << 10) & 0x7c00;
+            bits |= m >> 1;
+            // round to nearest even
+            bits += m & 1;
+        } else if (e >= 88 && e < 103) {
+            // subnormal fp16
+            m |= 0x0800;
+            bits |= (m >> (114 - e)) + ((m >> (113 - e)) & 1);
+        }
+        // else: too small -> flushes to zero (bits stays as sign only)
+
+        if (e === 255) {
+            // Inf / NaN
+            bits = ((x >> 16) & 0x8000) | 0x7c00 | (((x & 0x7fffff) !== 0) ? 0x0200 : 0);
+        }
+        return bits & 0xffff;
+    }
+
+    function float32ArrayToFloat16(arr) {
+        const out = new Uint16Array(arr.length);
+        for (let i = 0; i < arr.length; i++) out[i] = float32ToFloat16Bits(arr[i]);
+        return out;
+    }
+
+    function float16BitsToFloat32(h) {
+        const sign = (h & 0x8000) >> 15;
+        const exp = (h & 0x7c00) >> 10;
+        const frac = h & 0x03ff;
+        let value;
+        if (exp === 0) {
+            value = Math.pow(2, -14) * (frac / 1024);
+        } else if (exp === 0x1f) {
+            value = frac ? NaN : Infinity;
+        } else {
+            value = Math.pow(2, exp - 15) * (1 + frac / 1024);
+        }
+        return sign ? -value : value;
+    }
+
+    function float16ArrayToFloat32(uint16arr) {
+        const out = new Float32Array(uint16arr.length);
+        for (let i = 0; i < uint16arr.length; i++) out[i] = float16BitsToFloat32(uint16arr[i]);
+        return out;
+    }
+
+    // ============================================
+    // FFT — iterative radix-2 Cooley-Tukey, N=512 (power of two)
+    // Returns UNNORMALIZED power (re^2 + im^2) for bins 0..N/2.
+    // ============================================
+    function bitReverseTable(n) {
+        const bits = Math.log2(n);
+        const table = new Uint32Array(n);
+        for (let i = 0; i < n; i++) {
+            let x = i, r = 0;
+            for (let b = 0; b < bits; b++) { r = (r << 1) | (x & 1); x >>= 1; }
+            table[i] = r;
+        }
+        return table;
+    }
+    const FFT_REV = bitReverseTable(N_FFT);
+    // Precompute twiddle factors.
+    const FFT_COS = new Float64Array(N_FFT / 2);
+    const FFT_SIN = new Float64Array(N_FFT / 2);
+    for (let i = 0; i < N_FFT / 2; i++) {
+        const angle = -2 * Math.PI * i / N_FFT;
+        FFT_COS[i] = Math.cos(angle);
+        FFT_SIN[i] = Math.sin(angle);
+    }
+
+    function fftRealPower(frame /* Float32Array/Float64Array length N_FFT */, outPower /* Float32Array length 257, reused */) {
+        const re = new Float64Array(N_FFT);
+        const im = new Float64Array(N_FFT);
+        for (let i = 0; i < N_FFT; i++) re[i] = frame[FFT_REV[i]];
+
+        for (let size = 2; size <= N_FFT; size *= 2) {
+            const half = size / 2;
+            const step = N_FFT / size;
+            for (let start = 0; start < N_FFT; start += size) {
+                for (let k = 0; k < half; k++) {
+                    const twIdx = k * step;
+                    const c = FFT_COS[twIdx], s = FFT_SIN[twIdx];
+                    const aRe = re[start + k], aIm = im[start + k];
+                    const bRe = re[start + k + half], bIm = im[start + k + half];
+                    const tRe = bRe * c - bIm * s;
+                    const tIm = bRe * s + bIm * c;
+                    re[start + k] = aRe + tRe;
+                    im[start + k] = aIm + tIm;
+                    re[start + k + half] = aRe - tRe;
+                    im[start + k + half] = aIm - tIm;
+                }
+            }
+        }
+        for (let k = 0; k < N_FREQ_BINS; k++) {
+            outPower[k] = re[k] * re[k] + im[k] * im[k];
+        }
+        return outPower;
+    }
+
+    // ============================================
+    // Feature extraction: PCM (16kHz, Float32, -1..1) -> Koochik log-mel
+    // ============================================
+    function reflectIndex(i, length) {
+        if (length <= 1) return 0;
+        while (i < 0 || i >= length) {
+            if (i < 0) i = -i;
+            if (i >= length) i = 2 * length - i - 2;
+        }
+        return i;
+    }
+
+    const HANN = (function () {
+        const w = new Float64Array(WIN_LENGTH);
+        for (let i = 0; i < WIN_LENGTH; i++) {
+            w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (WIN_LENGTH - 1));
+        }
+        return w;
+    })();
+
+    function pcmToKoochikLogMel(pcm, melFilters) {
+        if (pcm.length > MAX_SAMPLES) pcm = pcm.subarray(pcm.length - MAX_SAMPLES);
+
+        const frameCount = Math.max(1, Math.min(FIXED_FRAMES, Math.floor(pcm.length / HOP_LENGTH) + 1));
+        const features = new Float32Array(N_MELS * FIXED_FRAMES);
+
+        const emphasized = new Float64Array(Math.max(1, pcm.length));
+        if (pcm.length > 0) emphasized[0] = pcm[0];
+        for (let i = 1; i < pcm.length; i++) emphasized[i] = pcm[i] - PREEMPHASIS * pcm[i - 1];
+
+        const frame = new Float64Array(N_FFT);
+        const power = new Float32Array(N_FREQ_BINS);
+
+        for (let t = 0; t < frameCount; t++) {
+            frame.fill(0);
+            const frameStart = t * HOP_LENGTH - CENTER_PAD;
+            for (let j = 0; j < N_FFT; j++) {
+                const winIndex = j - WINDOW_OFFSET;
+                if (winIndex < 0 || winIndex >= WIN_LENGTH) continue;
+                const src = reflectIndex(frameStart + j, emphasized.length);
+                frame[j] = emphasized[src] * HANN[winIndex];
+            }
+            fftRealPower(frame, power);
+            for (let m = 0; m < N_MELS; m++) {
+                const filter = melFilters[m];
+                let energy = 0;
+                for (let k = 0; k < N_FREQ_BINS; k++) energy += power[k] * filter[k];
+                features[m * FIXED_FRAMES + t] = Math.log(energy + LOG_ZERO_GUARD);
+            }
+        }
+        return { features: features, frameCount: frameCount };
+    }
+
+    // ============================================
+    // Greedy CTC decode
+    // ============================================
+    function isSpecialToken(token) {
+        return typeof token === 'string' && token.length >= 2 && token.charAt(0) === '<' && token.charAt(token.length - 1) === '>';
+    }
+
+    function decodeKoochikCtc(logitsF32, timeSteps, vocabSize, tokens, blankId) {
+        let previousId = -1;
+        const pieces = [];
+        for (let t = 0; t < timeSteps; t++) {
+            const base = t * vocabSize;
+            let bestId = 0, bestValue = -Infinity;
+            for (let id = 0; id < vocabSize; id++) {
+                const value = logitsF32[base + id];
+                if (value > bestValue) { bestValue = value; bestId = id; }
+            }
+            const piece = tokens[bestId] || '';
+            if (bestId !== blankId && bestId !== previousId && piece && !isSpecialToken(piece)) {
+                pieces.push(piece);
+            }
+            previousId = bestId;
+        }
+        return pieces.join('').split('\u2581').join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // ============================================
+    // Linear-interpolation resampler with cross-call phase continuity
+    // ============================================
+    function makeResampler(targetRate) {
+        let sourceRate = targetRate;
+        let phase = 0; // fractional position in source-sample units
+        let prevSample = 0;
+        return function resample(chunk, chunkSourceRate) {
+            sourceRate = chunkSourceRate || sourceRate;
+            if (sourceRate === targetRate) return chunk;
+            const ratio = sourceRate / targetRate;
+            const outLen = Math.floor((chunk.length - phase) / ratio);
+            if (outLen <= 0) { phase -= chunk.length; return new Float32Array(0); }
+            const out = new Float32Array(outLen);
+            let srcPos = phase;
+            for (let i = 0; i < outLen; i++) {
+                const idx = Math.floor(srcPos);
+                const frac = srcPos - idx;
+                const s0 = idx < 0 ? prevSample : chunk[idx];
+                const s1 = (idx + 1) < chunk.length ? chunk[idx + 1] : chunk[chunk.length - 1];
+                out[i] = s0 + (s1 - s0) * frac;
+                srcPos += ratio;
+            }
+            phase = srcPos - chunk.length;
+            prevSample = chunk[chunk.length - 1];
+            return out;
+        };
+    }
+
+    // ============================================
+    // Asset fetch + cache (mirrors the old Vosk model caching approach,
+    // simplified — Koochik's assets are fetched as three plain files
+    // rather than one tarball).
+    // ============================================
+    function fetchWithCache(url, cacheName, onProgress) {
+        function doFetch() {
+            return fetch(url).then(function (resp) {
+                if (!resp.ok) throw new Error('fetch-failed:' + url);
+                const total = parseInt(resp.headers.get('Content-Length') || '0', 10);
+                if (!resp.body || !total || !onProgress) return resp.arrayBuffer();
+                const reader = resp.body.getReader();
+                const chunks = [];
+                let received = 0;
+                return new Promise(function (resolve, reject) {
+                    function pump() {
+                        reader.read().then(function (result) {
+                            if (result.done) {
+                                const blob = new Blob(chunks);
+                                blob.arrayBuffer().then(resolve, reject);
+                                return;
+                            }
+                            chunks.push(result.value);
+                            received += result.value.length;
+                            onProgress({ loaded: received, total: total, url: url });
+                            pump();
+                        }).catch(reject);
+                    }
+                    pump();
+                });
+            });
+        }
+        if (!window.caches) return doFetch();
+        return caches.open(cacheName).then(function (cache) {
+            return cache.match(url).then(function (cached) {
+                if (cached) return cached.arrayBuffer();
+                return doFetch().then(function (buf) {
+                    try { cache.put(url, new Response(buf.slice(0))); } catch (e) { /* quota — non-fatal */ }
+                    return buf;
+                });
+            });
+        }).catch(doFetch);
+    }
+
+    // ============================================
+    // Public API
+    // ============================================
+    function load(config, onProgress) {
+        config = config || {};
+        const ortLibUrl = config.ortLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+        const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+        const cacheName = config.cacheName || 'foximed-koochik-model-v1';
+
+        return loadScriptOnce(ortLibUrl)
+            .then(function () {
+                if (!window.ort) throw new Error('ort-missing-after-load');
+                window.ort.env.wasm.wasmPaths = ortWasmBaseUrl;
+            })
+            .then(function () {
+                return Promise.all([
+                    fetchWithCache(config.modelUrl, cacheName, onProgress ? function (p) { onProgress(Object.assign({ asset: 'model' }, p)); } : null),
+                    fetch(config.tokensUrl).then(function (r) { return r.json(); }),
+                    fetch(config.melFiltersUrl).then(function (r) { return r.json(); })
+                ]);
+            })
+            .then(function (results) {
+                const modelBuffer = results[0];
+                let tokens = results[1];
+                const melFilters = results[2];
+                if (tokens && !Array.isArray(tokens) && typeof tokens === 'object') {
+                    // Support a {"0": "...", "1": "..."} map shape too.
+                    const arr = [];
+                    Object.keys(tokens).forEach(function (k) { arr[parseInt(k, 10)] = tokens[k]; });
+                    tokens = arr;
+                }
+                return window.ort.InferenceSession.create(modelBuffer, {
+                    executionProviders: ['wasm']
+                }).then(function (session) {
+                    return makeEngine(session, tokens, melFilters);
+                });
+            });
+    }
+
+    function makeEngine(session, tokens, melFilters) {
+        const resample = makeResampler(SAMPLE_RATE);
+        let chunks = [];
+        let totalLen = 0;
+
+        function trim() {
+            if (totalLen <= MAX_SAMPLES) return;
+            // Drop oldest chunks until we're back under the cap — only the
+            // trailing MAX_SAMPLES matter to the model anyway.
+            while (chunks.length > 1 && (totalLen - chunks[0].length) >= MAX_SAMPLES) {
+                totalLen -= chunks[0].length;
+                chunks.shift();
+            }
+        }
+
+        function materialize() {
+            const out = new Float32Array(totalLen);
+            let offset = 0;
+            for (let i = 0; i < chunks.length; i++) { out.set(chunks[i], offset); offset += chunks[i].length; }
+            return out;
+        }
+
+        return {
+            feed: function (float32Samples, sourceSampleRate) {
+                const resampled = resample(float32Samples, sourceSampleRate || SAMPLE_RATE);
+                if (resampled.length) {
+                    chunks.push(resampled);
+                    totalLen += resampled.length;
+                    trim();
+                }
+            },
+            reset: function () { chunks = []; totalLen = 0; },
+            bufferedSeconds: function () { return totalLen / SAMPLE_RATE; },
+            decode: function () {
+                if (totalLen === 0) return Promise.resolve('');
+                const pcm = materialize();
+                const { features, frameCount } = pcmToKoochikLogMel(pcm, melFilters);
+                const processedSignal = new window.ort.Tensor('float16', float32ArrayToFloat16(features), [1, N_MELS, FIXED_FRAMES]);
+                const processedSignalLength = new window.ort.Tensor('int64', BigInt64Array.from([BigInt(frameCount)]), [1]);
+                return session.run({
+                    processed_signal: processedSignal,
+                    processed_signal_length: processedSignalLength
+                }).then(function (result) {
+                    const logits = result.logits;
+                    const logitsF32 = float16ArrayToFloat32(logits.data);
+                    const vocabSize = logits.dims[2] || VOCAB_SIZE;
+                    let usableSteps = logits.dims[1] || Math.ceil(frameCount / 8);
+                    if (result.encoded_lengths) {
+                        const el = Number(result.encoded_lengths.data[0]);
+                        if (el > 0) usableSteps = Math.min(usableSteps, el);
+                    }
+                    return decodeKoochikCtc(logitsF32, usableSteps, vocabSize, tokens, BLANK_ID);
+                });
+            },
+            destroy: function () {
+                chunks = []; totalLen = 0;
+                try { session.release && session.release(); } catch (e) {}
+            }
+        };
+    }
+
+    window.KoochikASR = { load: load };
+})(window);
