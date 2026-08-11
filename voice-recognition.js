@@ -593,6 +593,7 @@
                 }
 
                 const info = (err && err.code) ? err : classifyError('koochik-model-failed');
+                if (!info.silent) console.error('[KoochikASR] engine load failed:', err);
                 if (generation === koochikLoadGeneration) {
                     koochikFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 }
@@ -687,6 +688,8 @@
     // so "streaming" here means re-running the (very fast, ~10ms) forward
     // pass on the growing buffer at a modest interval. Skips overlapping
     // itself if a decode is still in flight.
+    let koochikConsecutiveDecodeFailures = 0;
+
     function schedulePartialDecode(engine) {
         if (koochikPartialTimer) clearTimeout(koochikPartialTimer);
         koochikPartialTimer = setTimeout(function () {
@@ -700,16 +703,35 @@
             koochikDecodePromise.then(function (text) {
                 koochikDecodeInFlight = false;
                 koochikDecodePromise = null;
+                koochikConsecutiveDecodeFailures = 0;
                 if (!koochikActive || koochikStopping) return;
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
                     emit('interim', text);
                 }
                 schedulePartialDecode(engine);
-            }).catch(function () {
+            }).catch(function (err) {
                 koochikDecodeInFlight = false;
                 koochikDecodePromise = null;
-                if (koochikActive && !koochikStopping) schedulePartialDecode(engine);
+                // This was previously swallowed with no logging at all — if
+                // decode is failing on every call (a shape mismatch, an
+                // unsupported fp16 op on the wasm backend, etc.), the old
+                // behavior looked EXACTLY like "recognized nothing, no
+                // error, just silence" from the user's side, because it
+                // retried forever without ever telling anyone why. Surface
+                // it now: always to the console (so it's diagnosable from
+                // devtools), and to the UI after a few repeats in a row so
+                // it isn't just a single transient hiccup.
+                console.error('[KoochikASR] decode failed:', err);
+                koochikConsecutiveDecodeFailures++;
+                if (koochikActive && !koochikStopping) {
+                    if (koochikConsecutiveDecodeFailures >= 3) {
+                        emit('error', classifyError('koochik-runtime'));
+                        stopKoochik();
+                        return;
+                    }
+                    schedulePartialDecode(engine);
+                }
             });
         }, KOOCHIK_PARTIAL_INTERVAL_MS);
     }
@@ -802,7 +824,8 @@
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 if (text && text.trim()) emit('final', text.trim());
                 finishKoochik();
-            }).catch(function () {
+            }).catch(function (err) {
+                console.error('[KoochikASR] final decode failed:', err);
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 finishKoochik();
             });
