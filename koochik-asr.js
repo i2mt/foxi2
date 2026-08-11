@@ -79,65 +79,88 @@
 
     // ============================================
     // fp16 <-> fp32 conversion
-    // Manual bit-level conversion rather than relying on the native
-    // Float16Array constructor — that's still missing on some current
-    // iOS Safari versions, and this is the one browser we most need
-    // to work reliably.
     // ============================================
+    // IMPORTANT: do NOT install a Float16Array ponyfill globally before
+    // loading ORT. onnxruntime-web 1.19.x historically represents fp16
+    // CPU data as raw Uint16Array bits on browsers without native
+    // Float16Array; modern browsers may expose a real Float16Array.
+    // Handle both representations explicitly.
+    const F32_VIEW = new Float32Array(1);
+    const U32_VIEW = new Uint32Array(F32_VIEW.buffer);
+
     function float32ToFloat16Bits(value) {
-        const floatView = new Float32Array(1);
-        const int32View = new Int32Array(floatView.buffer);
-        floatView[0] = value;
-        const x = int32View[0];
+        F32_VIEW[0] = value;
+        const x = U32_VIEW[0];
+        const sign = (x >>> 16) & 0x8000;
+        let mantissa = (x >>> 12) & 0x07ff;
+        const exponent = (x >>> 23) & 0xff;
 
-        let bits = (x >> 16) & 0x8000; // sign
-        let m = (x >> 12) & 0x07ff;    // mantissa (11 bits incl. implicit leading bit region)
-        const e = (x >> 23) & 0xff;    // exponent
+        // Too small for fp16 (including tiny subnormals).
+        if (exponent < 103) return sign;
 
-        if (e >= 103) {
-            bits |= ((e - 112) << 10) & 0x7c00;
-            bits |= m >> 1;
-            // round to nearest even
-            bits += m & 1;
-        } else if (e >= 88 && e < 103) {
-            // subnormal fp16
-            m |= 0x0800;
-            bits |= (m >> (114 - e)) + ((m >> (113 - e)) & 1);
+        // Inf / NaN / overflow.
+        if (exponent > 142) {
+            if (exponent === 255 && (x & 0x007fffff)) return sign | 0x7e00;
+            return sign | 0x7c00;
         }
-        // else: too small -> flushes to zero (bits stays as sign only)
 
-        if (e === 255) {
-            // Inf / NaN
-            bits = ((x >> 16) & 0x8000) | 0x7c00 | (((x & 0x7fffff) !== 0) ? 0x0200 : 0);
+        // fp16 subnormal.
+        if (exponent < 113) {
+            mantissa |= 0x0800;
+            return sign | ((mantissa >>> (114 - exponent)) + ((mantissa >>> (113 - exponent)) & 1));
         }
-        return bits & 0xffff;
+
+        // Normal fp16, round-to-nearest-even.
+        let out = sign | ((exponent - 112) << 10) | (mantissa >>> 1);
+        out += mantissa & 1;
+        return out & 0xffff;
     }
 
-    function float32ArrayToFloat16(arr) {
+    function float32ArrayToFloat16Bits(arr) {
         const out = new Uint16Array(arr.length);
         for (let i = 0; i < arr.length; i++) out[i] = float32ToFloat16Bits(arr[i]);
         return out;
     }
 
     function float16BitsToFloat32(h) {
-        const sign = (h & 0x8000) >> 15;
-        const exp = (h & 0x7c00) >> 10;
+        const sign = (h & 0x8000) ? -1 : 1;
+        const exp = (h >>> 10) & 0x1f;
         const frac = h & 0x03ff;
-        let value;
-        if (exp === 0) {
-            value = Math.pow(2, -14) * (frac / 1024);
-        } else if (exp === 0x1f) {
-            value = frac ? NaN : Infinity;
-        } else {
-            value = Math.pow(2, exp - 15) * (1 + frac / 1024);
-        }
-        return sign ? -value : value;
+        if (exp === 0) return sign * Math.pow(2, -14) * (frac / 1024);
+        if (exp === 0x1f) return frac ? NaN : sign * Infinity;
+        return sign * Math.pow(2, exp - 15) * (1 + frac / 1024);
     }
 
-    function float16ArrayToFloat32(uint16arr) {
-        const out = new Float32Array(uint16arr.length);
-        for (let i = 0; i < uint16arr.length; i++) out[i] = float16BitsToFloat32(uint16arr[i]);
+    function float16BitsArrayToFloat32(arr) {
+        const out = new Float32Array(arr.length);
+        for (let i = 0; i < arr.length; i++) out[i] = float16BitsToFloat32(arr[i]);
         return out;
+    }
+
+    function makeOrtFloat16Input(arr) {
+        // Let ORT see the browser's REAL native Float16Array if available.
+        // Otherwise ORT 1.19.x uses Uint16Array as the fp16 bit container.
+        if (typeof window.Float16Array === 'function') {
+            return new window.Float16Array(arr);
+        }
+        return float32ArrayToFloat16Bits(arr);
+    }
+
+    function ortFloat16OutputToFloat32(data) {
+        if (!data) throw new Error('missing-koochik-logits-data');
+
+        // Native Float16Array yields numeric fp16 values when iterated.
+        if (typeof window.Float16Array === 'function' && data instanceof window.Float16Array) {
+            return Float32Array.from(data);
+        }
+
+        // Historical ORT-Web representation: raw IEEE-754 half bits.
+        if (data instanceof Uint16Array) {
+            return float16BitsArrayToFloat32(data);
+        }
+
+        // Defensive fallback for a future ORT representation.
+        return Float32Array.from(data);
     }
 
     // ============================================
@@ -256,6 +279,10 @@
     function decodeKoochikCtc(logitsF32, timeSteps, vocabSize, tokens, blankId) {
         let previousId = -1;
         const pieces = [];
+        // TEMPORARY diagnostic tally — remove once real speech comes
+        // through.
+        let blankCount = 0, nonBlankCount = 0, emptyPieceCount = 0, specialCount = 0;
+        const idCounts = new Map();
         for (let t = 0; t < timeSteps; t++) {
             const base = t * vocabSize;
             let bestId = 0, bestValue = -Infinity;
@@ -263,11 +290,20 @@
                 const value = logitsF32[base + id];
                 if (value > bestValue) { bestValue = value; bestId = id; }
             }
+            if (bestId === blankId) blankCount++; else nonBlankCount++;
+            idCounts.set(bestId, (idCounts.get(bestId) || 0) + 1);
             const piece = tokens[bestId] || '';
+            if (bestId !== blankId && !piece) emptyPieceCount++;
+            if (bestId !== blankId && piece && isSpecialToken(piece)) specialCount++;
             if (bestId !== blankId && bestId !== previousId && piece && !isSpecialToken(piece)) {
                 pieces.push(piece);
             }
             previousId = bestId;
+        }
+        if (typeof console !== 'undefined' && console.log) {
+            const topIds = Array.from(idCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5)
+                .map(function (x) { return x[0] + ':' + JSON.stringify(tokens[x[0]] || '') + '×' + x[1]; }).join(', ');
+            console.log('[KoochikASR] ctc tally: timeSteps=', timeSteps, '| blank=', blankCount, '| nonBlank=', nonBlankCount, '| unmapped=', emptyPieceCount, '| special(<...>)=', specialCount, '| top=', topIds);
         }
         return pieces.join('').split('\u2581').join(' ').replace(/\s+/g, ' ').trim();
     }
@@ -484,6 +520,17 @@
                     }
                 }
 
+                // TEMPORARY diagnostic — sanity-check what actually got
+                // loaded. tokens[blankId] should read something like
+                // "<blank>"; tokens[0] is usually a real token, not empty.
+                // If blankId looks wrong or tokens are mostly empty
+                // strings, the tokens.json shape assumption above is wrong
+                // for this file and needs adjusting.
+                console.log('[KoochikASR] loaded: tokens.length=', tokens.length,
+                    '| blankId=', blankId, '| tokens[blankId]=', JSON.stringify(tokens[blankId]),
+                    '| tokens[0..4]=', JSON.stringify(tokens.slice(0, 5)),
+                    '| melFilters=', melFilters.length + 'x' + (melFilters[0] ? melFilters[0].length : '?'));
+
                 return window.ort.InferenceSession.create(modelBuffer, {
                     executionProviders: ['wasm']
                 }).then(function (session) {
@@ -533,14 +580,42 @@
                 if (totalLen === 0) return Promise.resolve('');
                 const pcm = materialize();
                 const { features, frameCount } = pcmToKoochikLogMel(pcm, melFilters);
-                const processedSignal = new window.ort.Tensor('float16', float32ArrayToFloat16(features), [1, N_MELS, FIXED_FRAMES]);
+
+                // TEMP diagnostic: proves microphone scale and preprocessing range
+                // without modifying either. Web Audio PCM should naturally be -1..1.
+                let pcmPeak = 0, pcmSq = 0;
+                for (let i = 0; i < pcm.length; i++) {
+                    const a = Math.abs(pcm[i]);
+                    if (a > pcmPeak) pcmPeak = a;
+                    pcmSq += pcm[i] * pcm[i];
+                }
+                let fMin = Infinity, fMax = -Infinity, fSum = 0, fN = 0;
+                for (let m = 0; m < N_MELS; m++) {
+                    const base = m * FIXED_FRAMES;
+                    for (let t = 0; t < frameCount; t++) {
+                        const v = features[base + t];
+                        if (v < fMin) fMin = v;
+                        if (v > fMax) fMax = v;
+                        fSum += v; fN++;
+                    }
+                }
+                console.log('[KoochikASR] input stats: pcmPeak=', pcmPeak.toFixed(4),
+                    '| pcmRms=', Math.sqrt(pcmSq / Math.max(1, pcm.length)).toFixed(4),
+                    '| featMin=', fMin.toFixed(3), '| featMax=', fMax.toFixed(3),
+                    '| featMean=', (fSum / Math.max(1, fN)).toFixed(3), '| frames=', frameCount);
+
+                const fp16Input = makeOrtFloat16Input(features);
+                console.log('[KoochikASR] fp16 input container=', fp16Input && fp16Input.constructor ? fp16Input.constructor.name : typeof fp16Input);
+                const processedSignal = new window.ort.Tensor('float16', fp16Input, [1, N_MELS, FIXED_FRAMES]);
                 const processedSignalLength = new window.ort.Tensor('int64', BigInt64Array.from([BigInt(frameCount)]), [1]);
                 return session.run({
                     processed_signal: processedSignal,
                     processed_signal_length: processedSignalLength
                 }).then(function (result) {
                     const logits = result.logits;
-                    const logitsF32 = float16ArrayToFloat32(logits.data);
+                    console.log('[KoochikASR] logits container=', logits.data && logits.data.constructor ? logits.data.constructor.name : typeof logits.data,
+                        '| type=', logits.type, '| dims=', logits.dims ? logits.dims.join('x') : '?');
+                    const logitsF32 = ortFloat16OutputToFloat32(logits.data);
                     const vocabSize = logits.dims[2] || VOCAB_SIZE;
                     let usableSteps = logits.dims[1] || Math.ceil(frameCount / 8);
                     if (result.encoded_lengths) {
