@@ -88,7 +88,14 @@
     const AUDIO_LEVEL_THROTTLE_MS = 125;
     const KOOCHIK_SILENCE_FINALIZE_MS = 900;
     const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
-    const KOOCHIK_MIN_SPEECH_RMS = 0.008;
+    const KOOCHIK_MIN_SPEECH_RMS = 0.010;
+    // Start with a realistic mobile-mic background floor instead of an
+    // ultra-low value.  With the old 0.004 seed, ordinary phone-room
+    // noise around RMS 0.02-0.03 was immediately classified as speech
+    // forever, so silence finalization never fired.
+    const KOOCHIK_INITIAL_NOISE_FLOOR = 0.015;
+    const KOOCHIK_NOISE_RATIO = 2.2;
+    const KOOCHIK_NOISE_MARGIN = 0.006;
 
     function koochikConfigured() { return !!(KOOCHIK_MODEL_URL && KOOCHIK_TOKENS_URL && KOOCHIK_MEL_FILTERS_URL); }
 
@@ -282,7 +289,7 @@
     let koochikStopping = false;
     let koochikSpeechSeen = false;
     let koochikLastVoiceAt = 0;
-    let koochikNoiseFloor = 0.004;
+    let koochikNoiseFloor = KOOCHIK_INITIAL_NOISE_FLOOR;
     let koochikLoadAbortController = null;
     let koochikLoadGeneration = 0;
     let triedKoochikFallback = false; // reset at the start of each fresh start() call
@@ -631,7 +638,7 @@
             koochikStopping = false;
             koochikSpeechSeen = false;
             koochikLastVoiceAt = 0;
-            koochikNoiseFloor = 0.004;
+            koochikNoiseFloor = KOOCHIK_INITIAL_NOISE_FLOOR;
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
@@ -753,6 +760,15 @@
                 // wiring problem.
                 console.log('[KoochikASR] decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (!koochikActive || koochikStopping) return;
+                if (text && text.trim()) {
+                    // A non-empty CTC result is stronger evidence that the
+                    // user actually spoke than a raw RMS threshold alone.
+                    // This also lets quiet speakers transition into the
+                    // silence-finalization path even if their mic level never
+                    // crossed the conservative initial VAD threshold.
+                    koochikSpeechSeen = true;
+                    koochikLastVoiceAt = Date.now();
+                }
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
                     emit('interim', text);
@@ -811,17 +827,33 @@
         for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
         const rms = Math.sqrt(sumSq / samples.length);
         const now = Date.now();
-        const threshold = Math.max(KOOCHIK_MIN_SPEECH_RMS, koochikNoiseFloor * 2.5);
+        // The previous implementation seeded noiseFloor at 0.004 and
+        // used noiseFloor*2.5.  On real phones an idle RMS around 0.02-0.03
+        // then looked like speech from the very first callback, so the floor
+        // could never adapt upward and the utterance ran all the way to the
+        // 20-second model cap.  Seed near a realistic mobile floor and use
+        // both a ratio and an absolute margin.
+        const threshold = Math.max(
+            KOOCHIK_MIN_SPEECH_RMS,
+            koochikNoiseFloor * KOOCHIK_NOISE_RATIO,
+            koochikNoiseFloor + KOOCHIK_NOISE_MARGIN
+        );
 
         if (rms >= threshold) {
             koochikSpeechSeen = true;
             koochikLastVoiceAt = now;
         } else {
-            // Track background noise only while this block looks non-speech.
-            // The slow adaptation keeps the threshold useful across quiet
-            // rooms and noisier mobile microphones without a fixed dB guess.
-            koochikNoiseFloor = Math.max(0.001, Math.min(0.03, koochikNoiseFloor * 0.97 + rms * 0.03));
+            // Adapt more quickly before/after speech so ordinary room noise
+            // becomes the baseline instead of being mistaken for speech.
+            const alpha = koochikSpeechSeen ? 0.04 : 0.10;
+            koochikNoiseFloor = Math.max(
+                0.001,
+                Math.min(0.04, koochikNoiseFloor * (1 - alpha) + rms * alpha)
+            );
             if (koochikSpeechSeen && koochikLastVoiceAt && (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS) {
+                console.log('[KoochikASR] VAD silence finalize:',
+                    'rms=', rms.toFixed(4), '| noiseFloor=', koochikNoiseFloor.toFixed(4),
+                    '| threshold=', threshold.toFixed(4));
                 stopKoochik();
             }
         }
@@ -864,16 +896,25 @@
                 ? koochikDecodePromise.catch(function () { return ''; })
                 : Promise.resolve('');
 
+            // Preserve the last known-good partial before the final pass.
+            // A fixed-window CTC model can legitimately return all blanks if
+            // the final window is dominated by trailing silence/noise.  We
+            // must not throw away text the model already recognized correctly.
+            const lastGoodPartial = (koochikLastEmitted || '').trim();
+
             waitForPartial.then(function () {
                 if (!koochikStopping || !engine) return '';
                 return engine.decode();
             }).then(function (text) {
                 if (!koochikStopping) return;
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
-                // TEMPORARY diagnostic — same as the partial-decode log,
-                // for the final decode specifically.
-                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
-                if (text && text.trim()) emit('final', text.trim());
+                const decodedFinal = (text || '').trim();
+                const finalText = decodedFinal || lastGoodPartial;
+                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(decodedFinal),
+                    '| fallback=', JSON.stringify(lastGoodPartial),
+                    '| emitted=', JSON.stringify(finalText),
+                    '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
+                if (finalText) emit('final', finalText);
                 finishKoochik();
             }).catch(function (err) {
                 console.error('[KoochikASR] final decode failed:', err);
