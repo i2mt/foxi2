@@ -86,7 +86,12 @@
     // reference it, so it needs to live at module scope, not inside
     // either backend section.
     const AUDIO_LEVEL_THROTTLE_MS = 125;
-    const KOOCHIK_SILENCE_FINALIZE_MS = 900;
+    const KOOCHIK_SILENCE_FINALIZE_MS = 1500;
+    // Do not finalize very short buffers even if VAD sees silence. The model's
+    // FastConformer export has right attention context [70,13] and 8x time
+    // reduction; a word near the end of a ~1 s clip can therefore still need
+    // roughly another second of future/context audio before CTC emits it.
+    const KOOCHIK_MIN_FINAL_BUFFER_MS = 2400;
     const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
     const KOOCHIK_MIN_SPEECH_RMS = 0.010;
     // Start with a realistic mobile-mic background floor instead of an
@@ -850,10 +855,15 @@
                 0.001,
                 Math.min(0.04, koochikNoiseFloor * (1 - alpha) + rms * alpha)
             );
-            if (koochikSpeechSeen && koochikLastVoiceAt && (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS) {
+            const bufferedMs = koochikEngine ? (koochikEngine.bufferedSeconds() * 1000) : 0;
+            if (koochikSpeechSeen && koochikLastVoiceAt &&
+                (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS &&
+                bufferedMs >= KOOCHIK_MIN_FINAL_BUFFER_MS) {
                 console.log('[KoochikASR] VAD silence finalize:',
                     'rms=', rms.toFixed(4), '| noiseFloor=', koochikNoiseFloor.toFixed(4),
-                    '| threshold=', threshold.toFixed(4));
+                    '| threshold=', threshold.toFixed(4),
+                    '| trailingSilenceMs=', (now - koochikLastVoiceAt),
+                    '| bufferedSeconds=', (bufferedMs / 1000).toFixed(2));
                 stopKoochik();
             }
         }
