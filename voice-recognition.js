@@ -79,6 +79,13 @@
     // browser demo uses. Kept modest since each decode is ~10ms of
     // compute but there's still buffer-materialization overhead.
     const KOOCHIK_PARTIAL_INTERVAL_MS = 700;
+    // Shared by both backends' audio-level metering (used to throttle how
+    // often the 'audio' visualizer event fires). This lived inside the old
+    // Vosk backend block and got dropped when that block was replaced —
+    // both startWebSpeech()'s and startKoochik()'s meter functions
+    // reference it, so it needs to live at module scope, not inside
+    // either backend section.
+    const AUDIO_LEVEL_THROTTLE_MS = 125;
     const KOOCHIK_SILENCE_FINALIZE_MS = 900;
     const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
     const KOOCHIK_MIN_SPEECH_RMS = 0.008;
