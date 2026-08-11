@@ -666,7 +666,22 @@
                             }
                         }
                     } catch (e) {
-                        emit('error', classifyError('koochik-runtime'));
+                        // This was firing silently on every single audio
+                        // callback (every ~85-100ms) with no logging at all
+                        // — if engine.feed()/updateKoochikVad() throws
+                        // synchronously, THIS is the actual failure path,
+                        // not the decode-polling one I instrumented earlier.
+                        // It also never stopped the session, so a
+                        // persistent bug here fired repeatedly on every
+                        // subsequent buffer forever — very plausibly what
+                        // "the app freezes" actually was (the UI thrashing
+                        // on a flood of error events, not a real hang).
+                        // Log once, stop cleanly, and don't let it repeat.
+                        if (!koochikStopping) {
+                            console.error('[KoochikASR] onaudioprocess failed:', e);
+                            emit('error', classifyError('koochik-runtime'));
+                            stopKoochik();
+                        }
                     }
                     emitKoochikAudioLevel(event.inputBuffer);
                 };
