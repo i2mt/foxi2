@@ -744,6 +744,14 @@
                 koochikDecodeInFlight = false;
                 koochikDecodePromise = null;
                 koochikConsecutiveDecodeFailures = 0;
+                // TEMPORARY diagnostic — remove once real speech comes
+                // through. Logs every decode result, including empty
+                // ones, plus how much audio was buffered for it. If this
+                // always prints an empty string, the model/tokens are
+                // running without crashing but never producing non-blank
+                // output — that's a features/tokens data problem, not a
+                // wiring problem.
+                console.log('[KoochikASR] decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (!koochikActive || koochikStopping) return;
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
