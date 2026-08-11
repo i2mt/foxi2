@@ -870,6 +870,9 @@
             }).then(function (text) {
                 if (!koochikStopping) return;
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
+                // TEMPORARY diagnostic — same as the partial-decode log,
+                // for the final decode specifically.
+                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (text && text.trim()) emit('final', text.trim());
                 finishKoochik();
             }).catch(function (err) {
