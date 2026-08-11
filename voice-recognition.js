@@ -653,6 +653,17 @@
                 // to reliably fire in every browser.
                 koochikProcessor = koochikAudioCtx.createScriptProcessor(4096, 1, 1);
                 const streamStartTime = Date.now();
+                // Capture this session's AudioContext into a local const
+                // rather than reading the shared, mutable koochikAudioCtx
+                // variable inside the closure below. That outer variable
+                // gets set to null by finishKoochik() on teardown — if a
+                // stale callback from this (or, worse, an improperly torn
+                // down PREVIOUS) session fires after that, reading the
+                // shared variable throws exactly the null-dereference seen
+                // in testing. Reading this local capture instead makes the
+                // handler immune to that regardless of what else is
+                // happening to shared state.
+                const sessionAudioCtx = koochikAudioCtx;
                 koochikProcessor.onaudioprocess = function (event) {
                     try {
                         // Same 350ms warm-up guard as the old Vosk path —
@@ -661,10 +672,18 @@
                         if (Date.now() - streamStartTime >= 350) {
                             const samples = event.inputBuffer.getChannelData(0);
                             if (!koochikStopping) {
-                                engine.feed(samples, koochikAudioCtx.sampleRate);
+                                engine.feed(samples, sessionAudioCtx.sampleRate);
                                 updateKoochikVad(samples);
                             }
                         }
+                        // Moved inside the try — this was previously called
+                        // OUTSIDE the try/catch entirely, so any exception
+                        // in it (like the earlier missing-constant bug)
+                        // went fully uncaught, skipped stopKoochik()/
+                        // finishKoochik() teardown completely, and left
+                        // this exact processor+context still connected and
+                        // firing on every subsequent audio buffer forever.
+                        emitKoochikAudioLevel(event.inputBuffer);
                     } catch (e) {
                         // This was firing silently on every single audio
                         // callback (every ~85-100ms) with no logging at all
@@ -683,7 +702,6 @@
                             stopKoochik();
                         }
                     }
-                    emitKoochikAudioLevel(event.inputBuffer);
                 };
                 koochikSource.connect(koochikProcessor);
                 koochikProcessor.connect(koochikAudioCtx.destination);
@@ -866,7 +884,11 @@
         koochikDecodePromise = null;
         koochikSpeechSeen = false;
         koochikLastVoiceAt = 0;
-        if (koochikProcessor) { try { koochikProcessor.disconnect(); } catch (e) {} koochikProcessor = null; }
+        if (koochikProcessor) {
+            koochikProcessor.onaudioprocess = null; // belt-and-suspenders: guarantees no further callback fires even if disconnect() has any latency
+            try { koochikProcessor.disconnect(); } catch (e) {}
+            koochikProcessor = null;
+        }
         if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
         if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
         if (koochikStream) { try { koochikStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} koochikStream = null; }
