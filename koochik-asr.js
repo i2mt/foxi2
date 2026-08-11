@@ -78,66 +78,30 @@
     }
 
     // ============================================
-    // fp16 <-> fp32 conversion
-    // Manual bit-level conversion rather than relying on the native
-    // Float16Array constructor — that's still missing on some current
-    // iOS Safari versions, and this is the one browser we most need
-    // to work reliably.
+    // fp16 support
     // ============================================
-    function float32ToFloat16Bits(value) {
-        const floatView = new Float32Array(1);
-        const int32View = new Int32Array(floatView.buffer);
-        floatView[0] = value;
-        const x = int32View[0];
-
-        let bits = (x >> 16) & 0x8000; // sign
-        let m = (x >> 12) & 0x07ff;    // mantissa (11 bits incl. implicit leading bit region)
-        const e = (x >> 23) & 0xff;    // exponent
-
-        if (e >= 103) {
-            bits |= ((e - 112) << 10) & 0x7c00;
-            bits |= m >> 1;
-            // round to nearest even
-            bits += m & 1;
-        } else if (e >= 88 && e < 103) {
-            // subnormal fp16
-            m |= 0x0800;
-            bits |= (m >> (114 - e)) + ((m >> (113 - e)) & 1);
-        }
-        // else: too small -> flushes to zero (bits stays as sign only)
-
-        if (e === 255) {
-            // Inf / NaN
-            bits = ((x >> 16) & 0x8000) | 0x7c00 | (((x & 0x7fffff) !== 0) ? 0x0200 : 0);
-        }
-        return bits & 0xffff;
-    }
-
-    function float32ArrayToFloat16(arr) {
-        const out = new Uint16Array(arr.length);
-        for (let i = 0; i < arr.length; i++) out[i] = float32ToFloat16Bits(arr[i]);
-        return out;
-    }
-
-    function float16BitsToFloat32(h) {
-        const sign = (h & 0x8000) >> 15;
-        const exp = (h & 0x7c00) >> 10;
-        const frac = h & 0x03ff;
-        let value;
-        if (exp === 0) {
-            value = Math.pow(2, -14) * (frac / 1024);
-        } else if (exp === 0x1f) {
-            value = frac ? NaN : Infinity;
-        } else {
-            value = Math.pow(2, exp - 15) * (1 + frac / 1024);
-        }
-        return sign ? -value : value;
-    }
-
-    function float16ArrayToFloat32(uint16arr) {
-        const out = new Float32Array(uint16arr.length);
-        for (let i = 0; i < uint16arr.length; i++) out[i] = float16BitsToFloat32(uint16arr[i]);
-        return out;
+    // Float16Array is a very new JS builtin (Baseline "newly available"
+    // only since ~April 2025) — onnxruntime-web now strictly requires
+    // actual Float16Array instances for 'float16' tensors (a Uint16Array
+    // of raw fp16 bits, which used to be an accepted workaround, is now
+    // rejected outright: "A float16 tensor's data must be type of
+    // function Float16Array()"). Since our whole reason for being here is
+    // iOS/older-device support, we can't assume it exists natively, so we
+    // load a small ponyfill and — critically — install it as the GLOBAL
+    // window.Float16Array BEFORE onnxruntime-web itself loads. ORT reads
+    // "Float16Array" as a bare global reference when its own module code
+    // first runs, so the polyfill has to be in place before that, not
+    // just before we construct a tensor.
+    function ensureFloat16Global() {
+        if (typeof window.Float16Array === 'function') return Promise.resolve();
+        return loadScriptOnce('https://cdn.jsdelivr.net/npm/@petamoriken/float16/browser/float16.min.js')
+            .then(function () {
+                if (window.float16 && window.float16.Float16Array) {
+                    window.Float16Array = window.float16.Float16Array;
+                } else {
+                    throw new Error('float16-polyfill-failed');
+                }
+            });
     }
 
     // ============================================
@@ -420,7 +384,10 @@
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
         const signal = config.signal || null;
 
-        return loadScriptOnce(ortLibUrl)
+        return ensureFloat16Global()
+            .then(function () {
+                return loadScriptOnce(ortLibUrl);
+            })
             .then(function () {
                 if (signal && signal.aborted) throw abortError();
                 if (!window.ort) throw new Error('ort-missing-after-load');
@@ -533,14 +500,14 @@
                 if (totalLen === 0) return Promise.resolve('');
                 const pcm = materialize();
                 const { features, frameCount } = pcmToKoochikLogMel(pcm, melFilters);
-                const processedSignal = new window.ort.Tensor('float16', float32ArrayToFloat16(features), [1, N_MELS, FIXED_FRAMES]);
+                const processedSignal = new window.ort.Tensor('float16', new window.Float16Array(features), [1, N_MELS, FIXED_FRAMES]);
                 const processedSignalLength = new window.ort.Tensor('int64', BigInt64Array.from([BigInt(frameCount)]), [1]);
                 return session.run({
                     processed_signal: processedSignal,
                     processed_signal_length: processedSignalLength
                 }).then(function (result) {
                     const logits = result.logits;
-                    const logitsF32 = float16ArrayToFloat32(logits.data);
+                    const logitsF32 = new Float32Array(logits.data);
                     const vocabSize = logits.dims[2] || VOCAB_SIZE;
                     let usableSteps = logits.dims[1] || Math.ceil(frameCount / 8);
                     if (result.encoded_lengths) {
