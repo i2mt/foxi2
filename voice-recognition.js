@@ -79,16 +79,10 @@
     // browser demo uses. Kept modest since each decode is ~10ms of
     // compute but there's still buffer-materialization overhead.
     const KOOCHIK_PARTIAL_INTERVAL_MS = 700;
-    // Shared by both backends' audio-level metering (used to throttle how
-    // often the 'audio' visualizer event fires). This lived inside the old
-    // Vosk backend block and got dropped when that block was replaced —
-    // both startWebSpeech()'s and startKoochik()'s meter functions
-    // reference it, so it needs to live at module scope, not inside
-    // either backend section.
-    const AUDIO_LEVEL_THROTTLE_MS = 125;
     const KOOCHIK_SILENCE_FINALIZE_MS = 900;
     const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
     const KOOCHIK_MIN_SPEECH_RMS = 0.008;
+    const AUDIO_LEVEL_THROTTLE_MS = 80; // UI meter update rate (~12.5 fps)
 
     function koochikConfigured() { return !!(KOOCHIK_MODEL_URL && KOOCHIK_TOKENS_URL && KOOCHIK_MEL_FILTERS_URL); }
 
@@ -240,6 +234,11 @@
                 code: 'koochik-runtime',
                 title: 'خطا در تشخیص گفتار آفلاین',
                 message: 'مشکلی در پردازش صدا رخ داد. دوباره تلاش کنید یا دستور را تایپ کنید.'
+            },
+            'koochik-audio-suspended': {
+                code: 'koochik-audio-suspended',
+                title: 'دریافت صدا شروع نشد',
+                message: 'مرورگر اجازهٔ میکروفون را داد، اما مسیر پردازش صدا فعال نشد. دوباره روی دکمهٔ میکروفون بزنید.'
             }
         };
         return map[rawCode] || {
@@ -274,6 +273,8 @@
     let koochikProcessor = null;
     let koochikStream = null;
     let koochikStopTimer = null;
+    let koochikCaptureWatchdog = null;
+    let koochikAudioCallbackCount = 0;
     let koochikSilenceWatchdog = null;
     let koochikPartialTimer = null;
     let koochikDecodeInFlight = false;
@@ -600,7 +601,6 @@
                 }
 
                 const info = (err && err.code) ? err : classifyError('koochik-model-failed');
-                if (!info.silent) console.error('[KoochikASR] engine load failed:', err);
                 if (generation === koochikLoadGeneration) {
                     koochikFailInfo = { status: 'limited', code: info.code, title: info.title, message: info.message };
                 }
@@ -611,6 +611,68 @@
         return promise;
     }
 
+    // Web Audio contexts can remain suspended when they are first created
+    // after an asynchronous permission/model-loading step.  Prime the context
+    // synchronously from the mic-button user gesture, before any Promise is
+    // awaited.  This is especially important for Safari/iOS PWAs, but is safe
+    // and useful on every browser.
+    function primeKoochikAudioContext() {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+
+        if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
+            try { koochikAudioCtx = new AC({ latencyHint: 'interactive' }); }
+            catch (e) {
+                try { koochikAudioCtx = new AC(); }
+                catch (e2) { koochikAudioCtx = null; return null; }
+            }
+        }
+
+        // IMPORTANT: call resume() now, while startKoochik() is still in the
+        // original click/tap call stack.  Do not wait for getUserMedia().
+        if (koochikAudioCtx.state === 'suspended') {
+            try {
+                const resumePromise = koochikAudioCtx.resume();
+                if (resumePromise && resumePromise.catch) resumePromise.catch(function () {});
+            } catch (e) {}
+        }
+
+        // A one-frame silent source helps older WebKit versions actually
+        // activate the rendering graph. It produces no audible output.
+        try {
+            const buffer = koochikAudioCtx.createBuffer(1, 1, koochikAudioCtx.sampleRate || 44100);
+            const source = koochikAudioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(koochikAudioCtx.destination);
+            source.start(0);
+            source.onended = function () { try { source.disconnect(); } catch (e) {} };
+        } catch (e) {}
+
+        return koochikAudioCtx;
+    }
+
+    function armKoochikCaptureWatchdog() {
+        if (koochikCaptureWatchdog) clearTimeout(koochikCaptureWatchdog);
+        koochikCaptureWatchdog = setTimeout(function () {
+            if (!koochikActive || koochikStopping || koochikAudioCallbackCount > 0) return;
+
+            // One recovery attempt.  Some browsers briefly re-suspend a
+            // context while the microphone permission sheet is being shown.
+            try {
+                if (koochikAudioCtx && koochikAudioCtx.state === 'suspended') {
+                    const p = koochikAudioCtx.resume();
+                    if (p && p.catch) p.catch(function () {});
+                }
+            } catch (e) {}
+
+            koochikCaptureWatchdog = setTimeout(function () {
+                if (!koochikActive || koochikStopping || koochikAudioCallbackCount > 0) return;
+                emit('error', classifyError('koochik-audio-suspended'));
+                stopKoochik();
+            }, 1600);
+        }, 1200);
+    }
+
     function startKoochik() {
         if (koochikActive || koochikLoading) return;
         if (!koochikConfigured()) {
@@ -618,6 +680,15 @@
             // native-API / banner path in this case, so this should not
             // normally be reachable.
             emit('error', classifyError('koochik-not-configured'));
+            return;
+        }
+
+        // Must happen synchronously in the user's click/tap gesture.
+        // Creating the AudioContext later, after getUserMedia() resolves, can
+        // leave Safari with a permanently suspended processing graph even
+        // though microphone permission was granted.
+        if (!primeKoochikAudioContext()) {
+            emit('error', classifyError('audio-capture'));
             return;
         }
 
@@ -637,87 +708,105 @@
                 video: false,
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
             }).then(function (stream) {
-                koochikLoading = false;
                 if (koochikCancelRequested) {
+                    koochikLoading = false;
                     try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
                     return;
                 }
                 koochikStream = stream;
-                const AC = window.AudioContext || window.webkitAudioContext;
-                koochikAudioCtx = new AC();
-                koochikSource = koochikAudioCtx.createMediaStreamSource(stream);
-                // ScriptProcessorNode is deprecated but broadly supported,
-                // including current iOS Safari — same choice the Vosk
-                // backend made, kept for the same reason. Must be
-                // connected through to a destination for onaudioprocess
-                // to reliably fire in every browser.
-                koochikProcessor = koochikAudioCtx.createScriptProcessor(4096, 1, 1);
-                const streamStartTime = Date.now();
-                // Capture this session's AudioContext into a local const
-                // rather than reading the shared, mutable koochikAudioCtx
-                // variable inside the closure below. That outer variable
-                // gets set to null by finishKoochik() on teardown — if a
-                // stale callback from this (or, worse, an improperly torn
-                // down PREVIOUS) session fires after that, reading the
-                // shared variable throws exactly the null-dereference seen
-                // in testing. Reading this local capture instead makes the
-                // handler immune to that regardless of what else is
-                // happening to shared state.
-                const sessionAudioCtx = koochikAudioCtx;
-                koochikProcessor.onaudioprocess = function (event) {
-                    try {
-                        // Same 350ms warm-up guard as the old Vosk path —
-                        // Android's audio subsystem delivers silence/
-                        // garbage right after a stream opens.
-                        if (Date.now() - streamStartTime >= 350) {
-                            const samples = event.inputBuffer.getChannelData(0);
-                            if (!koochikStopping) {
-                                engine.feed(samples, sessionAudioCtx.sampleRate);
-                                updateKoochikVad(samples);
-                            }
-                        }
-                        // Moved inside the try — this was previously called
-                        // OUTSIDE the try/catch entirely, so any exception
-                        // in it (like the earlier missing-constant bug)
-                        // went fully uncaught, skipped stopKoochik()/
-                        // finishKoochik() teardown completely, and left
-                        // this exact processor+context still connected and
-                        // firing on every subsequent audio buffer forever.
-                        emitKoochikAudioLevel(event.inputBuffer);
-                    } catch (e) {
-                        // This was firing silently on every single audio
-                        // callback (every ~85-100ms) with no logging at all
-                        // — if engine.feed()/updateKoochikVad() throws
-                        // synchronously, THIS is the actual failure path,
-                        // not the decode-polling one I instrumented earlier.
-                        // It also never stopped the session, so a
-                        // persistent bug here fired repeatedly on every
-                        // subsequent buffer forever — very plausibly what
-                        // "the app freezes" actually was (the UI thrashing
-                        // on a flood of error events, not a real hang).
-                        // Log once, stop cleanly, and don't let it repeat.
-                        if (!koochikStopping) {
-                            console.error('[KoochikASR] onaudioprocess failed:', e);
-                            emit('error', classifyError('koochik-runtime'));
-                            stopKoochik();
-                        }
-                    }
-                };
-                koochikSource.connect(koochikProcessor);
-                koochikProcessor.connect(koochikAudioCtx.destination);
 
-                koochikActive = true;
-                armKoochikSessionLimit();
-                emit('start');
-                schedulePartialDecode(engine);
+                // Reuse the AudioContext that was synchronously primed by the
+                // mic-button gesture.  Never replace it here with a brand-new
+                // post-permission context; doing that is what left Safari/iOS
+                // with permission granted but no audio callbacks.
+                if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
+                    if (!primeKoochikAudioContext()) throw new Error('audio-context-unavailable');
+                }
+
+                const beginCapture = function () {
+                    koochikSource = koochikAudioCtx.createMediaStreamSource(stream);
+                    // ScriptProcessorNode is deprecated but still gives us the
+                    // broadest PWA coverage. It must be connected into a live
+                    // rendering graph for onaudioprocess to fire reliably.
+                    koochikProcessor = koochikAudioCtx.createScriptProcessor(4096, 1, 1);
+                    koochikAudioCallbackCount = 0;
+                    const streamStartTime = Date.now();
+
+                    koochikProcessor.onaudioprocess = function (event) {
+                        // Keep the ScriptProcessor attached to a real output
+                        // graph, but explicitly write silence so the microphone
+                        // is never played back through the speakers.
+                        try {
+                            if (event.outputBuffer && event.outputBuffer.numberOfChannels) {
+                                event.outputBuffer.getChannelData(0).fill(0);
+                            }
+                        } catch (e) {}
+                        koochikAudioCallbackCount++;
+                        if (koochikCaptureWatchdog) {
+                            clearTimeout(koochikCaptureWatchdog);
+                            koochikCaptureWatchdog = null;
+                        }
+                        try {
+                            // Same 350ms warm-up guard as the old Vosk path —
+                            // Android's audio subsystem can deliver unstable
+                            // samples immediately after a stream opens.
+                            if (Date.now() - streamStartTime >= 350) {
+                                const samples = event.inputBuffer.getChannelData(0);
+                                if (!koochikStopping) {
+                                    engine.feed(samples, koochikAudioCtx.sampleRate);
+                                    updateKoochikVad(samples);
+                                }
+                            }
+                        } catch (e) {
+                            emit('error', classifyError('koochik-runtime'));
+                        }
+                        emitKoochikAudioLevel(event.inputBuffer);
+                    };
+
+                    koochikSource.connect(koochikProcessor);
+                    koochikProcessor.connect(koochikAudioCtx.destination);
+
+                    koochikLoading = false;
+                    koochikActive = true;
+                    armKoochikCaptureWatchdog();
+                    armKoochikSessionLimit();
+                    emit('start');
+                    schedulePartialDecode(engine);
+                };
+
+                // Most devices are already `running` because the context was
+                // primed in the click handler. Permission UI can temporarily
+                // suspend it, so resume once more if needed before wiring the
+                // microphone graph.
+                if (koochikAudioCtx.state === 'suspended') {
+                    let resumeResult;
+                    try { resumeResult = koochikAudioCtx.resume(); }
+                    catch (e) { resumeResult = Promise.reject(e); }
+                    Promise.resolve(resumeResult).then(beginCapture).catch(function () {
+                        try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+                        koochikStream = null;
+                        koochikLoading = false;
+                        emit('error', classifyError('koochik-audio-suspended'));
+                    });
+                } else {
+                    beginCapture();
+                }
             }).catch(function (err) {
                 koochikLoading = false;
+                if (!koochikActive && koochikAudioCtx) {
+                    try { koochikAudioCtx.close(); } catch (e) {}
+                    koochikAudioCtx = null;
+                }
                 const code = (err && err.name === 'NotAllowedError') ? 'not-allowed'
                     : (err && err.name === 'NotFoundError') ? 'audio-capture' : 'koochik-runtime';
                 emit('error', classifyError(code));
             });
         }).catch(function (info) {
             koochikLoading = false;
+            if (!koochikActive && koochikAudioCtx) {
+                try { koochikAudioCtx.close(); } catch (e) {}
+                koochikAudioCtx = null;
+            }
             emit('error', info && info.code ? info : classifyError('koochik-model-failed'));
         });
     }
@@ -728,8 +817,6 @@
     // so "streaming" here means re-running the (very fast, ~10ms) forward
     // pass on the growing buffer at a modest interval. Skips overlapping
     // itself if a decode is still in flight.
-    let koochikConsecutiveDecodeFailures = 0;
-
     function schedulePartialDecode(engine) {
         if (koochikPartialTimer) clearTimeout(koochikPartialTimer);
         koochikPartialTimer = setTimeout(function () {
@@ -743,43 +830,16 @@
             koochikDecodePromise.then(function (text) {
                 koochikDecodeInFlight = false;
                 koochikDecodePromise = null;
-                koochikConsecutiveDecodeFailures = 0;
-                // TEMPORARY diagnostic — remove once real speech comes
-                // through. Logs every decode result, including empty
-                // ones, plus how much audio was buffered for it. If this
-                // always prints an empty string, the model/tokens are
-                // running without crashing but never producing non-blank
-                // output — that's a features/tokens data problem, not a
-                // wiring problem.
-                console.log('[KoochikASR] decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (!koochikActive || koochikStopping) return;
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
                     emit('interim', text);
                 }
                 schedulePartialDecode(engine);
-            }).catch(function (err) {
+            }).catch(function () {
                 koochikDecodeInFlight = false;
                 koochikDecodePromise = null;
-                // This was previously swallowed with no logging at all — if
-                // decode is failing on every call (a shape mismatch, an
-                // unsupported fp16 op on the wasm backend, etc.), the old
-                // behavior looked EXACTLY like "recognized nothing, no
-                // error, just silence" from the user's side, because it
-                // retried forever without ever telling anyone why. Surface
-                // it now: always to the console (so it's diagnosable from
-                // devtools), and to the UI after a few repeats in a row so
-                // it isn't just a single transient hiccup.
-                console.error('[KoochikASR] decode failed:', err);
-                koochikConsecutiveDecodeFailures++;
-                if (koochikActive && !koochikStopping) {
-                    if (koochikConsecutiveDecodeFailures >= 3) {
-                        emit('error', classifyError('koochik-runtime'));
-                        stopKoochik();
-                        return;
-                    }
-                    schedulePartialDecode(engine);
-                }
+                if (koochikActive && !koochikStopping) schedulePartialDecode(engine);
             });
         }, KOOCHIK_PARTIAL_INTERVAL_MS);
     }
@@ -870,13 +930,9 @@
             }).then(function (text) {
                 if (!koochikStopping) return;
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
-                // TEMPORARY diagnostic — same as the partial-decode log,
-                // for the final decode specifically.
-                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (text && text.trim()) emit('final', text.trim());
                 finishKoochik();
-            }).catch(function (err) {
-                console.error('[KoochikASR] final decode failed:', err);
+            }).catch(function () {
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 finishKoochik();
             });
@@ -888,6 +944,7 @@
     function finishKoochik() {
         if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
+        if (koochikCaptureWatchdog) { clearTimeout(koochikCaptureWatchdog); koochikCaptureWatchdog = null; }
         const wasActive = koochikActive;
         koochikActive = false;
         koochikStopping = false;
@@ -895,12 +952,9 @@
         koochikDecodePromise = null;
         koochikSpeechSeen = false;
         koochikLastVoiceAt = 0;
-        if (koochikProcessor) {
-            koochikProcessor.onaudioprocess = null; // belt-and-suspenders: guarantees no further callback fires even if disconnect() has any latency
-            try { koochikProcessor.disconnect(); } catch (e) {}
-            koochikProcessor = null;
-        }
+        if (koochikProcessor) { try { koochikProcessor.onaudioprocess = null; koochikProcessor.disconnect(); } catch (e) {} koochikProcessor = null; }
         if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
+        koochikAudioCallbackCount = 0;
         if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
         if (koochikStream) { try { koochikStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} koochikStream = null; }
         if (koochikEngine) { try { koochikEngine.reset(); } catch (e) {} }
