@@ -309,31 +309,92 @@
     }
 
     // ============================================
-    // Linear-interpolation resampler with cross-call phase continuity
+    // Boundary-safe linear-interpolation resampler with cross-call continuity
     // ============================================
     function makeResampler(targetRate) {
         let sourceRate = targetRate;
-        let phase = 0; // fractional position in source-sample units
+        let nextPos = 0; // source-sample position relative to the current chunk
         let prevSample = 0;
+        let havePrev = false;
+
         return function resample(chunk, chunkSourceRate) {
-            sourceRate = chunkSourceRate || sourceRate;
-            if (sourceRate === targetRate) return chunk;
-            const ratio = sourceRate / targetRate;
-            const outLen = Math.floor((chunk.length - phase) / ratio);
-            if (outLen <= 0) { phase -= chunk.length; return new Float32Array(0); }
-            const out = new Float32Array(outLen);
-            let srcPos = phase;
-            for (let i = 0; i < outLen; i++) {
-                const idx = Math.floor(srcPos);
-                const frac = srcPos - idx;
-                const s0 = idx < 0 ? prevSample : chunk[idx];
-                const s1 = (idx + 1) < chunk.length ? chunk[idx + 1] : chunk[chunk.length - 1];
-                out[i] = s0 + (s1 - s0) * frac;
-                srcPos += ratio;
+            if (!chunk || !chunk.length) return new Float32Array(0);
+
+            const newSourceRate = chunkSourceRate || sourceRate;
+            if (newSourceRate !== sourceRate) {
+                // A live AudioContext should not normally change rate, but if it
+                // does, reset interpolation state rather than joining two
+                // incompatible timelines.
+                sourceRate = newSourceRate;
+                nextPos = 0;
+                havePrev = false;
+            } else {
+                sourceRate = newSourceRate;
             }
-            phase = srcPos - chunk.length;
-            prevSample = chunk[chunk.length - 1];
-            return out;
+
+            // Own the samples we keep. WebAudio's input view belongs to the
+            // callback and should not be retained directly. Also sanitize any
+            // non-finite browser sample defensively.
+            if (sourceRate === targetRate) {
+                const copy = new Float32Array(chunk.length);
+                for (let i = 0; i < chunk.length; i++) {
+                    const v = chunk[i];
+                    copy[i] = Number.isFinite(v) ? v : 0;
+                }
+                prevSample = copy[copy.length - 1];
+                havePrev = true;
+                return copy;
+            }
+
+            const ratio = sourceRate / targetRate;
+            // A small over-allocation avoids per-sample array growth.
+            const capacity = Math.ceil((chunk.length + 2) / ratio) + 3;
+            const out = new Float32Array(Math.max(0, capacity));
+            let written = 0;
+
+            while (nextPos < chunk.length) {
+                const idx = Math.floor(nextPos);
+                const frac = nextPos - idx;
+                let s0, s1;
+
+                if (idx < 0) {
+                    // The only valid negative position is in (-1, 0), carried
+                    // from a deferred interpolation at the previous chunk end.
+                    // Use the previous chunk's final sample and this chunk's
+                    // first sample. Never index chunk[-1]/chunk[-2].
+                    if (!havePrev || idx !== -1) {
+                        nextPos = 0;
+                        continue;
+                    }
+                    s0 = prevSample;
+                    s1 = chunk[0];
+                } else if (idx + 1 < chunk.length) {
+                    s0 = chunk[idx];
+                    s1 = chunk[idx + 1];
+                } else if (idx === chunk.length - 1 && frac === 0) {
+                    // Exact hit on the final source sample needs no look-ahead.
+                    s0 = chunk[idx];
+                    s1 = s0;
+                } else {
+                    // Interpolation needs the first sample of the NEXT chunk.
+                    // Defer it instead of substituting or reading out of range.
+                    break;
+                }
+
+                if (!Number.isFinite(s0)) s0 = 0;
+                if (!Number.isFinite(s1)) s1 = 0;
+                out[written++] = s0 + (s1 - s0) * frac;
+                nextPos += ratio;
+            }
+
+            // Carry the next desired source position into the next callback.
+            // After a deferred boundary interpolation this is in (-1, 0);
+            // otherwise it is normally in [0, ratio).
+            nextPos -= chunk.length;
+            prevSample = Number.isFinite(chunk[chunk.length - 1]) ? chunk[chunk.length - 1] : 0;
+            havePrev = true;
+
+            return out.subarray(0, written);
         };
     }
 
@@ -583,26 +644,32 @@
 
                 // TEMP diagnostic: proves microphone scale and preprocessing range
                 // without modifying either. Web Audio PCM should naturally be -1..1.
-                let pcmPeak = 0, pcmSq = 0;
+                let pcmPeak = 0, pcmSq = 0, pcmFiniteN = 0, pcmNonFinite = 0;
                 for (let i = 0; i < pcm.length; i++) {
-                    const a = Math.abs(pcm[i]);
+                    const v = pcm[i];
+                    if (!Number.isFinite(v)) { pcmNonFinite++; continue; }
+                    const a = Math.abs(v);
                     if (a > pcmPeak) pcmPeak = a;
-                    pcmSq += pcm[i] * pcm[i];
+                    pcmSq += v * v;
+                    pcmFiniteN++;
                 }
-                let fMin = Infinity, fMax = -Infinity, fSum = 0, fN = 0;
+                let fMin = Infinity, fMax = -Infinity, fSum = 0, fN = 0, featNonFinite = 0;
                 for (let m = 0; m < N_MELS; m++) {
                     const base = m * FIXED_FRAMES;
                     for (let t = 0; t < frameCount; t++) {
                         const v = features[base + t];
+                        if (!Number.isFinite(v)) { featNonFinite++; continue; }
                         if (v < fMin) fMin = v;
                         if (v > fMax) fMax = v;
                         fSum += v; fN++;
                     }
                 }
                 console.log('[KoochikASR] input stats: pcmPeak=', pcmPeak.toFixed(4),
-                    '| pcmRms=', Math.sqrt(pcmSq / Math.max(1, pcm.length)).toFixed(4),
-                    '| featMin=', fMin.toFixed(3), '| featMax=', fMax.toFixed(3),
-                    '| featMean=', (fSum / Math.max(1, fN)).toFixed(3), '| frames=', frameCount);
+                    '| pcmRms=', Math.sqrt(pcmSq / Math.max(1, pcmFiniteN)).toFixed(4),
+                    '| pcmNonFinite=', pcmNonFinite,
+                    '| featMin=', (fN ? fMin : NaN).toFixed(3), '| featMax=', (fN ? fMax : NaN).toFixed(3),
+                    '| featMean=', (fSum / Math.max(1, fN)).toFixed(3), '| featNonFinite=', featNonFinite,
+                    '| frames=', frameCount);
 
                 const fp16Input = makeOrtFloat16Input(features);
                 console.log('[KoochikASR] fp16 input container=', fp16Input && fp16Input.constructor ? fp16Input.constructor.name : typeof fp16Input);
