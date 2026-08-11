@@ -221,10 +221,8 @@
         let previousId = -1;
         const pieces = [];
         // TEMPORARY diagnostic tally — remove once real speech comes
-        // through. Distinguishes "the model predicts blank almost every
-        // frame" (a features/audio problem) from "the model predicts real
-        // token ids but they don't map to text" (a tokens.json problem).
-        let blankCount = 0, nonBlankCount = 0, emptyPieceCount = 0;
+        // through.
+        let blankCount = 0, nonBlankCount = 0, emptyPieceCount = 0, specialCount = 0;
         for (let t = 0; t < timeSteps; t++) {
             const base = t * vocabSize;
             let bestId = 0, bestValue = -Infinity;
@@ -235,13 +233,14 @@
             if (bestId === blankId) blankCount++; else nonBlankCount++;
             const piece = tokens[bestId] || '';
             if (bestId !== blankId && !piece) emptyPieceCount++;
+            if (bestId !== blankId && piece && isSpecialToken(piece)) specialCount++;
             if (bestId !== blankId && bestId !== previousId && piece && !isSpecialToken(piece)) {
                 pieces.push(piece);
             }
             previousId = bestId;
         }
         if (typeof console !== 'undefined' && console.log) {
-            console.log('[KoochikASR] ctc tally: timeSteps=', timeSteps, '| blank=', blankCount, '| nonBlank=', nonBlankCount, '| nonBlankButUnmapped=', emptyPieceCount);
+            console.log('[KoochikASR] ctc tally: timeSteps=', timeSteps, '| blank=', blankCount, '| nonBlank=', nonBlankCount, '| unmapped=', emptyPieceCount, '| special(<...>)=', specialCount);
         }
         return pieces.join('').split('\u2581').join(' ').replace(/\s+/g, ' ').trim();
     }
