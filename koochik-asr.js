@@ -55,6 +55,17 @@
     const VOCAB_SIZE = 1025;
     const MAX_SAMPLES = (FIXED_FRAMES - 1) * HOP_LENGTH; // ~20.04s @16kHz
 
+    // Browser microphone gain varies dramatically between devices/sessions.
+    // Koochik has no per-feature normalization, so very quiet captured audio
+    // can shift the log-mel range far below what the model saw in a healthy
+    // recording. Apply a conservative waveform gain only when there is a
+    // plausible speech-level peak; do not amplify pure near-silence/noise.
+    // This does not alter the official mel/preemphasis recipe.
+    const QUIET_GAIN_MIN_PEAK = 0.040;
+    const QUIET_GAIN_TARGET_PEAK = 0.60;
+    const QUIET_GAIN_MAX = 12.0;
+    const QUIET_GAIN_MIN_RMS = 0.008;
+
     // ============================================
     // Dynamic script loading (same pattern as the old vosk.js load)
     // ============================================
@@ -639,20 +650,54 @@
             bufferedSeconds: function () { return totalLen / SAMPLE_RATE; },
             decode: function () {
                 if (totalLen === 0) return Promise.resolve('');
-                const pcm = materialize();
-                const { features, frameCount } = pcmToKoochikLogMel(pcm, melFilters);
+                const decodeStartedAt = performance.now();
+                const rawPcm = materialize();
 
-                // TEMP diagnostic: proves microphone scale and preprocessing range
-                // without modifying either. Web Audio PCM should naturally be -1..1.
-                let pcmPeak = 0, pcmSq = 0, pcmFiniteN = 0, pcmNonFinite = 0;
-                for (let i = 0; i < pcm.length; i++) {
-                    const v = pcm[i];
+                // Measure the raw capture before deciding whether this particular
+                // utterance needs app-level digital gain. The successful device log
+                // showed peaks near 0.86, while a failing quiet session peaked near
+                // 0.066. Because the frontend intentionally has no normalization,
+                // that level difference survives into the log-mel tensor.
+                let rawPeak = 0, rawSq = 0, rawFiniteN = 0, pcmNonFinite = 0;
+                for (let i = 0; i < rawPcm.length; i++) {
+                    const v = rawPcm[i];
                     if (!Number.isFinite(v)) { pcmNonFinite++; continue; }
                     const a = Math.abs(v);
-                    if (a > pcmPeak) pcmPeak = a;
-                    pcmSq += v * v;
-                    pcmFiniteN++;
+                    if (a > rawPeak) rawPeak = a;
+                    rawSq += v * v;
+                    rawFiniteN++;
                 }
+                const rawRms = Math.sqrt(rawSq / Math.max(1, rawFiniteN));
+
+                let inputGain = 1.0;
+                if (rawPeak >= QUIET_GAIN_MIN_PEAK && rawRms >= QUIET_GAIN_MIN_RMS && rawPeak < QUIET_GAIN_TARGET_PEAK) {
+                    inputGain = Math.min(QUIET_GAIN_MAX, QUIET_GAIN_TARGET_PEAK / rawPeak);
+                }
+
+                let pcm = rawPcm;
+                if (inputGain > 1.01 || pcmNonFinite) {
+                    pcm = new Float32Array(rawPcm.length);
+                    for (let i = 0; i < rawPcm.length; i++) {
+                        const v = Number.isFinite(rawPcm[i]) ? rawPcm[i] : 0;
+                        pcm[i] = v * inputGain;
+                    }
+                }
+
+                const featureStartedAt = performance.now();
+                const { features, frameCount } = pcmToKoochikLogMel(pcm, melFilters);
+                const featureMs = performance.now() - featureStartedAt;
+
+                let adjustedPeak = 0, adjustedSq = 0, adjustedFiniteN = 0;
+                for (let i = 0; i < pcm.length; i++) {
+                    const v = pcm[i];
+                    if (!Number.isFinite(v)) continue;
+                    const a = Math.abs(v);
+                    if (a > adjustedPeak) adjustedPeak = a;
+                    adjustedSq += v * v;
+                    adjustedFiniteN++;
+                }
+                const adjustedRms = Math.sqrt(adjustedSq / Math.max(1, adjustedFiniteN));
+
                 let fMin = Infinity, fMax = -Infinity, fSum = 0, fN = 0, featNonFinite = 0;
                 for (let m = 0; m < N_MELS; m++) {
                     const base = m * FIXED_FRAMES;
@@ -664,24 +709,31 @@
                         fSum += v; fN++;
                     }
                 }
-                console.log('[KoochikASR] input stats: pcmPeak=', pcmPeak.toFixed(4),
-                    '| pcmRms=', Math.sqrt(pcmSq / Math.max(1, pcmFiniteN)).toFixed(4),
+                console.log('[KoochikASR] input stats: rawPeak=', rawPeak.toFixed(4),
+                    '| rawRms=', rawRms.toFixed(4),
+                    '| inputGain=', inputGain.toFixed(2) + 'x',
+                    '| modelPeak=', adjustedPeak.toFixed(4),
+                    '| modelRms=', adjustedRms.toFixed(4),
                     '| pcmNonFinite=', pcmNonFinite,
                     '| featMin=', (fN ? fMin : NaN).toFixed(3), '| featMax=', (fN ? fMax : NaN).toFixed(3),
                     '| featMean=', (fSum / Math.max(1, fN)).toFixed(3), '| featNonFinite=', featNonFinite,
-                    '| frames=', frameCount);
+                    '| frames=', frameCount, '| featureMs=', featureMs.toFixed(1));
 
                 const fp16Input = makeOrtFloat16Input(features);
                 console.log('[KoochikASR] fp16 input container=', fp16Input && fp16Input.constructor ? fp16Input.constructor.name : typeof fp16Input);
                 const processedSignal = new window.ort.Tensor('float16', fp16Input, [1, N_MELS, FIXED_FRAMES]);
                 const processedSignalLength = new window.ort.Tensor('int64', BigInt64Array.from([BigInt(frameCount)]), [1]);
+                const inferenceStartedAt = performance.now();
                 return session.run({
                     processed_signal: processedSignal,
                     processed_signal_length: processedSignalLength
                 }).then(function (result) {
+                    const inferenceMs = performance.now() - inferenceStartedAt;
                     const logits = result.logits;
                     console.log('[KoochikASR] logits container=', logits.data && logits.data.constructor ? logits.data.constructor.name : typeof logits.data,
-                        '| type=', logits.type, '| dims=', logits.dims ? logits.dims.join('x') : '?');
+                        '| type=', logits.type, '| dims=', logits.dims ? logits.dims.join('x') : '?',
+                        '| inferenceMs=', inferenceMs.toFixed(1),
+                        '| decodeTotalMs=', (performance.now() - decodeStartedAt).toFixed(1));
                     const logitsF32 = ortFloat16OutputToFloat32(logits.data);
                     const vocabSize = logits.dims[2] || VOCAB_SIZE;
                     let usableSteps = logits.dims[1] || Math.ceil(frameCount / 8);

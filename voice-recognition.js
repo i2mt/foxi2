@@ -94,6 +94,12 @@
     const KOOCHIK_MIN_FINAL_BUFFER_MS = 2400;
     const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
     const KOOCHIK_MIN_SPEECH_RMS = 0.010;
+    // Quiet phone captures can have speech RMS below the conservative
+    // noise-floor threshold while still showing clear transient peaks.
+    // Use peak as a secondary cue; the RMS guard prevents tiny clicks/noise
+    // from being treated as a whole utterance.
+    const KOOCHIK_MIN_SPEECH_PEAK = 0.040;
+    const KOOCHIK_PEAK_RMS_GUARD = 0.008;
     // Start with a realistic mobile-mic background floor instead of an
     // ultra-low value.  With the old 0.004 seed, ordinary phone-room
     // noise around RMS 0.02-0.03 was immediately classified as speech
@@ -828,8 +834,13 @@
     function updateKoochikVad(samples) {
         if (!koochikActive || koochikStopping || !samples || !samples.length) return;
 
-        let sumSq = 0;
-        for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
+        let sumSq = 0, peak = 0;
+        for (let i = 0; i < samples.length; i++) {
+            const v = Number.isFinite(samples[i]) ? samples[i] : 0;
+            sumSq += v * v;
+            const a = Math.abs(v);
+            if (a > peak) peak = a;
+        }
         const rms = Math.sqrt(sumSq / samples.length);
         const now = Date.now();
         // The previous implementation seeded noiseFloor at 0.004 and
@@ -844,7 +855,10 @@
             koochikNoiseFloor + KOOCHIK_NOISE_MARGIN
         );
 
-        if (rms >= threshold) {
+        const speechByRms = rms >= threshold;
+        const speechByPeak = peak >= KOOCHIK_MIN_SPEECH_PEAK && rms >= KOOCHIK_PEAK_RMS_GUARD;
+
+        if (speechByRms || speechByPeak) {
             koochikSpeechSeen = true;
             koochikLastVoiceAt = now;
         } else {
@@ -860,7 +874,8 @@
                 (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS &&
                 bufferedMs >= KOOCHIK_MIN_FINAL_BUFFER_MS) {
                 console.log('[KoochikASR] VAD silence finalize:',
-                    'rms=', rms.toFixed(4), '| noiseFloor=', koochikNoiseFloor.toFixed(4),
+                    'rms=', rms.toFixed(4), '| peak=', peak.toFixed(4),
+                    '| noiseFloor=', koochikNoiseFloor.toFixed(4),
                     '| threshold=', threshold.toFixed(4),
                     '| trailingSilenceMs=', (now - koochikLastVoiceAt),
                     '| bufferedSeconds=', (bufferedMs / 1000).toFixed(2));
