@@ -220,6 +220,11 @@
     function decodeKoochikCtc(logitsF32, timeSteps, vocabSize, tokens, blankId) {
         let previousId = -1;
         const pieces = [];
+        // TEMPORARY diagnostic tally — remove once real speech comes
+        // through. Distinguishes "the model predicts blank almost every
+        // frame" (a features/audio problem) from "the model predicts real
+        // token ids but they don't map to text" (a tokens.json problem).
+        let blankCount = 0, nonBlankCount = 0, emptyPieceCount = 0;
         for (let t = 0; t < timeSteps; t++) {
             const base = t * vocabSize;
             let bestId = 0, bestValue = -Infinity;
@@ -227,11 +232,16 @@
                 const value = logitsF32[base + id];
                 if (value > bestValue) { bestValue = value; bestId = id; }
             }
+            if (bestId === blankId) blankCount++; else nonBlankCount++;
             const piece = tokens[bestId] || '';
+            if (bestId !== blankId && !piece) emptyPieceCount++;
             if (bestId !== blankId && bestId !== previousId && piece && !isSpecialToken(piece)) {
                 pieces.push(piece);
             }
             previousId = bestId;
+        }
+        if (typeof console !== 'undefined' && console.log) {
+            console.log('[KoochikASR] ctc tally: timeSteps=', timeSteps, '| blank=', blankCount, '| nonBlank=', nonBlankCount, '| nonBlankButUnmapped=', emptyPieceCount);
         }
         return pieces.join('').split('\u2581').join(' ').replace(/\s+/g, ' ').trim();
     }
@@ -450,6 +460,17 @@
                         throw new Error('invalid-koochik-mel-filters');
                     }
                 }
+
+                // TEMPORARY diagnostic — sanity-check what actually got
+                // loaded. tokens[blankId] should read something like
+                // "<blank>"; tokens[0] is usually a real token, not empty.
+                // If blankId looks wrong or tokens are mostly empty
+                // strings, the tokens.json shape assumption above is wrong
+                // for this file and needs adjusting.
+                console.log('[KoochikASR] loaded: tokens.length=', tokens.length,
+                    '| blankId=', blankId, '| tokens[blankId]=', JSON.stringify(tokens[blankId]),
+                    '| tokens[0..4]=', JSON.stringify(tokens.slice(0, 5)),
+                    '| melFilters=', melFilters.length + 'x' + (melFilters[0] ? melFilters[0].length : '?'));
 
                 return window.ort.InferenceSession.create(modelBuffer, {
                     executionProviders: ['wasm']
