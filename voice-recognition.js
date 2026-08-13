@@ -63,7 +63,8 @@
     const KOOCHIK_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/shenava_koochik_1_0_ctc_fixed2005_len_att70_13_fp16_full_io_embedded.onnx';
     const KOOCHIK_TOKENS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/tokens.json';
     const KOOCHIK_MEL_FILTERS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/mel_filters_slaney_80x257.json';
-    const KOOCHIK_ORT_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js';
+    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
     const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
@@ -572,8 +573,10 @@
                 modelUrl: KOOCHIK_MODEL_URL,
                 tokensUrl: KOOCHIK_TOKENS_URL,
                 melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
-                ortLibUrl: KOOCHIK_ORT_LIB_URL,
+                ortWebgpuLibUrl: KOOCHIK_ORT_WEBGPU_LIB_URL,
+                ortWasmLibUrl: KOOCHIK_ORT_WASM_LIB_URL,
                 ortWasmBaseUrl: KOOCHIK_ORT_WASM_BASE_URL,
+                preferWebGPU: true,
                 cacheName: KOOCHIK_CACHE_NAME,
                 signal: controller.signal
             }, function (progress) {
@@ -727,7 +730,13 @@
                 koochikActive = true;
                 armKoochikSessionLimit();
                 emit('start');
-                schedulePartialDecode(engine);
+                if (!engine.supportsLivePartials || engine.supportsLivePartials()) {
+                    schedulePartialDecode(engine);
+                } else {
+                    console.log('[KoochikASR] live partials disabled on',
+                        engine.executionProvider ? engine.executionProvider() : 'slow backend',
+                        '— capturing first, then decoding once on finalization');
+                }
             }).catch(function (err) {
                 koochikLoading = false;
                 const code = (err && err.name === 'NotAllowedError') ? 'not-allowed'
@@ -742,13 +751,15 @@
 
     // Periodically re-decodes the buffered audio so far to produce a
     // live-feeling "interim" result — Koochik is a fixed-window offline
-    // CTC model under the hood, not a truly incremental streaming model,
-    // so "streaming" here means re-running the (very fast, ~10ms) forward
-    // pass on the growing buffer at a modest interval. Skips overlapping
-    // itself if a decode is still in flight.
+    // CTC model under the hood, not a truly incremental streaming model.
+    // Live partials are only enabled on the accelerated WebGPU path. On the
+    // WASM fallback a full fixed-window pass can take seconds, so decoding
+    // during capture would starve the main-thread microphone callback; WASM
+    // captures the utterance first and performs one final decode instead.
     let koochikConsecutiveDecodeFailures = 0;
 
     function schedulePartialDecode(engine) {
+        if (engine && engine.supportsLivePartials && !engine.supportsLivePartials()) return;
         if (koochikPartialTimer) clearTimeout(koochikPartialTimer);
         koochikPartialTimer = setTimeout(function () {
             if (!koochikActive) return;
@@ -893,6 +904,23 @@
         }, KOOCHIK_MAX_UTTERANCE_MS);
     }
 
+    function stopKoochikCapture() {
+        // Freeze the PCM buffer before final inference. This is especially
+        // important on the WASM fallback where a fixed-window decode may take
+        // several seconds and must not compete with ScriptProcessor callbacks.
+        if (koochikProcessor) {
+            koochikProcessor.onaudioprocess = null;
+            try { koochikProcessor.disconnect(); } catch (e) {}
+            koochikProcessor = null;
+        }
+        if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
+        if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
+        if (koochikStream) {
+            try { koochikStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+            koochikStream = null;
+        }
+    }
+
     function stopKoochik() {
         if (koochikStopping) return;
         if (koochikLoading) {
@@ -908,6 +936,7 @@
         }
         if (!koochikActive) return;
         koochikStopping = true;
+        stopKoochikCapture();
         if (koochikSilenceWatchdog) { clearTimeout(koochikSilenceWatchdog); koochikSilenceWatchdog = null; }
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
         // Run one last decode over whatever was captured before tearing
@@ -915,7 +944,7 @@
         // words away — mirrors the old Vosk retrieveFinalResult() step.
         const engine = koochikEngine;
         if (engine && engine.bufferedSeconds() > 0.15) {
-            koochikStopTimer = setTimeout(finishKoochik, 1800);
+            koochikStopTimer = setTimeout(finishKoochik, 30000);
 
             const waitForPartial = koochikDecodePromise
                 ? koochikDecodePromise.catch(function () { return ''; })
@@ -961,14 +990,7 @@
         koochikDecodePromise = null;
         koochikSpeechSeen = false;
         koochikLastVoiceAt = 0;
-        if (koochikProcessor) {
-            koochikProcessor.onaudioprocess = null; // belt-and-suspenders: guarantees no further callback fires even if disconnect() has any latency
-            try { koochikProcessor.disconnect(); } catch (e) {}
-            koochikProcessor = null;
-        }
-        if (koochikSource) { try { koochikSource.disconnect(); } catch (e) {} koochikSource = null; }
-        if (koochikAudioCtx) { try { koochikAudioCtx.close(); } catch (e) {} koochikAudioCtx = null; }
-        if (koochikStream) { try { koochikStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} koochikStream = null; }
+        stopKoochikCapture();
         if (koochikEngine) { try { koochikEngine.reset(); } catch (e) {} }
         if (wasActive) emit('end');
     }

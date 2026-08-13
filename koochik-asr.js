@@ -523,7 +523,10 @@
     // ============================================
     function load(config, onProgress) {
         config = config || {};
-        const ortLibUrl = config.ortLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+        const wantWebGPU = config.preferWebGPU !== false && !!(window.navigator && navigator.gpu);
+        const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js';
+        const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
+        const ortLibUrl = wantWebGPU ? ortWebgpuLibUrl : ortWasmLibUrl;
         const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
         const signal = config.signal || null;
@@ -533,6 +536,10 @@
                 if (signal && signal.aborted) throw abortError();
                 if (!window.ort) throw new Error('ort-missing-after-load');
                 window.ort.env.wasm.wasmPaths = ortWasmBaseUrl;
+                console.log('[KoochikASR] runtime:',
+                    'navigator.gpu=', !!(window.navigator && navigator.gpu),
+                    '| requested=', wantWebGPU ? 'webgpu' : 'wasm',
+                    '| crossOriginIsolated=', !!window.crossOriginIsolated);
             })
             .then(function () {
                 return Promise.all([
@@ -603,19 +610,40 @@
                     '| tokens[0..4]=', JSON.stringify(tokens.slice(0, 5)),
                     '| melFilters=', melFilters.length + 'x' + (melFilters[0] ? melFilters[0].length : '?'));
 
-                return window.ort.InferenceSession.create(modelBuffer, {
-                    executionProviders: ['wasm']
-                }).then(function (session) {
+                function finishSession(session, provider) {
                     if (signal && signal.aborted) {
                         try { session.release && session.release(); } catch (e) {}
                         throw abortError();
                     }
-                    return makeEngine(session, tokens, melFilters, blankId);
+                    console.log('[KoochikASR] execution provider=', provider);
+                    return makeEngine(session, tokens, melFilters, blankId, provider);
+                }
+
+                if (wantWebGPU) {
+                    return window.ort.InferenceSession.create(modelBuffer, {
+                        executionProviders: ['webgpu', 'wasm']
+                    }).then(function (session) {
+                        return finishSession(session, 'webgpu');
+                    }).catch(function (err) {
+                        if (signal && signal.aborted) throw err;
+                        console.warn('[KoochikASR] WebGPU session failed; falling back to WASM:', err);
+                        return window.ort.InferenceSession.create(modelBuffer, {
+                            executionProviders: ['wasm']
+                        }).then(function (session) {
+                            return finishSession(session, 'wasm');
+                        });
+                    });
+                }
+
+                return window.ort.InferenceSession.create(modelBuffer, {
+                    executionProviders: ['wasm']
+                }).then(function (session) {
+                    return finishSession(session, 'wasm');
                 });
             });
     }
 
-    function makeEngine(session, tokens, melFilters, blankId) {
+    function makeEngine(session, tokens, melFilters, blankId, provider) {
         const resample = makeResampler(SAMPLE_RATE);
         let chunks = [];
         let totalLen = 0;
@@ -638,6 +666,8 @@
         }
 
         return {
+            executionProvider: function () { return provider || 'wasm'; },
+            supportsLivePartials: function () { return provider === 'webgpu'; },
             feed: function (float32Samples, sourceSampleRate) {
                 const resampled = resample(float32Samples, sourceSampleRate || SAMPLE_RATE);
                 if (resampled.length) {
