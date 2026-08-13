@@ -25,10 +25,11 @@
                     'model-loading', 'model-ready'
 
    --- KOOCHIK BACKEND (ALL DEVICES) ---
-   The model and its two official sidecars are loaded directly from the
-   Shenava Koochik Hugging Face export and cached after the first successful
-   load. This keeps the large ~230 MB ONNX file out of the normal Git repo
-   and avoids hand-copying the token/filter JSON files.
+   Koochik remains the only primary ASR model. Runtime selection is automatic:
+     - WebGPU + shader-f16: official 230 MB FP16 fixed-window CTC graph.
+     - Otherwise: official 138 MB INT4 cache-aware streaming CTC graph on WASM.
+   Both use the same tokenizer/mel sidecars and expose the same VoiceEngine API.
+   Large model files stay on Hugging Face and are cached after first use.
 
    WHICH MODEL: Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16 — the 114M-param
    FastConformer CTC export (NOT the v1.5 RNNT export, which is a
@@ -61,11 +62,12 @@
     // The official tokens and mel-filter sidecars come from the same repo
     // and are cached by koochik-asr.js after first successful use.
     const KOOCHIK_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/shenava_koochik_1_0_ctc_fixed2005_len_att70_13_fp16_full_io_embedded.onnx';
+    const KOOCHIK_STREAMING_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-tract-streaming/resolve/main/model.int4.onnx';
     const KOOCHIK_TOKENS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/tokens.json';
     const KOOCHIK_MEL_FILTERS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/mel_filters_slaney_80x257.json';
-    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js';
-    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
-    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.webgpu.min.js';
+    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js';
+    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
     // no real downside to being patient here, it only delays the *failure*
@@ -571,6 +573,7 @@
         const loadChain = window.KoochikASR
             ? window.KoochikASR.load({
                 modelUrl: KOOCHIK_MODEL_URL,
+                streamingModelUrl: KOOCHIK_STREAMING_MODEL_URL,
                 tokensUrl: KOOCHIK_TOKENS_URL,
                 melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
                 ortWebgpuLibUrl: KOOCHIK_ORT_WEBGPU_LIB_URL,
@@ -958,7 +961,7 @@
 
             waitForPartial.then(function () {
                 if (!koochikStopping || !engine) return '';
-                return engine.decode();
+                return engine.finalize ? engine.finalize() : engine.decode();
             }).then(function (text) {
                 if (!koochikStopping) return;
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
@@ -1105,8 +1108,10 @@
         isModelCached: function () {
             if (!koochikConfigured() || !window.caches) return Promise.resolve(false);
             return caches.open(KOOCHIK_CACHE_NAME)
-                .then(function (cache) { return cache.match(KOOCHIK_MODEL_URL); })
-                .then(function (match) { return !!match; })
+                .then(function (cache) {
+                    return Promise.all([cache.match(KOOCHIK_MODEL_URL), cache.match(KOOCHIK_STREAMING_MODEL_URL)]);
+                })
+                .then(function (matches) { return !!(matches[0] || matches[1]); })
                 .catch(function () { return false; });
         },
         // Frees the loaded Koochik engine (ONNX session) from memory.

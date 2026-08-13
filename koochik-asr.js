@@ -54,6 +54,14 @@
     const BLANK_ID = 1024;
     const VOCAB_SIZE = 1025;
     const MAX_SAMPLES = (FIXED_FRAMES - 1) * HOP_LENGTH; // ~20.04s @16kHz
+    const STREAM_FRAMES = 121;
+    const STREAM_SHIFT = 112;
+    const STREAM_FIRST_VALID = 105;
+    const STREAM_OVERLAP = 9;
+    const CACHE_LAYERS = 17;
+    const CACHE_LEFT = 70;
+    const CACHE_DMODEL = 512;
+    const CACHE_TIME = 8;
 
     // Browser microphone gain varies dramatically between devices/sessions.
     // Koochik has no per-feature normalization, so very quiet captured audio
@@ -564,13 +572,15 @@
     function load(config, onProgress) {
         config = config || {};
         const preferWebGPU = config.preferWebGPU !== false;
-        const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js';
-        const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
-        const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+        const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.webgpu.min.js';
+        const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js';
+        const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
         const signal = config.signal || null;
         let wantWebGPU = false;
         let webGpuProbe = null;
+        let selectedModelUrl = config.modelUrl;
+        let selectedMode = 'fp16-fixed';
 
         return probeWebGpuFp16(preferWebGPU)
             .then(function (probe) {
@@ -578,9 +588,13 @@
                 webGpuProbe = probe;
                 wantWebGPU = !!probe.ok;
 
+                if (!wantWebGPU && config.streamingModelUrl) {
+                    selectedModelUrl = config.streamingModelUrl;
+                    selectedMode = 'int4-streaming';
+                }
                 const ortLibUrl = wantWebGPU ? ortWebgpuLibUrl : ortWasmLibUrl;
                 if (preferWebGPU && !wantWebGPU) {
-                    console.warn('[KoochikASR] WebGPU FP16 unavailable; using WASM:', probe.reason);
+                    console.warn('[KoochikASR] WebGPU FP16 unavailable; using Koochik INT4 streaming WASM:', probe.reason);
                 }
                 return loadScriptOnce(ortLibUrl);
             })
@@ -592,13 +606,14 @@
                     'navigator.gpu=', !!(window.navigator && navigator.gpu),
                     '| shader-f16=', !!(webGpuProbe && webGpuProbe.shaderF16),
                     '| requested=', wantWebGPU ? 'webgpu' : 'wasm',
+                    '| modelMode=', selectedMode,
                     '| webgpuReason=', webGpuProbe ? webGpuProbe.reason : 'not-probed',
                     '| crossOriginIsolated=', !!window.crossOriginIsolated);
             })
             .then(function () {
                 return Promise.all([
                     fetchWithCache(
-                        config.modelUrl,
+                        selectedModelUrl,
                         cacheName,
                         onProgress ? function (p) { onProgress(Object.assign({ asset: 'model' }, p)); } : null,
                         signal,
@@ -664,12 +679,17 @@
                     '| tokens[0..4]=', JSON.stringify(tokens.slice(0, 5)),
                     '| melFilters=', melFilters.length + 'x' + (melFilters[0] ? melFilters[0].length : '?'));
 
-                function finishSession(session, provider) {
+                function finishSession(session, provider, mode) {
                     if (signal && signal.aborted) {
                         try { session.release && session.release(); } catch (e) {}
                         throw abortError();
                     }
-                    console.log('[KoochikASR] execution provider=', provider);
+                    console.log('[KoochikASR] execution provider=', provider, '| modelMode=', mode,
+                        '| inputs=', JSON.stringify(session.inputNames || []),
+                        '| outputs=', JSON.stringify(session.outputNames || []));
+                    if (mode === 'int4-streaming') {
+                        return makeStreamingEngine(session, tokens, melFilters, blankId, provider);
+                    }
                     return makeEngine(session, tokens, melFilters, blankId, provider);
                 }
 
@@ -677,22 +697,23 @@
                     return window.ort.InferenceSession.create(modelBuffer, {
                         executionProviders: ['webgpu', 'wasm']
                     }).then(function (session) {
-                        return finishSession(session, 'webgpu');
+                        return finishSession(session, 'webgpu', 'fp16-fixed');
                     }).catch(function (err) {
                         if (signal && signal.aborted) throw err;
-                        console.warn('[KoochikASR] WebGPU session failed; falling back to WASM:', err);
-                        return window.ort.InferenceSession.create(modelBuffer, {
-                            executionProviders: ['wasm']
-                        }).then(function (session) {
-                            return finishSession(session, 'wasm');
-                        });
+                        if (!config.streamingModelUrl) throw err;
+                        console.warn('[KoochikASR] FP16 WebGPU session failed; retrying Koochik INT4 streaming WASM:', err);
+                        return fetchWithCache(config.streamingModelUrl, cacheName, onProgress ? function (p) { onProgress(Object.assign({ asset: 'streaming-model' }, p)); } : null, signal, 'arrayBuffer')
+                            .then(function (streamBuffer) {
+                                return window.ort.InferenceSession.create(streamBuffer, { executionProviders: ['wasm'] });
+                            })
+                            .then(function (session) { return finishSession(session, 'wasm', 'int4-streaming'); });
                     });
                 }
 
                 return window.ort.InferenceSession.create(modelBuffer, {
                     executionProviders: ['wasm']
                 }).then(function (session) {
-                    return finishSession(session, 'wasm');
+                    return finishSession(session, 'wasm', selectedMode);
                 });
             });
     }
@@ -830,6 +851,193 @@
             },
             destroy: function () {
                 chunks = []; totalLen = 0;
+                try { session.release && session.release(); } catch (e) {}
+            }
+        };
+    }
+
+
+    // ============================================
+    // Koochik 114M INT4 cache-aware streaming engine
+    // Official graph: Reza2kn/Shenava-Koochik-v1.0-tract-streaming/model.int4.onnx
+    // The graph is ONNX and can be executed by modern ORT Web WASM builds
+    // that support com.microsoft::MatMulNBits. It keeps FastConformer cache
+    // tensors between 121-frame chunks, shifted by 112 frames.
+    // ============================================
+    function makeStreamingEngine(session, tokens, melFilters, blankId, provider) {
+        const requiredInputs = ['audio_signal', 'length', 'cache_last_channel', 'cache_last_time', 'cache_last_channel_len'];
+        const inputNames = session.inputNames || [];
+        for (let i = 0; i < requiredInputs.length; i++) {
+            if (inputNames.indexOf(requiredInputs[i]) < 0) {
+                throw new Error('koochik-streaming-missing-input:' + requiredInputs[i]);
+            }
+        }
+
+        const resample = makeResampler(SAMPLE_RATE);
+        let pcmChunks = [];
+        let pcmLen = 0;
+        let nextFrameStart = 0;
+        let firstChunkDone = false;
+        let previousCtcId = -1;
+        let pieces = [];
+        let runChain = Promise.resolve();
+
+        let cacheChannel, cacheTime, cacheLen;
+
+        function initState() {
+            cacheChannel = new window.ort.Tensor('float32', new Float32Array(CACHE_LAYERS * CACHE_LEFT * CACHE_DMODEL), [1, CACHE_LAYERS, CACHE_LEFT, CACHE_DMODEL]);
+            cacheTime = new window.ort.Tensor('float32', new Float32Array(CACHE_LAYERS * CACHE_DMODEL * CACHE_TIME), [1, CACHE_LAYERS, CACHE_DMODEL, CACHE_TIME]);
+            cacheLen = new window.ort.Tensor('int64', BigInt64Array.from([0n]), [1]);
+            nextFrameStart = 0;
+            firstChunkDone = false;
+            previousCtcId = -1;
+            pieces = [];
+        }
+        initState();
+
+        function materializePcm() {
+            const out = new Float32Array(pcmLen);
+            let off = 0;
+            for (let i = 0; i < pcmChunks.length; i++) { out.set(pcmChunks[i], off); off += pcmChunks[i].length; }
+            return out;
+        }
+
+        function textNow() {
+            return pieces.join('').split('\u2581').join(' ').replace(/\s+/g, ' ').trim();
+        }
+
+        function findTensor(result, preferred, shapeTest) {
+            for (let i = 0; i < preferred.length; i++) if (result[preferred[i]]) return result[preferred[i]];
+            const keys = Object.keys(result);
+            for (let i = 0; i < keys.length; i++) {
+                const t = result[keys[i]];
+                if (t && shapeTest && shapeTest(t, keys[i])) return t;
+            }
+            return null;
+        }
+
+        function consumeCtc(logits) {
+            if (!logits || !logits.dims || logits.dims.length < 3) throw new Error('koochik-streaming-logprobs-missing');
+            const data = logits.type === 'float16' ? ortFloat16OutputToFloat32(logits.data) : Float32Array.from(logits.data);
+            const vocab = logits.dims[logits.dims.length - 1];
+            const steps = logits.dims[logits.dims.length - 2];
+            for (let t = 0; t < steps; t++) {
+                const base = t * vocab;
+                let bestId = 0, best = -Infinity;
+                for (let id = 0; id < vocab; id++) {
+                    const v = data[base + id];
+                    if (v > best) { best = v; bestId = id; }
+                }
+                const piece = tokens[bestId] || '';
+                if (bestId !== blankId && bestId !== previousCtcId && piece && !isSpecialToken(piece)) pieces.push(piece);
+                previousCtcId = bestId;
+            }
+        }
+
+        function makeMelChunk(fullFeatures, start, valid) {
+            const out = new Float32Array(N_MELS * STREAM_FRAMES);
+            for (let m = 0; m < N_MELS; m++) {
+                const srcBase = m * FIXED_FRAMES + start;
+                const dstBase = m * STREAM_FRAMES;
+                for (let t = 0; t < valid; t++) out[dstBase + t] = fullFeatures[srcBase + t];
+            }
+            return out;
+        }
+
+        function runOne(fullFeatures, start, valid) {
+            const mel = makeMelChunk(fullFeatures, start, valid);
+            const feeds = {
+                audio_signal: new window.ort.Tensor('float32', mel, [1, N_MELS, STREAM_FRAMES]),
+                length: new window.ort.Tensor('int64', BigInt64Array.from([BigInt(valid)]), [1]),
+                cache_last_channel: cacheChannel,
+                cache_last_time: cacheTime,
+                cache_last_channel_len: cacheLen
+            };
+            const t0 = performance.now();
+            return session.run(feeds).then(function (result) {
+                const logprobs = findTensor(result, ['logprobs', 'logits'], function (t) {
+                    return t.dims && t.dims.length === 3 && t.dims[t.dims.length - 1] === VOCAB_SIZE;
+                });
+                const nextChannel = findTensor(result, ['cache_last_channel_next'], function (t, name) { return name.indexOf('cache_last_channel') >= 0 && name.indexOf('next') >= 0; });
+                const nextTime = findTensor(result, ['cache_last_time_next'], function (t, name) { return name.indexOf('cache_last_time') >= 0 && name.indexOf('next') >= 0; });
+                const nextLen = findTensor(result, ['cache_last_channel_len_next'], function (t, name) { return name.indexOf('cache_last_channel_len') >= 0 && name.indexOf('next') >= 0; });
+                if (!logprobs || !nextChannel || !nextTime || !nextLen) {
+                    throw new Error('koochik-streaming-output-contract-mismatch:' + Object.keys(result).join(','));
+                }
+                consumeCtc(logprobs);
+                cacheChannel = nextChannel;
+                cacheTime = nextTime;
+                cacheLen = new window.ort.Tensor('int64', BigInt64Array.from([BigInt(Number(nextLen.data[0]))]), [1]);
+                console.log('[KoochikASR] streaming chunk:', 'start=', start, '| valid=', valid,
+                    '| outSteps=', logprobs.dims[logprobs.dims.length - 2],
+                    '| inferenceMs=', (performance.now() - t0).toFixed(1), '| text=', JSON.stringify(textNow()));
+                return textNow();
+            });
+        }
+
+        function process(finalize) {
+            if (!pcmLen) return Promise.resolve(textNow());
+            const pcm = materializePcm();
+            const generated = pcmToKoochikLogMel(pcm, melFilters);
+            const frameCount = generated.frameCount;
+            const fullFeatures = generated.features;
+            const jobs = [];
+
+            if (!firstChunkDone) {
+                if (frameCount >= STREAM_FIRST_VALID || finalize) {
+                    const valid = Math.min(STREAM_FIRST_VALID, frameCount);
+                    if (valid > 0) {
+                        jobs.push({ start: 0, valid: valid });
+                        firstChunkDone = true;
+                        nextFrameStart = Math.max(0, STREAM_FIRST_VALID - STREAM_OVERLAP); // 96
+                    }
+                }
+            }
+
+            if (firstChunkDone) {
+                while ((frameCount - nextFrameStart) >= STREAM_FRAMES) {
+                    jobs.push({ start: nextFrameStart, valid: STREAM_FRAMES });
+                    nextFrameStart += STREAM_SHIFT;
+                }
+                if (finalize) {
+                    const remaining = frameCount - nextFrameStart;
+                    // Ignore an overlap-only tail; it contains no new mel frames.
+                    if (remaining > STREAM_OVERLAP) {
+                        jobs.push({ start: nextFrameStart, valid: Math.min(STREAM_FRAMES, remaining) });
+                        nextFrameStart += STREAM_SHIFT;
+                    }
+                }
+            }
+
+            let chain = Promise.resolve(textNow());
+            jobs.forEach(function (job) {
+                chain = chain.then(function () { return runOne(fullFeatures, job.start, job.valid); });
+            });
+            return chain;
+        }
+
+        return {
+            executionProvider: function () { return provider || 'wasm'; },
+            modelMode: function () { return 'int4-streaming'; },
+            supportsLivePartials: function () { return true; },
+            feed: function (float32Samples, sourceSampleRate) {
+                const r = resample(float32Samples, sourceSampleRate || SAMPLE_RATE);
+                if (r.length) { pcmChunks.push(r); pcmLen += r.length; }
+            },
+            bufferedSeconds: function () { return pcmLen / SAMPLE_RATE; },
+            decode: function () {
+                runChain = runChain.then(function () { return process(false); });
+                return runChain;
+            },
+            finalize: function () {
+                runChain = runChain.then(function () { return process(true); });
+                return runChain;
+            },
+            reset: function () {
+                pcmChunks = []; pcmLen = 0; runChain = Promise.resolve(); initState();
+            },
+            destroy: function () {
+                pcmChunks = []; pcmLen = 0;
                 try { session.release && session.release(); } catch (e) {}
             }
         };
