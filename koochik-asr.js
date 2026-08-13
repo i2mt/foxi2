@@ -519,26 +519,80 @@
     }
 
     // ============================================
+    // WebGPU capability probe
+    // ============================================
+    // navigator.gpu alone is not enough for this model: Koochik is an FP16
+    // graph, so WebGPU must expose the optional shader-f16 feature. If it
+    // does not, attempting the WebGPU EP can create a session successfully
+    // but fail later during the first session.run() when WGSL kernels using
+    // f16 are compiled. Probe the adapter up front and choose WASM instead.
+    function probeWebGpuFp16(preferWebGPU) {
+        if (!preferWebGPU) {
+            return Promise.resolve({ ok: false, reason: 'disabled', adapter: null, shaderF16: false });
+        }
+        if (!(window.navigator && navigator.gpu && navigator.gpu.requestAdapter)) {
+            return Promise.resolve({ ok: false, reason: 'navigator.gpu-unavailable', adapter: null, shaderF16: false });
+        }
+
+        return navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+            .then(function (adapter) {
+                if (!adapter) {
+                    return { ok: false, reason: 'no-adapter', adapter: null, shaderF16: false };
+                }
+                const shaderF16 = !!(adapter.features && adapter.features.has && adapter.features.has('shader-f16'));
+                return {
+                    ok: shaderF16,
+                    reason: shaderF16 ? 'shader-f16-supported' : 'shader-f16-unavailable',
+                    adapter: adapter,
+                    shaderF16: shaderF16
+                };
+            })
+            .catch(function (err) {
+                return {
+                    ok: false,
+                    reason: 'adapter-probe-failed',
+                    adapter: null,
+                    shaderF16: false,
+                    error: err
+                };
+            });
+    }
+
+    // ============================================
     // Public API
     // ============================================
     function load(config, onProgress) {
         config = config || {};
-        const wantWebGPU = config.preferWebGPU !== false && !!(window.navigator && navigator.gpu);
+        const preferWebGPU = config.preferWebGPU !== false;
         const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js';
         const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js';
-        const ortLibUrl = wantWebGPU ? ortWebgpuLibUrl : ortWasmLibUrl;
         const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
         const signal = config.signal || null;
+        let wantWebGPU = false;
+        let webGpuProbe = null;
 
-        return loadScriptOnce(ortLibUrl)
+        return probeWebGpuFp16(preferWebGPU)
+            .then(function (probe) {
+                if (signal && signal.aborted) throw abortError();
+                webGpuProbe = probe;
+                wantWebGPU = !!probe.ok;
+
+                const ortLibUrl = wantWebGPU ? ortWebgpuLibUrl : ortWasmLibUrl;
+                if (preferWebGPU && !wantWebGPU) {
+                    console.warn('[KoochikASR] WebGPU FP16 unavailable; using WASM:', probe.reason);
+                }
+                return loadScriptOnce(ortLibUrl);
+            })
             .then(function () {
                 if (signal && signal.aborted) throw abortError();
                 if (!window.ort) throw new Error('ort-missing-after-load');
                 window.ort.env.wasm.wasmPaths = ortWasmBaseUrl;
                 console.log('[KoochikASR] runtime:',
                     'navigator.gpu=', !!(window.navigator && navigator.gpu),
+                    '| shader-f16=', !!(webGpuProbe && webGpuProbe.shaderF16),
                     '| requested=', wantWebGPU ? 'webgpu' : 'wasm',
+                    '| webgpuReason=', webGpuProbe ? webGpuProbe.reason : 'not-probed',
                     '| crossOriginIsolated=', !!window.crossOriginIsolated);
             })
             .then(function () {
