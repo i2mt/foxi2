@@ -78,20 +78,42 @@
     // Dynamic script loading (same pattern as the old vosk.js load)
     // ============================================
     function loadScriptOnce(url) {
-        const existing = document.querySelector('script[src="' + url + '"]');
+        let existing = document.querySelector('script[src="' + url + '"]');
+        if (existing && existing.dataset.failed === 'true') {
+            try { existing.remove(); } catch (e) {}
+            existing = null;
+        }
         if (existing) {
             if (existing.dataset.loaded === 'true') return Promise.resolve();
             return new Promise(function (resolve, reject) {
-                existing.addEventListener('load', function () { resolve(); });
-                existing.addEventListener('error', function () { reject(new Error('script-load-failed')); });
+                existing.addEventListener('load', function () {
+                    existing.dataset.loaded = 'true';
+                    resolve();
+                }, { once: true });
+                existing.addEventListener('error', function () {
+                    existing.dataset.failed = 'true';
+                    try { existing.remove(); } catch (e) {}
+                    const err = new Error('script-load-failed: ' + url);
+                    err.code = 'script-load-failed';
+                    reject(err);
+                }, { once: true });
             });
         }
         return new Promise(function (resolve, reject) {
             const s = document.createElement('script');
             s.src = url;
             s.async = true;
-            s.onload = function () { s.dataset.loaded = 'true'; resolve(); };
-            s.onerror = function () { reject(new Error('script-load-failed')); };
+            s.onload = function () {
+                s.dataset.loaded = 'true';
+                resolve();
+            };
+            s.onerror = function () {
+                s.dataset.failed = 'true';
+                try { s.remove(); } catch (e) {}
+                const err = new Error('script-load-failed: ' + url);
+                err.code = 'script-load-failed';
+                reject(err);
+            };
             document.head.appendChild(s);
         });
     }
@@ -572,9 +594,9 @@
     function load(config, onProgress) {
         config = config || {};
         const preferWebGPU = config.preferWebGPU !== false;
-        const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.webgpu.min.js';
-        const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js';
-        const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+        const ortWebgpuLibUrl = config.ortWebgpuLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.webgpu.min.js';
+        const ortWasmLibUrl = config.ortWasmLibUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js';
+        const ortWasmBaseUrl = config.ortWasmBaseUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
         const cacheName = config.cacheName || 'foximed-koochik-model-v1';
         const signal = config.signal || null;
         let wantWebGPU = false;

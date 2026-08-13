@@ -65,9 +65,9 @@
     const KOOCHIK_STREAMING_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-tract-streaming/resolve/main/model.int4.onnx';
     const KOOCHIK_TOKENS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/tokens.json';
     const KOOCHIK_MEL_FILTERS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/mel_filters_slaney_80x257.json';
-    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.webgpu.min.js';
-    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.min.js';
-    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.webgpu.min.js';
+    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js';
+    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
     // How long to wait for the model download before giving up. Raise this
     // further if your users are on consistently slow connections — there's
     // no real downside to being patient here, it only delays the *failure*
