@@ -362,7 +362,7 @@
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
                 if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
-                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود مدل (حدود ۲۳۰ مگابایت)...';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Koochik (حدود ۱۴۵ مگابایت)...';
             }
         });
         window.VoiceEngine.on('model-progress', function (p) {

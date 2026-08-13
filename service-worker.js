@@ -3,7 +3,7 @@
 // Always tries to fetch the latest version.
 // Falls back to cache only when offline.
 
-const CACHE_NAME = 'FoxiMed_v5.0.11';
+const CACHE_NAME = 'FoxiMed_v5.0.12';
 
 const urlsToCache = [
     './',
@@ -13,6 +13,8 @@ const urlsToCache = [
     './script.js',
     './voice-recognition.js',
     './koochik-asr.js',
+    './sherpa-koochik/sherpa-onnx-asr.js',
+    './sherpa-koochik/sherpa-onnx-wasm-main-asr.js',
     './voice-commands.js',
     './voice-ui.js',
     './converters.js',
@@ -49,9 +51,7 @@ self.addEventListener('activate', event => {
         caches.keys().then(cacheNames =>
             Promise.all(
                 cacheNames
-                    // Only retire older FoxiMed app-shell caches. Do NOT
-                    // delete independent runtime caches such as the large
-                    // Koochik model cache (foximed-koochik-model-v1).
+                    // Only retire older FoxiMed app-shell caches.
                     .filter(name => name.startsWith('FoxiMed_v') && name !== CACHE_NAME)
                     .map(name => caches.delete(name))
             )
@@ -67,14 +67,14 @@ self.addEventListener('activate', event => {
 // Why: this handler clones every successful response to cache it. Cloning
 // a streamed response means the browser buffers BOTH copies at once (one
 // for the page, one for the cache) — fine for small app-shell files, but
-// for something like a 53MB Vosk model, that's a real memory spike. iOS
+// for a large speech model, that's a real memory spike. iOS
 // Safari in particular can respond to that by killing the service worker's
 // background process mid-transfer, which breaks the fetch from the page's
 // point of view even though a plain direct navigation to the same URL
 // (which never goes through this handler at all) works fine. The model
-// file already has its own, separate, deliberate caching strategy in
-// koochik-asr.js — it doesn't need (or want) this handler's help too.
-const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i];
+// .data/.wasm files are intentionally left to the browser HTTP cache;
+// duplicating them into CacheStorage would create a large memory spike.
+const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i, /\.data(\?|$)/i, /\.wasm(\?|$)/i];
 
 self.addEventListener('fetch', event => {
 

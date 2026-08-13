@@ -1,117 +1,29 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Low-level speech capture layer with TWO interchangeable backends:
+   Primary backend on all devices: Shenava Koochik v1.0 114M streaming
+   INT8 NeMo CTC through the official sherpa-onnx WebAssembly runtime.
 
-     1. "koochik" — the primary backend on ALL supported devices: an
-        on-device ONNX speech engine (Shenava Koochik v1.0, Persian
-        FastConformer CTC) running in-browser via onnxruntime-web.
-
-     2. "webspeech" — retained only as a fallback if Koochik is deliberately
-        deconfigured. Normal FoxiMed voice recognition now uses the same
-        Koochik model on iOS, Android, desktop and installed PWAs.
-
-   Both backends are driven through the exact same public, event-driven
-   API, so neither voice-commands.js nor voice-ui.js need to know which
-   one is active:
-
-       window.VoiceEngine.getSupportInfo()
-       window.VoiceEngine.start()
-       window.VoiceEngine.stop()
-       window.VoiceEngine.isActive()
-       window.VoiceEngine.on(event, handler)
-
-   Events emitted: 'start', 'interim', 'final', 'end', 'error', 'audio',
-                    'model-loading', 'model-ready'
-
-   --- KOOCHIK BACKEND (ALL DEVICES) ---
-   Koochik remains the only primary ASR model. Runtime selection is automatic:
-     - WebGPU + shader-f16: official 230 MB FP16 fixed-window CTC graph.
-     - Otherwise: official 138 MB INT4 cache-aware streaming CTC graph on WASM.
-   Both use the same tokenizer/mel sidecars and expose the same VoiceEngine API.
-   Large model files stay on Hugging Face and are cached after first use.
-
-   WHICH MODEL: Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16 — the 114M-param
-   FastConformer CTC export (NOT the v1.5 RNNT export, which is a
-   different encoder/decoder/joiner split this engine doesn't use).
-
-   You need three files, hosted same-origin (no CORS step) with a long
-   Cache-Control (e.g. max-age=31536000, immutable) so repeat visits
-   don't re-download:
-     1. The Koochik ONNX model file (fp16) — this is likely well over
-        100MB; confirm the real download size before shipping and
-        decide if that's acceptable on your users' connections. This
-        is bigger than the old Vosk model (53MB) even though it
-        decodes far faster once loaded.
-     2. tokens.json — array of 1025 token strings indexed by id
-        (id 1024 is the CTC blank).
-     3. mel_filters_slaney_80x257.json — Koochik's own exported Slaney
-        mel filterbank. Use their file as-is; don't re-derive it.
-
-   This integration could not be end-to-end tested here (no iOS device,
-   no microphone, no real model download in this sandbox, and the exact
-   asset URLs are placeholders below) — the code follows the model's
-   documented tensor contract and preprocessing spec exactly, but please
-   test for real on-device before relying on it.
+   sherpa-onnx owns feature extraction, resampling, FastConformer cache
+   state, streaming inference, CTC decoding, and endpoint detection.
+   voice-recognition.js only owns microphone capture, UI events, and the
+   common VoiceEngine API used by the rest of FoxiMed.
    ============================================ */
 (function (window) {
     'use strict';
 
-    // Official Shenava Koochik v1.0 FP16 export. The ~230 MB embedded
-    // ONNX stays on Hugging Face instead of the normal Git repository.
-    // The official tokens and mel-filter sidecars come from the same repo
-    // and are cached by koochik-asr.js after first successful use.
-    const KOOCHIK_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/shenava_koochik_1_0_ctc_fixed2005_len_att70_13_fp16_full_io_embedded.onnx';
-    const KOOCHIK_STREAMING_MODEL_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-tract-streaming/resolve/main/model.int4.onnx';
-    const KOOCHIK_TOKENS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/tokens.json';
-    const KOOCHIK_MEL_FILTERS_URL = 'https://huggingface.co/Reza2kn/Shenava-Koochik-v1.0-ONNX-fp16/resolve/main/mel_filters_slaney_80x257.json';
-    const KOOCHIK_ORT_WEBGPU_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.webgpu.min.js';
-    const KOOCHIK_ORT_WASM_LIB_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js';
-    const KOOCHIK_ORT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
-    // How long to wait for the model download before giving up. Raise this
-    // further if your users are on consistently slow connections — there's
-    // no real downside to being patient here, it only delays the *failure*
-    // message on a genuinely dead connection, it doesn't block anything
-    // else in the app.
-    const KOOCHIK_MODEL_TIMEOUT_MS = 15 * 60 * 1000; // generous outer backstop; a ~230MB fetch legitimately needs more headroom than the old 53MB Vosk model did
-    const KOOCHIK_CACHE_NAME = 'foximed-koochik-model-v1';
-    // How often to re-run inference on the buffered audio to produce a
-    // live-feeling partial result. Koochik is an offline (non-streaming)
-    // CTC model under the hood — "streaming" here means periodically
-    // re-decoding the growing buffer, the same approach Shenava's own
-    // browser demo uses. Kept modest since each decode is ~10ms of
-    // compute but there's still buffer-materialization overhead.
-    const KOOCHIK_PARTIAL_INTERVAL_MS = 700;
-    // Shared by both backends' audio-level metering (used to throttle how
-    // often the 'audio' visualizer event fires). This lived inside the old
-    // Vosk backend block and got dropped when that block was replaced —
-    // both startWebSpeech()'s and startKoochik()'s meter functions
-    // reference it, so it needs to live at module scope, not inside
-    // either backend section.
+    // Generated by .github/workflows/pages-sherpa-koochik.yml. The large
+    // model is baked into sherpa-onnx-wasm-main-asr.data at deploy time,
+    // so it never enters the Git repository itself.
+    const KOOCHIK_SHERPA_BASE_URL = './sherpa-koochik/';
+    const KOOCHIK_MODEL_TIMEOUT_MS = 15 * 60 * 1000;
+    const KOOCHIK_PARTIAL_INTERVAL_MS = 250;
     const AUDIO_LEVEL_THROTTLE_MS = 125;
-    const KOOCHIK_SILENCE_FINALIZE_MS = 1500;
-    // Do not finalize very short buffers even if VAD sees silence. The model's
-    // FastConformer export has right attention context [70,13] and 8x time
-    // reduction; a word near the end of a ~1 s clip can therefore still need
-    // roughly another second of future/context audio before CTC emits it.
-    const KOOCHIK_MIN_FINAL_BUFFER_MS = 2400;
-    const KOOCHIK_MAX_UTTERANCE_MS = 19500; // fixed model window is ~20.04s
-    const KOOCHIK_MIN_SPEECH_RMS = 0.010;
-    // Quiet phone captures can have speech RMS below the conservative
-    // noise-floor threshold while still showing clear transient peaks.
-    // Use peak as a secondary cue; the RMS guard prevents tiny clicks/noise
-    // from being treated as a whole utterance.
-    const KOOCHIK_MIN_SPEECH_PEAK = 0.040;
-    const KOOCHIK_PEAK_RMS_GUARD = 0.008;
-    // Start with a realistic mobile-mic background floor instead of an
-    // ultra-low value.  With the old 0.004 seed, ordinary phone-room
-    // noise around RMS 0.02-0.03 was immediately classified as speech
-    // forever, so silence finalization never fired.
-    const KOOCHIK_INITIAL_NOISE_FLOOR = 0.015;
-    const KOOCHIK_NOISE_RATIO = 2.2;
-    const KOOCHIK_NOISE_MARGIN = 0.006;
+    // Streaming sherpa has its own 2.4/1.2/20 second endpoint rules. This
+    // outer timer is only a final safety cap for a pathological session.
+    const KOOCHIK_MAX_UTTERANCE_MS = 60 * 1000;
 
-    function koochikConfigured() { return !!(KOOCHIK_MODEL_URL && KOOCHIK_TOKENS_URL && KOOCHIK_MEL_FILTERS_URL); }
+    function koochikConfigured() { return !!KOOCHIK_SHERPA_BASE_URL; }
 
     // ============================================
     // ENVIRONMENT DETECTION
@@ -301,9 +213,6 @@
     let koochikDecodePromise = null;
     let koochikLastEmitted = '';
     let koochikStopping = false;
-    let koochikSpeechSeen = false;
-    let koochikLastVoiceAt = 0;
-    let koochikNoiseFloor = KOOCHIK_INITIAL_NOISE_FLOOR;
     let koochikLoadAbortController = null;
     let koochikLoadGeneration = 0;
     let triedKoochikFallback = false; // reset at the start of each fresh start() call
@@ -554,12 +463,10 @@
     }
 
     // ============================================
-    // BACKEND 1: KOOCHIK (primary on-device CTC ASR — all devices)
-    // Driven by koochik-asr.js, which owns feature extraction, ONNX
-    // inference (via onnxruntime-web), and greedy CTC decoding. This
-    // file only owns: mic capture, buffering audio into the engine,
-    // deciding when to ask for a partial vs. final decode, and mapping
-    // engine output onto the same event contract webspeech/vosk used.
+    // BACKEND 1: KOOCHIK (primary on-device streaming CTC ASR — all devices)
+    // Driven by the official sherpa-onnx WASM runtime. sherpa owns
+    // resampling, feature extraction, FastConformer caches, ONNX inference,
+    // CTC decoding, and endpoint detection. This file owns mic/UI plumbing.
     // ============================================
     function ensureKoochikEngine() {
         if (koochikEngine) return Promise.resolve(koochikEngine);
@@ -572,15 +479,7 @@
 
         const loadChain = window.KoochikASR
             ? window.KoochikASR.load({
-                modelUrl: KOOCHIK_MODEL_URL,
-                streamingModelUrl: KOOCHIK_STREAMING_MODEL_URL,
-                tokensUrl: KOOCHIK_TOKENS_URL,
-                melFiltersUrl: KOOCHIK_MEL_FILTERS_URL,
-                ortWebgpuLibUrl: KOOCHIK_ORT_WEBGPU_LIB_URL,
-                ortWasmLibUrl: KOOCHIK_ORT_WASM_LIB_URL,
-                ortWasmBaseUrl: KOOCHIK_ORT_WASM_BASE_URL,
-                preferWebGPU: true,
-                cacheName: KOOCHIK_CACHE_NAME,
+                baseUrl: KOOCHIK_SHERPA_BASE_URL,
                 signal: controller.signal
             }, function (progress) {
                 if (generation !== koochikLoadGeneration || controller.signal.aborted) return;
@@ -648,14 +547,28 @@
         koochikLoading = true;
         koochikCancelRequested = false;
 
+        // Create/resume Web Audio while we are still inside the user's mic
+        // button gesture. Safari/iOS can keep a context suspended if it is
+        // first created only after model-loading/getUserMedia promises.
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
+                koochikAudioCtx = new AC();
+            }
+            if (koochikAudioCtx.state === 'suspended') {
+                koochikAudioCtx.resume().catch(function () {});
+            }
+        } catch (e) {
+            koochikLoading = false;
+            emit('error', classifyError('audio-capture'));
+            return;
+        }
+
         ensureKoochikEngine().then(function (engine) {
             if (koochikCancelRequested) { koochikLoading = false; return; }
             engine.reset();
             koochikLastEmitted = '';
             koochikStopping = false;
-            koochikSpeechSeen = false;
-            koochikLastVoiceAt = 0;
-            koochikNoiseFloor = KOOCHIK_INITIAL_NOISE_FLOOR;
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
@@ -668,11 +581,15 @@
                 }
                 koochikStream = stream;
                 const AC = window.AudioContext || window.webkitAudioContext;
-                koochikAudioCtx = new AC();
+                if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
+                    koochikAudioCtx = new AC();
+                }
+                if (koochikAudioCtx.state === 'suspended') {
+                    try { koochikAudioCtx.resume(); } catch (e) {}
+                }
                 koochikSource = koochikAudioCtx.createMediaStreamSource(stream);
                 // ScriptProcessorNode is deprecated but broadly supported,
-                // including current iOS Safari — same choice the Vosk
-                // backend made, kept for the same reason. Must be
+                // including current iOS Safari — kept temporarily for broad browser compatibility. Must be
                 // connected through to a destination for onaudioprocess
                 // to reliably fire in every browser.
                 koochikProcessor = koochikAudioCtx.createScriptProcessor(4096, 1, 1);
@@ -690,14 +607,21 @@
                 const sessionAudioCtx = koochikAudioCtx;
                 koochikProcessor.onaudioprocess = function (event) {
                     try {
-                        // Same 350ms warm-up guard as the old Vosk path —
+                        // 350ms warm-up guard —
                         // Android's audio subsystem delivers silence/
                         // garbage right after a stream opens.
                         if (Date.now() - streamStartTime >= 350) {
                             const samples = event.inputBuffer.getChannelData(0);
                             if (!koochikStopping) {
                                 engine.feed(samples, sessionAudioCtx.sampleRate);
-                                updateKoochikVad(samples);
+                                // sherpa-onnx owns endpoint detection for the
+                                // streaming NeMo CTC model. Avoid a second,
+                                // competing hand-written RMS/VAD state machine.
+                                if (engine.endpointDetected && engine.endpointDetected()) {
+                                    setTimeout(function () {
+                                        if (koochikActive && !koochikStopping) stopKoochik();
+                                    }, 0);
+                                }
                             }
                         }
                         // Moved inside the try — this was previously called
@@ -711,7 +635,7 @@
                     } catch (e) {
                         // This was firing silently on every single audio
                         // callback (every ~85-100ms) with no logging at all
-                        // — if engine.feed()/updateKoochikVad() throws
+                        // — if engine.feed() throws
                         // synchronously, THIS is the actual failure path,
                         // not the decode-polling one I instrumented earlier.
                         // It also never stopped the session, so a
@@ -748,17 +672,16 @@
             });
         }).catch(function (info) {
             koochikLoading = false;
+            if (!koochikActive && koochikAudioCtx) {
+                try { koochikAudioCtx.close(); } catch (e) {}
+                koochikAudioCtx = null;
+            }
             emit('error', info && info.code ? info : classifyError('koochik-model-failed'));
         });
     }
-
-    // Periodically re-decodes the buffered audio so far to produce a
-    // live-feeling "interim" result — Koochik is a fixed-window offline
-    // CTC model under the hood, not a truly incremental streaming model.
-    // Live partials are only enabled on the accelerated WebGPU path. On the
-    // WASM fallback a full fixed-window pass can take seconds, so decoding
-    // during capture would starve the main-thread microphone callback; WASM
-    // captures the utterance first and performs one final decode instead.
+    // sherpa performs incremental inference inside engine.feed(). This timer
+    // only polls the latest decoded text for UI interim events; it does NOT
+    // rerun the entire utterance or execute another model pass.
     let koochikConsecutiveDecodeFailures = 0;
 
     function schedulePartialDecode(engine) {
@@ -785,15 +708,6 @@
                 // wiring problem.
                 console.log('[KoochikASR] decode result:', JSON.stringify(text), '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
                 if (!koochikActive || koochikStopping) return;
-                if (text && text.trim()) {
-                    // A non-empty CTC result is stronger evidence that the
-                    // user actually spoke than a raw RMS threshold alone.
-                    // This also lets quiet speakers transition into the
-                    // silence-finalization path even if their mic level never
-                    // crossed the conservative initial VAD threshold.
-                    koochikSpeechSeen = true;
-                    koochikLastVoiceAt = Date.now();
-                }
                 if (text && text !== koochikLastEmitted) {
                     koochikLastEmitted = text;
                     emit('interim', text);
@@ -845,64 +759,12 @@
         emit('audio', { bins: bins, level: Math.min(1, levelSum / bars) });
     }
 
-    function updateKoochikVad(samples) {
-        if (!koochikActive || koochikStopping || !samples || !samples.length) return;
-
-        let sumSq = 0, peak = 0;
-        for (let i = 0; i < samples.length; i++) {
-            const v = Number.isFinite(samples[i]) ? samples[i] : 0;
-            sumSq += v * v;
-            const a = Math.abs(v);
-            if (a > peak) peak = a;
-        }
-        const rms = Math.sqrt(sumSq / samples.length);
-        const now = Date.now();
-        // The previous implementation seeded noiseFloor at 0.004 and
-        // used noiseFloor*2.5.  On real phones an idle RMS around 0.02-0.03
-        // then looked like speech from the very first callback, so the floor
-        // could never adapt upward and the utterance ran all the way to the
-        // 20-second model cap.  Seed near a realistic mobile floor and use
-        // both a ratio and an absolute margin.
-        const threshold = Math.max(
-            KOOCHIK_MIN_SPEECH_RMS,
-            koochikNoiseFloor * KOOCHIK_NOISE_RATIO,
-            koochikNoiseFloor + KOOCHIK_NOISE_MARGIN
-        );
-
-        const speechByRms = rms >= threshold;
-        const speechByPeak = peak >= KOOCHIK_MIN_SPEECH_PEAK && rms >= KOOCHIK_PEAK_RMS_GUARD;
-
-        if (speechByRms || speechByPeak) {
-            koochikSpeechSeen = true;
-            koochikLastVoiceAt = now;
-        } else {
-            // Adapt more quickly before/after speech so ordinary room noise
-            // becomes the baseline instead of being mistaken for speech.
-            const alpha = koochikSpeechSeen ? 0.04 : 0.10;
-            koochikNoiseFloor = Math.max(
-                0.001,
-                Math.min(0.04, koochikNoiseFloor * (1 - alpha) + rms * alpha)
-            );
-            const bufferedMs = koochikEngine ? (koochikEngine.bufferedSeconds() * 1000) : 0;
-            if (koochikSpeechSeen && koochikLastVoiceAt &&
-                (now - koochikLastVoiceAt) >= KOOCHIK_SILENCE_FINALIZE_MS &&
-                bufferedMs >= KOOCHIK_MIN_FINAL_BUFFER_MS) {
-                console.log('[KoochikASR] VAD silence finalize:',
-                    'rms=', rms.toFixed(4), '| peak=', peak.toFixed(4),
-                    '| noiseFloor=', koochikNoiseFloor.toFixed(4),
-                    '| threshold=', threshold.toFixed(4),
-                    '| trailingSilenceMs=', (now - koochikLastVoiceAt),
-                    '| bufferedSeconds=', (bufferedMs / 1000).toFixed(2));
-                stopKoochik();
-            }
-        }
-    }
 
     function armKoochikSessionLimit() {
         if (koochikSilenceWatchdog) clearTimeout(koochikSilenceWatchdog);
         koochikSilenceWatchdog = setTimeout(function () {
-            // Koochik only retains ~20 seconds. Finalize before the fixed
-            // window rolls over instead of silently dropping the beginning.
+            // sherpa is truly streaming, so this is only an outer safety
+            // cap rather than a fixed-model-window limitation.
             if (koochikActive) stopKoochik();
         }, KOOCHIK_MAX_UTTERANCE_MS);
     }
@@ -944,7 +806,7 @@
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
         // Run one last decode over whatever was captured before tearing
         // down, so a manual stop mid-sentence doesn't just throw the
-        // words away — mirrors the old Vosk retrieveFinalResult() step.
+        // words away — ensures a manual stop still flushes the online stream.
         const engine = koochikEngine;
         if (engine && engine.bufferedSeconds() > 0.15) {
             koochikStopTimer = setTimeout(finishKoochik, 30000);
@@ -991,8 +853,6 @@
         koochikStopping = false;
         koochikDecodeInFlight = false;
         koochikDecodePromise = null;
-        koochikSpeechSeen = false;
-        koochikLastVoiceAt = 0;
         stopKoochikCapture();
         if (koochikEngine) { try { koochikEngine.reset(); } catch (e) {} }
         if (wasActive) emit('end');
@@ -1003,7 +863,7 @@
     // ============================================
     function pickBackend() {
         // Koochik is intentionally the default backend on every device.
-        // It runs locally in the browser through ONNX Runtime Web.
+        // It runs locally in the browser through sherpa-onnx WebAssembly.
         return koochikConfigured() ? 'koochik' : 'webspeech';
     }
 
@@ -1083,9 +943,9 @@
             if (!koochikConfigured()) return Promise.resolve();
             return ensureKoochikEngine().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
-        // Abort an opportunistic model load/download. The AbortController
-        // is passed all the way into fetch(), so this now stops the large
-        // Hugging Face transfer instead of merely ignoring its result.
+        // Abort an opportunistic model load/download. Cancellation stops FoxiMed from adopting the result. The large .data
+        // transfer itself is owned internally by Emscripten and may finish in
+        // the browser cache even after this caller cancels.
         cancelPreload: function () {
             if (koochikEngine) return;
             koochikCancelRequested = true;
@@ -1106,13 +966,12 @@
         // voice before, so getting it ready during a wait they're already
         // seeing is a better trade than making them wait again later.
         isModelCached: function () {
-            if (!koochikConfigured() || !window.caches) return Promise.resolve(false);
-            return caches.open(KOOCHIK_CACHE_NAME)
-                .then(function (cache) {
-                    return Promise.all([cache.match(KOOCHIK_MODEL_URL), cache.match(KOOCHIK_STREAMING_MODEL_URL)]);
-                })
-                .then(function (matches) { return !!(matches[0] || matches[1]); })
-                .catch(function () { return false; });
+            // The Koochik model lives inside Emscripten's generated .data
+            // package and is cached by the browser's normal HTTP cache. That
+            // cache is intentionally not duplicated into CacheStorage (doing
+            // so would create a large memory spike), and HTTP cache entries
+            // are not queryable from page JS. Keep startup warmup on-demand.
+            return Promise.resolve(false);
         },
         // Frees the loaded Koochik engine (ONNX session) from memory.
         // Not called unconditionally — keeping the model warm after
@@ -1131,8 +990,8 @@
             if (koochikActive || koochikLoading) return;
 
             // Low-power mode may call this while an opportunistic preload
-            // is still downloading. Abort that transfer before dropping the
-            // promise so it cannot continue consuming bandwidth/RAM unseen.
+            // is still downloading. Cancel our pending adoption of that preload before dropping the promise.
+            // Emscripten may still complete an internal .data fetch.
             if (koochikEngineLoadPromise && !koochikEngine) {
                 koochikLoadGeneration++;
                 if (koochikLoadAbortController) {

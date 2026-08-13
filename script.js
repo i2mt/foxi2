@@ -121,7 +121,7 @@ function detectLowEndDevice() {
 // Low Power Mode on for this launch (unless the person set it manually),
 // so a device that got stuck once doesn't get stuck again on the very next
 // open — critically, this decision is made BEFORE the loading screen (and
-// therefore before any Vosk warmup) even starts, so it protects the next
+// therefore before any voice-model warmup) even starts, so it protects the next
 // launch even if that one never reaches Settings either.
 (function autoDetectLowPowerModeIfNeeded() {
     try {
@@ -311,7 +311,7 @@ const AppState = {
         setTimeout(runStep, 300);
     });
 
-    // If the Vosk voice model was already downloaded in a PREVIOUS session
+    // If the on-device voice model was already downloaded in a PREVIOUS session
     // (i.e. the person has clearly used voice before), get it fully ready
     // during this already-expected loading wait, so opening the Voice tab
     // later is instant instead of triggering a second, separate wait. If

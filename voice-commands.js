@@ -14,7 +14,6 @@
    which point every script has already loaded).
 
    Public API: window.VoiceCommands.process(text)
-               window.VoiceCommands.getGrammar() — see VOSK GRAMMAR below
 
    © Mohammad Mahdi Taghavi — FoxiMed
    ============================================ */
@@ -808,61 +807,6 @@
         return true;
     }
 
-    // ============================================
-    // VOSK GRAMMAR (experimental)
-    // Vosk's small/dynamic models support an optional vocabulary list that
-    // biases the decoder toward known words instead of the full language —
-    // it can still freely recombine these words in any order/sequence a
-    // user actually speaks them in, it's not limited to exact pre-written
-    // phrases. Built once and cached; voice-recognition.js asks for this
-    // only for the Vosk (iOS) backend, with a "[unk]" catch-all included
-    // so genuinely unlisted speech doesn't get forced into the wrong known
-    // word — and falls back to unconstrained recognition entirely if the
-    // specific model build doesn't support a grammar at all.
-    // ============================================
-    let cachedGrammar = null;
-    const EXTRA_GRAMMAR_WORDS = [
-        'بمی', 'بی ام ای', 'بی', 'ام', 'ای', 'جی سی اس', 'آر اس اس',
-        'وزن', 'قد', 'سن', 'مرد', 'زن', 'ساعت', 'دقیقه', 'لیتر', 'درصد',
-        'mg', 'mcg', 'g', 'ml', 'meq', 'units', 'kg', 'bar', 'psi',
-        'میلی گرم', 'میلی‌گرم', 'میکروگرم', 'میکرو گرم', 'گرم', 'واحد',
-        'سی سی', 'سی‌سی', 'و', 'به', 'در', 'تا', 'از', 'با', 'بدون'
-    ];
-
-    function buildVoiceGrammar() {
-        if (cachedGrammar) return cachedGrammar;
-        const words = new Set();
-
-        function addPhrase(phrase) {
-            if (!phrase) return;
-            String(phrase).trim().split(/\s+/).forEach(function (w) {
-                if (w) words.add(w);
-            });
-        }
-
-        // Drug names — every word of every name/alias, plus the full name
-        // itself for the common single-word cases.
-        for (const id in drugDatabase) {
-            const d = drugDatabase[id];
-            addPhrase(d.persianName);
-            addPhrase(d.englishName);
-            (d.alternativeNames || []).forEach(addPhrase);
-        }
-
-        // Every trigger phrase across every command, split into words.
-        for (const cmd in COMMAND_KEYWORDS) {
-            COMMAND_KEYWORDS[cmd].triggers.forEach(addPhrase);
-        }
-
-        // Numbers, units, small connective words.
-        Object.keys(PERSIAN_NUMBER_WORDS).forEach(addPhrase);
-        Object.keys(PERSIAN_UNIT_WORDS).forEach(addPhrase);
-        EXTRA_GRAMMAR_WORDS.forEach(addPhrase);
-
-        words.add('[unk]');
-        cachedGrammar = JSON.stringify(Array.from(words));
-        return cachedGrammar;
-    }
 
     // ============================================
     // MAIN ENTRY POINT
@@ -1697,7 +1641,6 @@
 
     window.VoiceCommands = {
         process: process,
-        getGrammar: buildVoiceGrammar,
         getUnrecognizedLog: getUnrecognizedLog,
         clearUnrecognizedLog: clearUnrecognizedLog,
         exportUnrecognizedLogAsText: exportUnrecognizedLogAsText
