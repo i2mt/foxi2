@@ -1,1 +1,107 @@
+name: Build FoxiMed + Koochik sherpa-onnx
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FoxiMed
+        uses: actions/checkout@v4
+
+      - name: Install Emscripten 4.0.23
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.23
+          actions-cache-folder: emsdk-cache
+
+      - name: Clone sherpa-onnx v1.13.5
+        run: |
+          git clone --depth 1 --branch v1.13.5 https://github.com/k2-fsa/sherpa-onnx.git "$RUNNER_TEMP/sherpa-onnx"
+
+      - name: Download official Koochik streaming INT8 model
+        shell: bash
+        run: |
+          set -euxo pipefail
+          assets="$RUNNER_TEMP/sherpa-onnx/wasm/asr/assets"
+          rm -rf "$assets"/*
+
+          curl -L --fail --retry 5 --retry-delay 3 \
+            -o "$assets/nemo-ctc.onnx" \
+            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-streaming-int8-2026-06-26/resolve/main/model.int8.onnx"
+
+          curl -L --fail --retry 5 --retry-delay 3 \
+            -o "$assets/tokens.txt" \
+            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-streaming-int8-2026-06-26/resolve/main/tokens.txt"
+
+          # Current sherpa wasm/asr CMake has a historical encoder.onnx
+          # existence guard even when the selected runtime is NeMo CTC.
+          # A zero-byte placeholder satisfies that configure-time guard;
+          # our explicit JS recognizer config uses only nemo-ctc.onnx.
+          : > "$assets/encoder.onnx"
+          ls -lh "$assets"
+
+      - name: Build sherpa-onnx WebAssembly ASR
+        shell: bash
+        working-directory: ${{ runner.temp }}/sherpa-onnx
+        run: |
+          set -euxo pipefail
+          ./build-wasm-simd-asr.sh
+
+      - name: Assemble Pages site
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf _site
+          mkdir -p _site/sherpa-koochik
+
+          rsync -a ./ _site/ \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '_site/'
+
+          built="$RUNNER_TEMP/sherpa-onnx/build-wasm-simd-asr/install/bin/wasm/asr"
+          cp "$built/sherpa-onnx-asr.js" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-asr.js" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-asr.wasm" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-asr.data" _site/sherpa-koochik/
+
+          echo "Generated sherpa assets:"
+          ls -lh _site/sherpa-koochik
+
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.js
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.wasm
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.data
+          test -s _site/sherpa-koochik/sherpa-onnx-asr.js
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
