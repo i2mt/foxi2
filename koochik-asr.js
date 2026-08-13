@@ -38,6 +38,66 @@
         return e;
     }
 
+
+    // sherpa's own browser ASR example feeds 16 kHz PCM to acceptWaveform().
+    // Keep that exact contract even when the browser insists on a 44.1/48 kHz
+    // AudioContext. This simple area-average downsampler mirrors the official
+    // demo and, importantly, never reads outside the current chunk.
+    function toModelSampleRate(samples, inputRate) {
+        const src = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
+        const sr = Number(inputRate) || SAMPLE_RATE;
+        if (!src.length || sr === SAMPLE_RATE) return new Float32Array(src);
+        if (sr < SAMPLE_RATE) {
+            // Rare browser/device case: linear interpolation for upsampling.
+            const outLen = Math.max(1, Math.round(src.length * SAMPLE_RATE / sr));
+            const out = new Float32Array(outLen);
+            const scale = sr / SAMPLE_RATE;
+            for (let i = 0; i < outLen; i++) {
+                const pos = i * scale;
+                const a = Math.min(src.length - 1, Math.floor(pos));
+                const b = Math.min(src.length - 1, a + 1);
+                const t = pos - a;
+                out[i] = src[a] + (src[b] - src[a]) * t;
+            }
+            return out;
+        }
+        const ratio = sr / SAMPLE_RATE;
+        const outLen = Math.max(1, Math.round(src.length / ratio));
+        const out = new Float32Array(outLen);
+        let srcOffset = 0;
+        for (let i = 0; i < outLen; i++) {
+            const next = Math.min(src.length, Math.round((i + 1) * ratio));
+            let sum = 0;
+            let n = 0;
+            for (let j = srcOffset; j < next; j++) {
+                const v = src[j];
+                if (Number.isFinite(v)) { sum += v; n++; }
+            }
+            out[i] = n ? sum / n : 0;
+            srcOffset = next;
+        }
+        return out;
+    }
+
+    function signalStats(samples) {
+        let peak = 0;
+        let sumSq = 0;
+        let finite = 0;
+        for (let i = 0; i < samples.length; i++) {
+            const v = samples[i];
+            if (!Number.isFinite(v)) continue;
+            const a = Math.abs(v);
+            if (a > peak) peak = a;
+            sumSq += v * v;
+            finite++;
+        }
+        return {
+            peak: peak,
+            rms: finite ? Math.sqrt(sumSq / finite) : 0,
+            nonFinite: samples.length - finite
+        };
+    }
+
     function loadClassicScript(src, id) {
         return new Promise(function (resolve, reject) {
             const old = document.getElementById(id);
@@ -248,19 +308,22 @@
 
         feed(samples, sampleRate) {
             if (!this.stream || !samples || !samples.length) return;
-            // Copy the AudioBuffer-owned view before handing it to WASM.
-            const copy = new Float32Array(samples);
-            const sr = Number(sampleRate) || SAMPLE_RATE;
-            this.totalSeconds += copy.length / sr;
-            this.stream.acceptWaveform(sr, copy);
+            const inputRate = Number(sampleRate) || SAMPLE_RATE;
+            const inputCopy = new Float32Array(samples);
+            const inputStats = signalStats(inputCopy);
+            const modelPcm = toModelSampleRate(inputCopy, inputRate);
+            const modelStats = signalStats(modelPcm);
+
+            // bufferedSeconds() describes real captured time, not the number
+            // of samples after conversion.
+            this.totalSeconds += inputCopy.length / inputRate;
+            this.stream.acceptWaveform(SAMPLE_RATE, modelPcm);
 
             let loops = 0;
             const decodeStart = performance.now();
             while (this.recognizer.isReady(this.stream)) {
                 this.recognizer.decode(this.stream);
                 loops++;
-                // Defensive guard against a malformed graph/runtime getting
-                // stuck in an always-ready state on the audio callback.
                 if (loops > 64) throw createError('sherpa-decode-loop');
             }
 
@@ -271,6 +334,13 @@
                 console.log('[KoochikASR] sherpa decode:',
                     'steps=', loops,
                     '| ms=', (performance.now() - decodeStart).toFixed(1),
+                    '| inputSr=', inputRate,
+                    '| modelSr=', SAMPLE_RATE,
+                    '| inputPeak=', inputStats.peak.toFixed(4),
+                    '| inputRms=', inputStats.rms.toFixed(4),
+                    '| modelPeak=', modelStats.peak.toFixed(4),
+                    '| modelRms=', modelStats.rms.toFixed(4),
+                    '| nonFinite=', modelStats.nonFinite,
                     '| text=', JSON.stringify(this.lastText),
                     '| endpoint=', this.endpoint);
             }
@@ -300,7 +370,11 @@
         }
 
         endpointDetected() {
-            return !!this.endpoint;
+            // Rule 1 can legitimately report an endpoint after a few seconds
+            // of what the recognizer considers silence. Do not let an all-blank
+            // stream auto-stop before we have ever seen a token; this is both a
+            // safer UX and an important diagnostic while validating Koochik.
+            return !!(this.endpoint && this.lastText);
         }
 
         bufferedSeconds() {

@@ -4,8 +4,9 @@
    Primary backend on all devices: Shenava Koochik v1.0 114M streaming
    INT8 NeMo CTC through the official sherpa-onnx WebAssembly runtime.
 
-   sherpa-onnx owns feature extraction, resampling, FastConformer cache
-   state, streaming inference, CTC decoding, and endpoint detection.
+   sherpa-onnx owns feature extraction, FastConformer cache state,
+   streaming inference, CTC decoding, and endpoint detection. Audio is fed
+   to it at the model-native 16 kHz rate to match sherpa's browser demo.
    voice-recognition.js only owns microphone capture, UI events, and the
    common VoiceEngine API used by the rest of FoxiMed.
    ============================================ */
@@ -553,7 +554,15 @@
         try {
             const AC = window.AudioContext || window.webkitAudioContext;
             if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
-                koochikAudioCtx = new AC();
+                // Match sherpa-onnx's own browser ASR demo: request the
+                // recognizer's native 16 kHz AudioContext up front. Chrome,
+                // Safari and Firefox may still choose another hardware rate;
+                // koochik-asr.js defensively downsamples to 16 kHz if needed.
+                try {
+                    koochikAudioCtx = new AC({ sampleRate: 16000 });
+                } catch (e) {
+                    koochikAudioCtx = new AC();
+                }
             }
             if (koochikAudioCtx.state === 'suspended') {
                 koochikAudioCtx.resume().catch(function () {});
@@ -582,7 +591,11 @@
                 koochikStream = stream;
                 const AC = window.AudioContext || window.webkitAudioContext;
                 if (!koochikAudioCtx || koochikAudioCtx.state === 'closed') {
-                    koochikAudioCtx = new AC();
+                    try {
+                        koochikAudioCtx = new AC({ sampleRate: 16000 });
+                    } catch (e) {
+                        koochikAudioCtx = new AC();
+                    }
                 }
                 if (koochikAudioCtx.state === 'suspended') {
                     try { koochikAudioCtx.resume(); } catch (e) {}
