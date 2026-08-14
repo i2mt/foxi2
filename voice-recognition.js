@@ -581,7 +581,7 @@
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
-                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
             }).then(function (stream) {
                 koochikLoading = false;
                 try {

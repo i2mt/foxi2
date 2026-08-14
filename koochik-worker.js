@@ -19,15 +19,6 @@ let endpoint = false;
 let totalSeconds = 0;
 let initPromise = null;
 
-// Keep Koochik input near the level that produced stable recognition in our
-// earlier controlled tests. This is attenuation-only: quiet audio is never
-// boosted. Sudden hot chunks are attenuated immediately; gain is allowed to
-// recover gradually on later chunks to avoid pumping/discontinuities.
-const MODEL_PEAK_CEILING = 0.12;
-const MODEL_RMS_CEILING = 0.05;
-const LEVEL_RELEASE_PER_CHUNK = 0.25;
-let modelLevelGain = 1;
-
 function ensureSlash(s) {
   s = String(s || '');
   return s.endsWith('/') ? s : s + '/';
@@ -48,39 +39,6 @@ function signalStats(samples) {
     rms: finite ? Math.sqrt(sumSq / finite) : 0,
     nonFinite: samples.length - finite
   };
-}
-
-function stabilizeModelLevel(samples) {
-  const stats = signalStats(samples);
-  let target = 1;
-  if (stats.peak > MODEL_PEAK_CEILING && stats.peak > 0) {
-    target = Math.min(target, MODEL_PEAK_CEILING / stats.peak);
-  }
-  if (stats.rms > MODEL_RMS_CEILING && stats.rms > 0) {
-    target = Math.min(target, MODEL_RMS_CEILING / stats.rms);
-  }
-
-  let startGain = modelLevelGain;
-  let endGain;
-  if (target < modelLevelGain) {
-    // Fast attack: protect the model from the hot chunk immediately.
-    startGain = target;
-    endGain = target;
-  } else {
-    // Controlled release: recover toward unity without a hard gain step.
-    endGain = Math.min(target, modelLevelGain + LEVEL_RELEASE_PER_CHUNK);
-  }
-
-  const out = new Float32Array(samples.length);
-  const denom = Math.max(1, samples.length - 1);
-  for (let i = 0; i < samples.length; i++) {
-    const t = i / denom;
-    const g = startGain + (endGain - startGain) * t;
-    const v = samples[i];
-    out[i] = Number.isFinite(v) ? v * g : 0;
-  }
-  modelLevelGain = endGain;
-  return { pcm: out, gain: endGain, targetGain: target };
 }
 
 function toModelSampleRate(samples, inputRate) {
@@ -175,7 +133,6 @@ function resetStream() {
   lastText = '';
   endpoint = false;
   totalSeconds = 0;
-  modelLevelGain = 1;
 }
 
 function postError(err, requestId) {
@@ -244,9 +201,7 @@ function feedMessage(msg) {
   const inputRate = Number(msg.sampleRate) || SAMPLE_RATE;
   const input = new Float32Array(msg.buffer || 0);
   const inputStats = signalStats(input);
-  const resampledPcm = toModelSampleRate(input, inputRate);
-  const stabilized = stabilizeModelLevel(resampledPcm);
-  const modelPcm = stabilized.pcm;
+  const modelPcm = toModelSampleRate(input, inputRate);
   const modelStats = signalStats(modelPcm);
   totalSeconds += input.length / inputRate;
 
@@ -274,8 +229,6 @@ function feedMessage(msg) {
     modelSr: SAMPLE_RATE,
     inputPeak: inputStats.peak,
     inputRms: inputStats.rms,
-    levelGain: stabilized.gain,
-    targetGain: stabilized.targetGain,
     modelPeak: modelStats.peak,
     modelRms: modelStats.rms,
     nonFinite: modelStats.nonFinite,

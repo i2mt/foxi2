@@ -195,8 +195,6 @@
         '| modelSr=', msg.modelSr,
         '| rawPeak=', Number(msg.inputPeak || 0).toFixed(4),
         '| rawRms=', Number(msg.inputRms || 0).toFixed(4),
-        '| levelGain=', Number(msg.levelGain == null ? 1 : msg.levelGain).toFixed(3) + 'x',
-        '| targetGain=', Number(msg.targetGain == null ? 1 : msg.targetGain).toFixed(3) + 'x',
         '| modelPeak=', Number(msg.modelPeak || 0).toFixed(4),
         '| modelRms=', Number(msg.modelRms || 0).toFixed(4),
         '| nonFinite=', msg.nonFinite,
@@ -221,7 +219,7 @@
       return sendRequest('finalize').then((text) => String(text || this.lastText || '').trim());
     }
 
-    endpointDetected() { return !!(this.endpoint && this.lastText); }
+    endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return true; }
     executionProvider() { return 'sherpa-onnx-worker-wasm-int8'; }
