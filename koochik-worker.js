@@ -17,8 +17,6 @@ let baseUrl = '';
 let lastText = '';
 let endpoint = false;
 let totalSeconds = 0;
-let capturedModelPcm = [];
-let capturedModelSamples = 0;
 let initPromise = null;
 
 function ensureSlash(s) {
@@ -135,86 +133,9 @@ function resetStream() {
   lastText = '';
   endpoint = false;
   totalSeconds = 0;
-  capturedModelPcm = [];
-  capturedModelSamples = 0;
 }
 
 
-function appendCapturedPcm(samples) {
-  if (!samples || !samples.length) return;
-  const copy = new Float32Array(samples.length);
-  copy.set(samples);
-  capturedModelPcm.push(copy);
-  capturedModelSamples += copy.length;
-}
-
-function joinCapturedPcm() {
-  const out = new Float32Array(capturedModelSamples);
-  let offset = 0;
-  for (let i = 0; i < capturedModelPcm.length; i++) {
-    out.set(capturedModelPcm[i], offset);
-    offset += capturedModelPcm[i].length;
-  }
-  return out;
-}
-
-function decodeFreshReplay(pcm, leadingSilenceSeconds) {
-  if (!recognizer) throw new Error('sherpa-recognizer-not-ready');
-  const replayStream = recognizer.createStream();
-  let steps = 0;
-  const started = performance.now();
-  try {
-    const leadSamples = Math.max(0, Math.round((Number(leadingSilenceSeconds) || 0) * SAMPLE_RATE));
-    if (leadSamples) replayStream.acceptWaveform(SAMPLE_RATE, new Float32Array(leadSamples));
-    if (pcm && pcm.length) replayStream.acceptWaveform(SAMPLE_RATE, pcm);
-    replayStream.inputFinished();
-    while (recognizer.isReady(replayStream)) {
-      recognizer.decode(replayStream);
-      steps++;
-      if (steps > 256) throw new Error('sherpa-replay-decode-loop');
-    }
-    const result = recognizer.getResult(replayStream);
-    return {
-      text: (result && result.text ? String(result.text) : '').trim(),
-      steps,
-      ms: performance.now() - started,
-      leadingSilenceSeconds: Number(leadingSilenceSeconds) || 0
-    };
-  } finally {
-    try { replayStream.free(); } catch (_) {}
-  }
-}
-
-function decodeFreshIncrementalReplay(chunks) {
-  if (!recognizer) throw new Error('sherpa-recognizer-not-ready');
-  const replayStream = recognizer.createStream();
-  let steps = 0;
-  const started = performance.now();
-  try {
-    for (let i = 0; i < chunks.length; i++) {
-      replayStream.acceptWaveform(SAMPLE_RATE, chunks[i]);
-      while (recognizer.isReady(replayStream)) {
-        recognizer.decode(replayStream);
-        steps++;
-        if (steps > 256) throw new Error('sherpa-incremental-replay-decode-loop');
-      }
-    }
-    replayStream.inputFinished();
-    while (recognizer.isReady(replayStream)) {
-      recognizer.decode(replayStream);
-      steps++;
-      if (steps > 256) throw new Error('sherpa-incremental-replay-final-loop');
-    }
-    const result = recognizer.getResult(replayStream);
-    return {
-      text: (result && result.text ? String(result.text) : '').trim(),
-      steps,
-      ms: performance.now() - started
-    };
-  } finally {
-    try { replayStream.free(); } catch (_) {}
-  }
-}
 
 function postError(err, requestId) {
   self.postMessage({
@@ -332,46 +253,19 @@ function finalizeMessage(requestId) {
   }
   const result = recognizer.getResult(stream);
   lastText = (result && result.text ? String(result.text) : '').trim();
-  const liveFinalMs = performance.now() - started;
-  const exactPcm = joinCapturedPcm();
+  const finalMs = performance.now() - started;
 
-  // Return the normal final result immediately. The controlled replay tests
-  // below are diagnostics only and must not make the UI wait several extra
-  // seconds after the user stops speaking.
+  // v19: no same-PCM replay is performed here. v18 proved the recognizer is
+  // deterministic for identical PCM, while the replay diagnostics occupied
+  // this same worker for several seconds and caused subsequent live microphone
+  // messages to queue behind them. Finalization must return the worker to the
+  // live path immediately.
   self.postMessage({
     type: 'final', requestId,
     steps,
-    ms: liveFinalMs,
+    ms: finalMs,
     text: lastText,
     bufferedSeconds: totalSeconds
-  });
-
-  // #1 reproduces the original acceptWaveform chunk boundaries and decode
-  // cadence on a completely fresh stream. It is the strict determinism test.
-  const replayIncremental = decodeFreshIncrementalReplay(capturedModelPcm);
-  // #2 feeds the exact same PCM as one continuous block. If this differs from
-  // #1, feed/decode boundaries are influencing the result.
-  const replayJoined = decodeFreshReplay(exactPcm, 0);
-  // #3 adds 300 ms of clean context before the same PCM. If only this restores
-  // the first word, start-of-stream context is the likely culprit.
-  const replayLead = decodeFreshReplay(exactPcm, 0.30);
-
-  self.postMessage({
-    type: 'diagnostic',
-    liveText: lastText,
-    capturedSamples: exactPcm.length,
-    capturedChunks: capturedModelPcm.length,
-    replayIncrementalText: replayIncremental.text,
-    replayIncrementalSteps: replayIncremental.steps,
-    replayIncrementalMs: replayIncremental.ms,
-    replayJoinedText: replayJoined.text,
-    replayJoinedSteps: replayJoined.steps,
-    replayJoinedMs: replayJoined.ms,
-    replayLeadText: replayLead.text,
-    replayLeadSteps: replayLead.steps,
-    replayLeadMs: replayLead.ms,
-    replayLeadSeconds: replayLead.leadingSilenceSeconds,
-    deterministic: lastText === replayIncremental.text
   });
 }
 

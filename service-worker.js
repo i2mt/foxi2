@@ -2,7 +2,7 @@
 // App shell is network-first. Koochik sherpa .data/.wasm use a stable
 // cache-first model cache so app updates do not redownload the 130+ MB model.
 
-const CACHE_NAME = 'FoxiMed_v5.0.15';
+const CACHE_NAME = 'FoxiMed_v5.0.16';
 const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_streaming_int8_sherpa_1_13_5';
 
 const urlsToCache = [
@@ -68,7 +68,7 @@ self.addEventListener('activate', event => {
 //   whose name is independent of FoxiMed app versions. This means a normal
 //   v19/v20 JavaScript update does not invalidate/redownload Koochik.
 //
-// v18 is the first release that stores the large runtime/model this way, so
+// v18 was the first release that stores the large runtime/model this way, so
 // users coming from v17 may need one final full download. Later app-shell
 // updates can reuse the same model cache until the model/runtime itself is
 // intentionally version-bumped.

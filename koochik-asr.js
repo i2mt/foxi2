@@ -108,10 +108,6 @@
           if (activeEngine) activeEngine._onResult(msg);
           return;
         }
-        if (msg.type === 'diagnostic') {
-          if (activeEngine) activeEngine._onDiagnostic(msg);
-          return;
-        }
         if (msg.type === 'final') {
           if (activeEngine) activeEngine._onFinal(msg);
           const p = pending.get(msg.requestId);
@@ -215,19 +211,6 @@
         '| text=', JSON.stringify(this.finalText));
     }
 
-    _onDiagnostic(msg) {
-      console.log('[KoochikASR] SAME-PCM diagnostic:',
-        'liveText=', JSON.stringify(String(msg.liveText || '').trim()),
-        '| replayIncremental=', JSON.stringify(String(msg.replayIncrementalText || '').trim()),
-        '| replayJoined=', JSON.stringify(String(msg.replayJoinedText || '').trim()),
-        '| replayLead300ms=', JSON.stringify(String(msg.replayLeadText || '').trim()),
-        '| replayIncrementalMs=', Number(msg.replayIncrementalMs || 0).toFixed(1),
-        '| replayJoinedMs=', Number(msg.replayJoinedMs || 0).toFixed(1),
-        '| replayLeadMs=', Number(msg.replayLeadMs || 0).toFixed(1),
-        '| capturedSamples=', msg.capturedSamples || 0,
-        '| capturedChunks=', msg.capturedChunks || 0,
-        '| deterministic=', !!msg.deterministic);
-    }
 
     decode() { return Promise.resolve(this.lastText || ''); }
 

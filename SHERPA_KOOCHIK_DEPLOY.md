@@ -47,11 +47,11 @@ Model source:
 The model card declares CC-BY-NC-4.0. Check that license against your intended deployment/use before production distribution.
 
 
-## v18 microphone + determinism diagnostics
+## v19 microphone + determinism diagnostics
 
 The browser adapter requests a 16 kHz AudioContext and defensively converts any 44.1/48 kHz PCM to 16 kHz before sherpa sees it. sherpa/Koochik inference runs in a Dedicated Worker so synchronous WASM decode cannot block the page microphone callback.
 
-At finalization v18 replays the exact captured 16 kHz PCM through fresh sherpa streams and logs:
+At finalization v19 replays the exact captured 16 kHz PCM through fresh sherpa streams and logs:
 
 - the original live-stream final text
 - a fresh incremental replay using the original chunk boundaries
