@@ -47,6 +47,6 @@ Model source:
 The model card declares CC-BY-NC-4.0. Check that license against your intended deployment/use before production distribution.
 
 
-## v16 microphone contract
+## v17 microphone contract
 
 The browser adapter now requests a 16 kHz AudioContext and defensively converts any 44.1/48 kHz PCM to 16 kHz before calling sherpa `acceptWaveform()`. This matches sherpa-onnx's browser ASR example and the Shenava model author's test path. Decode logs include input/model peak and RMS values for validation.
