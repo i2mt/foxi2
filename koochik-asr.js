@@ -108,6 +108,10 @@
           if (activeEngine) activeEngine._onResult(msg);
           return;
         }
+        if (msg.type === 'diagnostic') {
+          if (activeEngine) activeEngine._onDiagnostic(msg);
+          return;
+        }
         if (msg.type === 'final') {
           if (activeEngine) activeEngine._onFinal(msg);
           const p = pending.get(msg.requestId);
@@ -211,6 +215,20 @@
         '| text=', JSON.stringify(this.finalText));
     }
 
+    _onDiagnostic(msg) {
+      console.log('[KoochikASR] SAME-PCM diagnostic:',
+        'liveText=', JSON.stringify(String(msg.liveText || '').trim()),
+        '| replayIncremental=', JSON.stringify(String(msg.replayIncrementalText || '').trim()),
+        '| replayJoined=', JSON.stringify(String(msg.replayJoinedText || '').trim()),
+        '| replayLead300ms=', JSON.stringify(String(msg.replayLeadText || '').trim()),
+        '| replayIncrementalMs=', Number(msg.replayIncrementalMs || 0).toFixed(1),
+        '| replayJoinedMs=', Number(msg.replayJoinedMs || 0).toFixed(1),
+        '| replayLeadMs=', Number(msg.replayLeadMs || 0).toFixed(1),
+        '| capturedSamples=', msg.capturedSamples || 0,
+        '| capturedChunks=', msg.capturedChunks || 0,
+        '| deterministic=', !!msg.deterministic);
+    }
+
     decode() { return Promise.resolve(this.lastText || ''); }
 
     finalize() {
@@ -232,6 +250,16 @@
   window.KoochikASR = {
     load: function (options, onProgress) {
       options = options || {};
+      // Best-effort protection against storage eviction. Browsers may deny
+      // this silently; recognition still works and the model cache simply
+      // becomes normal best-effort site storage.
+      try {
+        if (navigator.storage && navigator.storage.persist) {
+          navigator.storage.persist().then(function (granted) {
+            console.log('[KoochikASR] persistent storage:', granted ? 'granted' : 'not-granted');
+          }).catch(function () {});
+        }
+      } catch (_) {}
       return ensureWorker(options.baseUrl || DEFAULT_BASE_URL, onProgress, options.signal)
         .then(function () {
           const engine = new WorkerKoochikEngine();

@@ -47,6 +47,19 @@ Model source:
 The model card declares CC-BY-NC-4.0. Check that license against your intended deployment/use before production distribution.
 
 
-## v17 microphone contract
+## v18 microphone + determinism diagnostics
 
-The browser adapter now requests a 16 kHz AudioContext and defensively converts any 44.1/48 kHz PCM to 16 kHz before calling sherpa `acceptWaveform()`. This matches sherpa-onnx's browser ASR example and the Shenava model author's test path. Decode logs include input/model peak and RMS values for validation.
+The browser adapter requests a 16 kHz AudioContext and defensively converts any 44.1/48 kHz PCM to 16 kHz before sherpa sees it. sherpa/Koochik inference runs in a Dedicated Worker so synchronous WASM decode cannot block the page microphone callback.
+
+At finalization v18 replays the exact captured 16 kHz PCM through fresh sherpa streams and logs:
+
+- the original live-stream final text
+- a fresh incremental replay using the original chunk boundaries
+- a fresh joined-PCM replay
+- a joined replay with 300 ms of leading silence
+
+This distinguishes recognizer nondeterminism, live feed/chunk-boundary issues, start-of-stream context loss, and genuine model errors without asking the user to speak the sentence multiple times.
+
+## Persistent Koochik download cache
+
+The large `sherpa-onnx-wasm-main-asr.data` and `.wasm` files use a separate stable CacheStorage cache named for the Koochik model + sherpa runtime. Normal FoxiMed app-shell version bumps do not delete this cache. A user upgrading from v17 can need one last full model download because earlier releases intentionally bypassed CacheStorage for the large files. Subsequent app-only updates should reuse the cached model unless site data is cleared/evicted or the model/runtime cache version is intentionally changed.

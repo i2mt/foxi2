@@ -1,9 +1,9 @@
 // MedCalc Pro Service Worker
-// Network-first strategy for all assets.
-// Always tries to fetch the latest version.
-// Falls back to cache only when offline.
+// App shell is network-first. Koochik sherpa .data/.wasm use a stable
+// cache-first model cache so app updates do not redownload the 130+ MB model.
 
-const CACHE_NAME = 'FoxiMed_v5.0.14';
+const CACHE_NAME = 'FoxiMed_v5.0.15';
+const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_streaming_int8_sherpa_1_13_5';
 
 const urlsToCache = [
     './',
@@ -62,27 +62,43 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Fetch - Network First for EVERYTHING, EXCEPT large model/data files,
-// which pass through untouched.
+// Fetch strategy:
+// - Small app assets: network-first, app-version cache fallback.
+// - The huge sherpa .data/.wasm payload: cache-first in a STABLE model cache
+//   whose name is independent of FoxiMed app versions. This means a normal
+//   v19/v20 JavaScript update does not invalidate/redownload Koochik.
 //
-// Why: this handler clones every successful response to cache it. Cloning
-// a streamed response means the browser buffers BOTH copies at once (one
-// for the page, one for the cache) — fine for small app-shell files, but
-// for a large speech model, that's a real memory spike. iOS
-// Safari in particular can respond to that by killing the service worker's
-// background process mid-transfer, which breaks the fetch from the page's
-// point of view even though a plain direct navigation to the same URL
-// (which never goes through this handler at all) works fine. The model
-// .data/.wasm files are intentionally left to the browser HTTP cache;
-// duplicating them into CacheStorage would create a large memory spike.
-const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i, /\.data(\?|$)/i, /\.wasm(\?|$)/i];
+// v18 is the first release that stores the large runtime/model this way, so
+// users coming from v17 may need one final full download. Later app-shell
+// updates can reuse the same model cache until the model/runtime itself is
+// intentionally version-bumped.
+const MODEL_ASSET_RE = /\/sherpa-koochik\/sherpa-onnx-wasm-main-asr\.(?:data|wasm)(?:\?|$)/i;
+const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i];
 
 self.addEventListener('fetch', event => {
-
     if (event.request.method !== 'GET') return;
 
+    if (MODEL_ASSET_RE.test(event.request.url)) {
+        event.respondWith((async () => {
+            const cache = await caches.open(MODEL_CACHE_NAME);
+            const cached = await cache.match(event.request);
+            if (cached) return cached;
+
+            const response = await fetch(event.request);
+            if (response && response.ok) {
+                // CacheStorage is best-effort. Recognition must still work if
+                // a browser refuses the large entry because of quota.
+                event.waitUntil(
+                    cache.put(event.request, response.clone()).catch(() => undefined)
+                );
+            }
+            return response;
+        })());
+        return;
+    }
+
     if (SW_SKIP_PATTERNS.some(re => re.test(event.request.url))) {
-        return; // let the browser handle it as a completely normal, uncontrolled fetch
+        return;
     }
 
     event.respondWith(
@@ -91,15 +107,12 @@ self.addEventListener('fetch', event => {
                 if (networkResponse && networkResponse.status === 200) {
                     const responseClone = networkResponse.clone();
                     caches.open(CACHE_NAME)
-                        .then(cache => {
-                            cache.put(event.request, responseClone);
-                        });
+                        .then(cache => cache.put(event.request, responseClone))
+                        .catch(() => undefined);
                 }
                 return networkResponse;
             })
-            .catch(() => {
-                return caches.match(event.request);
-            })
+            .catch(() => caches.match(event.request))
     );
 });
 
