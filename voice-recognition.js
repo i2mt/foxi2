@@ -581,9 +581,21 @@
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
             }).then(function (stream) {
                 koochikLoading = false;
+                try {
+                    const track = stream.getAudioTracks && stream.getAudioTracks()[0];
+                    const settings = track && track.getSettings ? track.getSettings() : null;
+                    if (settings) {
+                        console.log('[KoochikASR] mic settings:',
+                            'sampleRate=', settings.sampleRate,
+                            '| echoCancellation=', settings.echoCancellation,
+                            '| noiseSuppression=', settings.noiseSuppression,
+                            '| autoGainControl=', settings.autoGainControl,
+                            '| channelCount=', settings.channelCount);
+                    }
+                } catch (e) {}
                 if (koochikCancelRequested) {
                     try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
                     return;

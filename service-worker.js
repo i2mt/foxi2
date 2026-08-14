@@ -2,7 +2,7 @@
 // App shell is network-first. Koochik sherpa .data/.wasm use a stable
 // cache-first model cache so app updates do not redownload the 130+ MB model.
 
-const CACHE_NAME = 'FoxiMed_v5.0.17';
+const CACHE_NAME = 'FoxiMed_v5.0.18';
 const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_streaming_int8_sherpa_1_13_5';
 
 const urlsToCache = [
@@ -72,7 +72,7 @@ self.addEventListener('activate', event => {
 // users coming from v17 may need one final full download. Later app-shell
 // updates can reuse the same model cache until the model/runtime itself is
 // intentionally version-bumped.
-const MODEL_ASSET_RE = /\/sherpa-koochik\/sherpa-onnx-wasm-main-asr\.(?:data|wasm)(?:\?|$)/i;
+const MODEL_ASSET_RE = /\/sherpa-koochik\/[^?#]+\.(?:data|wasm)(?:[?#]|$)/i;
 const SW_SKIP_PATTERNS = [/\.tar\.gz(\?|$)/i, /\.gguf(\?|$)/i, /\.bin(\?|$)/i, /\.onnx(\?|$)/i];
 
 self.addEventListener('fetch', event => {
@@ -81,15 +81,26 @@ self.addEventListener('fetch', event => {
     if (MODEL_ASSET_RE.test(event.request.url)) {
         event.respondWith((async () => {
             const cache = await caches.open(MODEL_CACHE_NAME);
-            const cached = await cache.match(event.request);
+            const keyUrl = new URL(event.request.url);
+            keyUrl.search = '';
+            keyUrl.hash = '';
+            const cacheKey = new Request(keyUrl.href, { method: 'GET' });
+
+            // Normalize cache keys so query-string/cache-busting changes in
+            // generated Emscripten loaders do not force another 130+ MB
+            // model download. Ignore Vary as these are immutable same-origin
+            // build assets for a fixed model/runtime cache version.
+            const cached = await cache.match(cacheKey, { ignoreSearch: true, ignoreVary: true });
             if (cached) return cached;
 
             const response = await fetch(event.request);
-            if (response && response.ok) {
+            if (response && response.status === 200) {
                 // CacheStorage is best-effort. Recognition must still work if
                 // a browser refuses the large entry because of quota.
                 event.waitUntil(
-                    cache.put(event.request, response.clone()).catch(() => undefined)
+                    cache.put(cacheKey, response.clone()).catch(err => {
+                        console.warn('[KoochikASR] model cache put failed:', String(err));
+                    })
                 );
             }
             return response;
