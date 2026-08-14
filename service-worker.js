@@ -2,7 +2,7 @@
 // App shell is network-first. Koochik sherpa .data/.wasm use a stable
 // cache-first model cache so app updates do not redownload the 130+ MB model.
 
-const CACHE_NAME = 'FoxiMed_v5.0.16';
+const CACHE_NAME = 'FoxiMed_v5.0.17';
 const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_streaming_int8_sherpa_1_13_5';
 
 const urlsToCache = [

@@ -47,18 +47,11 @@ Model source:
 The model card declares CC-BY-NC-4.0. Check that license against your intended deployment/use before production distribution.
 
 
-## v19 microphone + determinism diagnostics
+## v20 live worker behavior
 
-The browser adapter requests a 16 kHz AudioContext and defensively converts any 44.1/48 kHz PCM to 16 kHz before sherpa sees it. sherpa/Koochik inference runs in a Dedicated Worker so synchronous WASM decode cannot block the page microphone callback.
+v20 contains no same-PCM replay diagnostics in the live sherpa worker. The v18 controlled test already proved identical PCM decodes deterministically. Keeping replay work in the same worker caused later microphone utterances to queue for several seconds.
 
-At finalization v19 replays the exact captured 16 kHz PCM through fresh sherpa streams and logs:
-
-- the original live-stream final text
-- a fresh incremental replay using the original chunk boundaries
-- a fresh joined-PCM replay
-- a joined replay with 300 ms of leading silence
-
-This distinguishes recognizer nondeterminism, live feed/chunk-boundary issues, start-of-stream context loss, and genuine model errors without asking the user to speak the sentence multiple times.
+The worker now only accepts live PCM, performs streaming decode, finalizes the utterance, and immediately becomes available for the next microphone session.
 
 ## Persistent Koochik download cache
 

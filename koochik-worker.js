@@ -206,7 +206,6 @@ function feedMessage(msg) {
   const modelPcm = toModelSampleRate(input, inputRate);
   const modelStats = signalStats(modelPcm);
   totalSeconds += input.length / inputRate;
-  appendCapturedPcm(modelPcm);
 
   stream.acceptWaveform(SAMPLE_RATE, modelPcm);
 
@@ -255,7 +254,7 @@ function finalizeMessage(requestId) {
   lastText = (result && result.text ? String(result.text) : '').trim();
   const finalMs = performance.now() - started;
 
-  // v19: no same-PCM replay is performed here. v18 proved the recognizer is
+  // v20: no same-PCM replay is performed here. v18 proved the recognizer is
   // deterministic for identical PCM, while the replay diagnostics occupied
   // this same worker for several seconds and caused subsequent live microphone
   // messages to queue behind them. Finalization must return the worker to the
