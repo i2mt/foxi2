@@ -31,34 +31,36 @@ jobs:
         run: |
           git clone --depth 1 --branch v1.13.5 https://github.com/k2-fsa/sherpa-onnx.git "$RUNNER_TEMP/sherpa-onnx"
 
-      - name: Download official Koochik streaming INT8 model
+      - name: Download official Koochik non-streaming INT8 + Silero VAD
         shell: bash
         run: |
           set -euxo pipefail
-          assets="$RUNNER_TEMP/sherpa-onnx/wasm/asr/assets"
+          assets="$RUNNER_TEMP/sherpa-onnx/wasm/vad-asr/assets"
           rm -rf "$assets"/*
 
+          # Full-context Koochik INT8 for final transcription.
           curl -L --fail --retry 5 --retry-delay 3 \
             -o "$assets/nemo-ctc.onnx" \
-            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-streaming-int8-2026-06-26/resolve/main/model.int8.onnx"
+            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-non-streaming-int8-2026-06-26/resolve/main/model.int8.onnx"
 
           curl -L --fail --retry 5 --retry-delay 3 \
             -o "$assets/tokens.txt" \
-            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-streaming-int8-2026-06-26/resolve/main/tokens.txt"
+            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-non-streaming-int8-2026-06-26/resolve/main/tokens.txt"
 
-          # Current sherpa wasm/asr CMake has a historical encoder.onnx
-          # existence guard even when the selected runtime is NeMo CTC.
-          # A zero-byte placeholder satisfies that configure-time guard;
-          # our explicit JS recognizer config uses only nemo-ctc.onnx.
-          : > "$assets/encoder.onnx"
+          # sherpa's official VAD+offline-ASR WebAssembly bundle requires
+          # Silero VAD in wasm/vad-asr/assets.
+          curl -L --fail --retry 5 --retry-delay 3 \
+            -o "$assets/silero_vad.onnx" \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+
           ls -lh "$assets"
 
-      - name: Build sherpa-onnx WebAssembly ASR
+      - name: Build sherpa-onnx WebAssembly VAD + offline ASR
         shell: bash
         working-directory: ${{ runner.temp }}/sherpa-onnx
         run: |
           set -euxo pipefail
-          ./build-wasm-simd-asr.sh
+          ./build-wasm-simd-vad-asr.sh
 
       - name: Assemble Pages site
         shell: bash
@@ -72,19 +74,21 @@ jobs:
             --exclude '.github/' \
             --exclude '_site/'
 
-          built="$RUNNER_TEMP/sherpa-onnx/build-wasm-simd-asr/install/bin/wasm/asr"
+          built="$RUNNER_TEMP/sherpa-onnx/build-wasm-simd-vad-asr/install/bin/wasm/vad-asr"
           cp "$built/sherpa-onnx-asr.js" _site/sherpa-koochik/
-          cp "$built/sherpa-onnx-wasm-main-asr.js" _site/sherpa-koochik/
-          cp "$built/sherpa-onnx-wasm-main-asr.wasm" _site/sherpa-koochik/
-          cp "$built/sherpa-onnx-wasm-main-asr.data" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-vad.js" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-vad-asr.js" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-vad-asr.wasm" _site/sherpa-koochik/
+          cp "$built/sherpa-onnx-wasm-main-vad-asr.data" _site/sherpa-koochik/
 
-          echo "Generated sherpa assets:"
+          echo "Generated sherpa VAD + offline-ASR assets:"
           ls -lh _site/sherpa-koochik
 
-          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.js
-          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.wasm
-          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-asr.data
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.js
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.wasm
+          test -s _site/sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.data
           test -s _site/sherpa-koochik/sherpa-onnx-asr.js
+          test -s _site/sherpa-koochik/sherpa-onnx-vad.js
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
