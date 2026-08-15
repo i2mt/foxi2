@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Koochik ASR adapter (sherpa-onnx in a Dedicated Worker)
+   FoxiMed — Koochik ASR adapter (Silero VAD + non-streaming sherpa-onnx)
    ============================================
    sherpa's synchronous WASM inference is intentionally kept off the page
    main thread. This prevents ~500-800 ms decode calls from starving the
@@ -96,7 +96,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: model=Koochik-v1.0-streaming-int8 | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: model=Koochik-v1.0-non-streaming-int8 | VAD=Silero | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}
@@ -198,6 +198,7 @@
         '| modelPeak=', Number(msg.modelPeak || 0).toFixed(4),
         '| modelRms=', Number(msg.modelRms || 0).toFixed(4),
         '| nonFinite=', msg.nonFinite,
+        '| speechDetected=', !!msg.speechDetected,
         '| text=', JSON.stringify(this.lastText),
         '| endpoint=', this.endpoint);
     }
@@ -212,7 +213,7 @@
     }
 
 
-    decode() { return Promise.resolve(this.lastText || ''); }
+    decode() { return Promise.resolve(''); }
 
     finalize() {
       if (!worker) return Promise.resolve(this.lastText || '');
@@ -221,8 +222,8 @@
 
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
-    supportsLivePartials() { return true; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-int8'; }
+    supportsLivePartials() { return false; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-vad'; }
 
     destroy() {
       if (activeEngine === this) activeEngine = null;
@@ -251,6 +252,6 @@
         });
     },
     runtime: 'sherpa-onnx-dedicated-worker-wasm',
-    model: 'Shenava-Koochik-v1.0-streaming-int8'
+    model: 'Shenava-Koochik-v1.0-non-streaming-int8'
   };
 })(window);

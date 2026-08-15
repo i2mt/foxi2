@@ -1,9 +1,9 @@
 // MedCalc Pro Service Worker
-// App shell is network-first. Koochik sherpa .data/.wasm use a stable
-// cache-first model cache so app updates do not redownload the 130+ MB model.
+// App shell is network-first. Koochik VAD + offline-ASR .data/.wasm use a
+// stable cache-first model cache independent of ordinary app revisions.
 
-const CACHE_NAME = 'FoxiMed_v5.0.19';
-const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_streaming_int8_sherpa_1_13_5';
+const CACHE_NAME = 'FoxiMed_v5.0.20';
+const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_nonstreaming_int8_vad_sherpa_1_13_5';
 
 const urlsToCache = [
     './',
@@ -15,7 +15,8 @@ const urlsToCache = [
     './koochik-asr.js',
     './koochik-worker.js',
     './sherpa-koochik/sherpa-onnx-asr.js',
-    './sherpa-koochik/sherpa-onnx-wasm-main-asr.js',
+    './sherpa-koochik/sherpa-onnx-vad.js',
+    './sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.js',
     './voice-commands.js',
     './voice-ui.js',
     './converters.js',
@@ -64,7 +65,7 @@ self.addEventListener('activate', event => {
 
 // Fetch strategy:
 // - Small app assets: network-first, app-version cache fallback.
-// - The huge sherpa .data/.wasm payload: cache-first in a STABLE model cache
+// - The large sherpa VAD+offline-ASR .data/.wasm payload: cache-first in a STABLE model cache
 //   whose name is independent of FoxiMed app versions. This means a normal
 //   v19/v20 JavaScript update does not invalidate/redownload Koochik.
 //
