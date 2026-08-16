@@ -1,28 +1,19 @@
-# Koochik deployment (v23)
+# Koochik v24 deployment
 
-FoxiMed now uses sherpa-onnx v1.13.5 WebAssembly in **VAD + non-streaming ASR** mode.
+Deploy the whole repository, including the hidden `.github/workflows/pages-sherpa-koochik.yml` file.
 
-Runtime flow:
+The workflow builds the same sherpa-onnx v1.13.5 VAD + offline-ASR runtime used by v23 and downloads:
 
-1. Browser microphone audio is captured from the first callback (no fixed 350 ms discard).
-2. Audio is converted to 16 kHz mono and sent to a Dedicated Worker.
-3. Silero VAD detects speech and trailing silence.
-4. When the utterance ends, the worker runs one full-context Koochik v1.0 INT8 decode over the captured utterance.
-5. The final Persian transcript is returned to the existing VoiceEngine/UI API.
+- Koochik v1.0 non-streaming INT8 (`nemo-ctc.onnx`)
+- matching `tokens.txt`
+- Silero VAD
 
-The GitHub Actions workflow downloads:
+v24 changes only browser-side utterance control; it does not change the Koochik model.
 
-- `mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-non-streaming-int8-2026-06-26`
-- sherpa-onnx `silero_vad.onnx`
+Expected console behavior for a short phrase:
 
-and builds them into sherpa-onnx's official `wasm/vad-asr` bundle.
+1. `capture ... energy=true` or `silero=true`
+2. `endpoint=true reason=energy-silence` or `reason=silero`
+3. `sherpa worker final ... text=...`
 
-Generated Pages assets are placed under `sherpa-koochik/`:
-
-- `sherpa-onnx-asr.js`
-- `sherpa-onnx-vad.js`
-- `sherpa-onnx-wasm-main-vad-asr.js`
-- `sherpa-onnx-wasm-main-vad-asr.wasm`
-- `sherpa-onnx-wasm-main-vad-asr.data`
-
-The large `.data/.wasm` files use a model cache name independent of the normal FoxiMed app-shell version.
+If no speech is detected, capture ends after about 5 seconds instead of staying open indefinitely. The outer session safety cap is 15 seconds.

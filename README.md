@@ -1,14 +1,14 @@
-FoxiMed Koochik v22 — stable microphone input
+# FoxiMed Koochik v24
 
-Changes in this build:
-- Uses Koochik v1.0 non-streaming INT8 + Silero VAD through sherpa-onnx in a dedicated Web Worker.
-- Requests raw microphone capture for Koochik: echo cancellation, noise suppression, and browser automatic gain control are disabled.
-- Adds an attenuation-only input stabilizer in the worker. Hot chunks are reduced immediately; quiet/normal chunks are never boosted.
-- Logs rawPeak/rawRms, levelGain, targetGain, modelPeak/modelRms for diagnosis.
-- Keeps the stable model/runtime CacheStorage cache and normalizes the cache key for .data/.wasm assets so query-string changes do not invalidate the large model payload.
-- App-shell service-worker cache: FoxiMed_v5.0.19.
+Persian voice input now uses a hybrid utterance controller with the existing full-context Koochik non-streaming INT8 recognizer.
 
+- Silero VAD remains enabled.
+- Energy-assisted speech start catches short commands that Silero sometimes misses.
+- ~0.95 s trailing low-energy ends the utterance when Silero does not.
+- 5 s no-speech timeout and 15 s hard safety cap prevent long open-mic sessions.
+- Final ASR decodes a trimmed utterance with pre/post-roll instead of tens of seconds of silence.
+- The first 350 ms is never discarded.
+- Console capture logging is reduced to transitions/periodic checkpoints.
+- Missing local Mitra font requests were removed; service-worker precache is best-effort.
 
-## Koochik ASR architecture (v23)
-
-Voice recognition now uses Silero VAD plus the full-context non-streaming Koochik v1.0 INT8 sherpa-onnx export. Live streaming CTC is no longer used for the final transcript. The first 350 ms of microphone audio is no longer discarded.
+The sherpa runtime/model are still built by `.github/workflows/pages-sherpa-koochik.yml`; generated large model assets are not included in this ZIP.

@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Koochik ASR adapter (Silero VAD + non-streaming sherpa-onnx)
+   FoxiMed — Koochik ASR adapter (hybrid VAD + non-streaming sherpa-onnx)
    ============================================
    sherpa's synchronous WASM inference is intentionally kept off the page
    main thread. This prevents ~500-800 ms decode calls from starving the
@@ -96,7 +96,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: model=Koochik-v1.0-non-streaming-int8 | VAD=Silero | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}
@@ -156,6 +156,8 @@
       this.endpoint = false;
       this.sequence = 0;
       this.finalText = '';
+      this.lastSpeechDetected = false;
+      this.lastEndpointReason = '';
       activeEngine = this;
     }
 
@@ -165,6 +167,8 @@
       this.finalText = '';
       this.endpoint = false;
       this.sequence = 0;
+      this.lastSpeechDetected = false;
+      this.lastEndpointReason = '';
       if (worker) sendRequest('reset').catch((e) => console.warn('[KoochikASR] worker reset failed:', e));
     }
 
@@ -186,21 +190,26 @@
     _onResult(msg) {
       this.lastText = String(msg.text || '').trim();
       this.endpoint = !!msg.endpoint;
-      console.log('[KoochikASR] sherpa worker decode:',
-        'seq=', msg.sequence,
-        '| steps=', msg.steps,
-        '| ms=', Number(msg.ms || 0).toFixed(1),
-        '| queueDelayMs=', Number(msg.queueDelayMs || 0).toFixed(0),
-        '| inputSr=', msg.inputSr,
-        '| modelSr=', msg.modelSr,
-        '| rawPeak=', Number(msg.inputPeak || 0).toFixed(4),
-        '| rawRms=', Number(msg.inputRms || 0).toFixed(4),
-        '| modelPeak=', Number(msg.modelPeak || 0).toFixed(4),
-        '| modelRms=', Number(msg.modelRms || 0).toFixed(4),
-        '| nonFinite=', msg.nonFinite,
-        '| speechDetected=', !!msg.speechDetected,
-        '| text=', JSON.stringify(this.lastText),
-        '| endpoint=', this.endpoint);
+      const nowSpeech = !!msg.speechDetected;
+      const reason = String(msg.endpointReason || '');
+      const transition = nowSpeech !== this.lastSpeechDetected || reason !== this.lastEndpointReason;
+      const periodic = msg.sequence === 1 || (msg.sequence % 8) === 0;
+
+      if (transition || periodic || this.endpoint) {
+        console.log('[KoochikASR] capture:',
+          'seq=', msg.sequence,
+          '| ms=', Number(msg.ms || 0).toFixed(1),
+          '| queueDelayMs=', Number(msg.queueDelayMs || 0).toFixed(0),
+          '| rms=', Number(msg.modelRms || 0).toFixed(4),
+          '| peak=', Number(msg.modelPeak || 0).toFixed(4),
+          '| silero=', !!msg.sileroSpeechDetected,
+          '| energy=', !!msg.energySpeechDetected,
+          '| speech=', nowSpeech,
+          '| endpoint=', this.endpoint,
+          '| reason=', reason || '-');
+      }
+      this.lastSpeechDetected = nowSpeech;
+      this.lastEndpointReason = reason;
     }
 
     _onFinal(msg) {
@@ -209,6 +218,9 @@
       console.log('[KoochikASR] sherpa worker final:',
         'steps=', msg.steps,
         '| ms=', Number(msg.ms || 0).toFixed(1),
+        '| capturedSec=', Number(msg.bufferedSeconds || 0).toFixed(2),
+        '| decodeSec=', Number(msg.decodeSeconds || 0).toFixed(2),
+        '| endpointReason=', String(msg.endpointReason || '-'),
         '| text=', JSON.stringify(this.finalText));
     }
 
@@ -223,7 +235,7 @@
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return false; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-vad'; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad'; }
 
     destroy() {
       if (activeEngine === this) activeEngine = null;

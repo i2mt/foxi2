@@ -22,7 +22,7 @@
     const AUDIO_LEVEL_THROTTLE_MS = 125;
     // Streaming sherpa has its own 2.4/1.2/20 second endpoint rules. This
     // outer timer is only a final safety cap for a pathological session.
-    const KOOCHIK_MAX_UTTERANCE_MS = 60 * 1000;
+    const KOOCHIK_MAX_UTTERANCE_MS = 15 * 1000;
 
     function koochikConfigured() { return !!KOOCHIK_SHERPA_BASE_URL; }
 
@@ -631,7 +631,7 @@
                 const sessionAudioCtx = koochikAudioCtx;
                 koochikProcessor.onaudioprocess = function (event) {
                     try {
-                        // v23: do not discard a fixed warm-up prefix. The previous
+                        // v24: do not discard a fixed warm-up prefix. The previous
                         // 350 ms guard could clip the first word of a short command.
                         // Silero VAD now handles startup noise inside the worker.
                         const samples = event.inputBuffer.getChannelData(0);
@@ -681,7 +681,7 @@
                 } else {
                     console.log('[KoochikASR] live partials disabled on',
                         engine.executionProvider ? engine.executionProvider() : 'slow backend',
-                        '— capturing first, then decoding once on finalization');
+                        '— hybrid VAD captures first, then offline Koochik decodes once on finalization');
                 }
             }).catch(function (err) {
                 koochikLoading = false;
@@ -698,7 +698,7 @@
             emit('error', info && info.code ? info : classifyError('koochik-model-failed'));
         });
     }
-    // v23 non-streaming mode has no live partial ASR. This timer is retained
+    // v24 non-streaming mode has no live partial ASR. This timer is retained
     // for compatibility with other engines, but Koochik reports
     // supportsLivePartials() = false so it is not scheduled.
     let koochikConsecutiveDecodeFailures = 0;

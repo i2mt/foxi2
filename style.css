@@ -51,7 +51,7 @@
     --radius-lg: 1.25rem;
     --radius-xl: 1.5rem;
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    --font-persian: 'Vazirmatn', 'Mitra', Tahoma, 'Arial Unicode MS', sans-serif;
+    --font-persian: 'Vazirmatn', Tahoma, 'Arial Unicode MS', sans-serif;
     --font-latin: 'Roboto', 'Segoe UI', Arial, sans-serif;
     --font-mono: 'Roboto Mono', 'Courier New', monospace;
 }
@@ -386,14 +386,7 @@
 /* ===============================
    FONT SETUP
    =============================== */
-@font-face {
-    font-family: 'Mitra';
-    src: url('fonts/Mitra.eot');
-    src: url('fonts/Mitra.eot?#iefix') format('embedded-opentype'), url('fonts/Mitra.woff2') format('woff2'), url('fonts/Mitra.woff') format('woff'), url('fonts/Mitra.ttf') format('truetype');
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-}
+/* Local Mitra files were removed; Vazirmatn/Tahoma fallbacks avoid 404s. */
 
 *,
 *::before,

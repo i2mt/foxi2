@@ -2,7 +2,7 @@
 // App shell is network-first. Koochik VAD + offline-ASR .data/.wasm use a
 // stable cache-first model cache independent of ordinary app revisions.
 
-const CACHE_NAME = 'FoxiMed_v5.0.20';
+const CACHE_NAME = 'FoxiMed_v5.0.21';
 const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_nonstreaming_int8_vad_sherpa_1_13_5';
 
 const urlsToCache = [
@@ -42,8 +42,13 @@ self.addEventListener('install', event => {
     // ~300ms later (via the controllerchange listener in script.js),
     // regardless of what the person was in the middle of doing.
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(urlsToCache))
+        caches.open(CACHE_NAME).then(cache =>
+            Promise.allSettled(urlsToCache.map(url =>
+                cache.add(url).catch(err => {
+                    console.warn('[SW] optional precache failed:', url, String(err));
+                })
+            ))
+        )
     );
 });
 
