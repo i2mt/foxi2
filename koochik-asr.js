@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v25-hybrid-cachebust';
+  const BUILD_ID = 'v26-noise-hysteresis';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=25';
+  const WORKER_FILE = './koochik-worker.js?v=26';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
@@ -98,7 +98,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy-hysteresis | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}
@@ -205,7 +205,10 @@
           '| rms=', Number(msg.modelRms || 0).toFixed(4),
           '| peak=', Number(msg.modelPeak || 0).toFixed(4),
           '| silero=', !!msg.sileroSpeechDetected,
+          '| sileroNow=', !!msg.sileroActiveNow,
           '| energy=', !!msg.energySpeechDetected,
+          '| energyNow=', !!msg.energyVoiceNow,
+          '| holdRms=', Number(msg.energyHoldRms || 0).toFixed(4),
           '| speech=', nowSpeech,
           '| endpoint=', this.endpoint,
           '| reason=', reason || '-');
@@ -237,7 +240,7 @@
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return false; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad'; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad-v26'; }
 
     destroy() {
       if (activeEngine === this) activeEngine = null;

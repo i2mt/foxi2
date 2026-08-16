@@ -1,19 +1,19 @@
-# FoxiMed Koochik v25
+# FoxiMed Koochik v26
 
-Persian voice input now uses a hybrid utterance controller with the existing full-context Koochik non-streaming INT8 recognizer.
+Persian voice input uses the existing full-context Koochik non-streaming INT8 recognizer with a revised hybrid Silero + energy utterance controller.
 
-- Silero VAD remains enabled.
-- Energy-assisted speech start catches short commands that Silero sometimes misses.
-- ~0.95 s trailing low-energy ends the utterance when Silero does not.
-- 5 s no-speech timeout and 15 s hard safety cap prevent long open-mic sessions.
-- Final ASR decodes a trimmed utterance with pre/post-roll instead of tens of seconds of silence.
+- Koochik model/runtime is unchanged from v25.
+- Silero remains the primary speech detector.
+- Energy-assisted start catches short commands that Silero sometimes misses.
+- Silero endpoints are now treated as candidates: they cannot cut the utterance while energy still looks voice-like.
+- Energy tail detection uses utterance-relative hysteresis instead of v25's fixed low threshold, so steady room noise around RMS 0.027-0.030 does not keep the microphone open.
+- ~0.8 s trailing low-energy ends an utterance when Silero does not.
+- 4.5 s no-speech timeout and 12 s hard safety cap prevent long open-mic sessions.
+- Final ASR receives the complete short captured utterance; v25's start/end trimming was removed.
 - The first 350 ms is never discarded.
-- Console capture logging is reduced to transitions/periodic checkpoints.
-- Missing local Mitra font requests were removed; service-worker precache is best-effort.
+- Voice-path files use explicit `?v=26` cache-busting URLs.
+- Console build marker: `build=v26-noise-hysteresis`.
 
-The sherpa runtime/model are still built by `.github/workflows/pages-sherpa-koochik.yml`; generated large model assets are not included in this ZIP.
+The sherpa runtime/model are built by `.github/workflows/pages-sherpa-koochik.yml`; generated large model assets are not included in this ZIP.
 
-
-## v25 cache-consistency note
-
-Voice-path JavaScript and the worker are loaded with explicit `?v=25` cache-busting URLs, and the service worker is registered with `updateViaCache: "none"`. The console prints `build=v25-hybrid-cachebust` so mixed/stale deployments are immediately visible. The large Koochik/VAD model cache remains unchanged and is not intentionally re-downloaded by this app-shell revision.
+Deploy the whole repository, including the hidden `.github/workflows` directory.

@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const BUILD_ID = 'v25-hybrid-cachebust';
+const BUILD_ID = 'v26-noise-hysteresis';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';
@@ -27,11 +27,13 @@ const VAD_WINDOW = 512;
 const ENERGY_START_RMS = 0.016;
 const ENERGY_START_PEAK = 0.030;
 const ENERGY_START_CONFIRM_CHUNKS = 2;
-const ENERGY_TRAILING_SILENCE_SEC = 0.95;
-const NO_SPEECH_TIMEOUT_SEC = 5.0;
-const HARD_UTTERANCE_LIMIT_SEC = 15.0;
-const PRE_ROLL_SEC = 0.45;
-const POST_ROLL_SEC = 0.45;
+const ENERGY_TRAILING_SILENCE_SEC = 0.80;
+const NO_SPEECH_TIMEOUT_SEC = 4.5;
+const HARD_UTTERANCE_LIMIT_SEC = 12.0;
+const ENERGY_REFERENCE_CAP_RMS = 0.120;
+const ENERGY_HOLD_RATIO = 0.28;
+const ENERGY_HOLD_MIN_RMS = 0.012;
+const ENERGY_HOLD_MAX_RMS = 0.034;
 
 var Module = null;
 let recognizer = null;
@@ -292,6 +294,8 @@ function processVad(modelPcm) {
   circularBuffer.push(modelPcm);
   const started = performance.now();
   let windows = 0;
+  let sileroActiveNow = false;
+  let segmentReady = false;
 
   while (circularBuffer.size() >= VAD_WINDOW) {
     const s = circularBuffer.get(circularBuffer.head(), VAD_WINDOW);
@@ -300,6 +304,7 @@ function processVad(modelPcm) {
     windows++;
 
     if (vad.isDetected()) {
+      sileroActiveNow = true;
       sileroSpeechDetected = true;
       speechDetected = true;
       if (speechStartSample < 0) {
@@ -311,19 +316,25 @@ function processVad(modelPcm) {
     }
 
     if (!vad.isEmpty()) {
-      endpoint = true;
-      if (!endpointReason) endpointReason = 'silero';
+      // A completed Silero segment is only a CANDIDATE endpoint. v25 showed
+      // that Silero can finish a segment while energy still says the speaker
+      // is talking. processEnergy() arbitrates the final stop decision.
+      segmentReady = true;
       while (!vad.isEmpty()) {
         try { vad.pop(); } catch (_) { break; }
       }
-      break;
     }
   }
 
-  return { windows, ms: performance.now() - started };
+  return {
+    windows,
+    ms: performance.now() - started,
+    sileroActiveNow,
+    segmentReady
+  };
 }
 
-function processEnergy(modelStats, chunkStartSample, chunkEndSample) {
+function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
   const strong = modelStats.rms >= ENERGY_START_RMS && modelStats.peak >= ENERGY_START_PEAK;
 
   if (!energySpeechDetected) {
@@ -332,27 +343,49 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample) {
     if (energyStartConfirm >= ENERGY_START_CONFIRM_CHUNKS) {
       energySpeechDetected = true;
       speechDetected = true;
-      // Include the confirming chunk plus one previous chunk. Finalization adds
-      // another fixed pre-roll below, so short initial syllables are retained.
+      // Keep the entire beginning of the recording for the offline recognizer.
+      // speechStartSample is diagnostic only in v26; final decoding no longer
+      // trims the start of short utterances.
       speechStartSample = Math.max(0, chunkStartSample - (chunkEndSample - chunkStartSample));
       lastVoiceSample = chunkEndSample;
     }
   }
 
-  const anySpeechBeforeTail = sileroSpeechDetected || energySpeechDetected;
-  if (anySpeechBeforeTail) {
+  if (energySpeechDetected) {
     energyPeakRms = Math.max(energyPeakRms, modelStats.rms);
-    // Adaptive tail threshold: after a loud/normal phrase, steady room noise
-    // around RMS 0.014-0.016 should still count as silence. For quiet speech,
-    // the floor stays low enough to preserve soft trailing syllables.
-    const holdRms = Math.max(0.010, Math.min(0.020, energyPeakRms * 0.52));
-    const voiceLike = modelStats.rms >= holdRms ||
-      (modelStats.rms >= holdRms * 0.75 && modelStats.peak >= 0.045);
-    if (voiceLike) lastVoiceSample = chunkEndSample;
   }
+
+  // v25 capped the hold threshold at 0.020 RMS. In the user's third test,
+  // steady post-speech room noise sat around 0.027-0.030 RMS, so it was
+  // incorrectly held as speech for ~12 seconds. v26 derives the tail threshold
+  // from the utterance level, but caps the REFERENCE (not the threshold) so a
+  // loud first callback cannot make quiet trailing syllables disappear.
+  const referenceRms = Math.min(
+    ENERGY_REFERENCE_CAP_RMS,
+    Math.max(ENERGY_START_RMS, energyPeakRms || ENERGY_START_RMS)
+  );
+  const holdRms = Math.max(
+    ENERGY_HOLD_MIN_RMS,
+    Math.min(ENERGY_HOLD_MAX_RMS, referenceRms * ENERGY_HOLD_RATIO)
+  );
+  const softPeakGate = Math.max(0.070, holdRms * 2.2);
+  const energyVoiceNow = modelStats.rms >= holdRms ||
+    (modelStats.rms >= holdRms * 0.85 && modelStats.peak >= softPeakGate);
+
+  // Current Silero activity is authoritative for "still speaking" even when
+  // energy briefly dips. Conversely, a completed Silero segment cannot stop
+  // the utterance while energy still looks voice-like.
+  const currentVoice = !!(vadWork && vadWork.sileroActiveNow) ||
+    (energySpeechDetected && energyVoiceNow);
+  if (currentVoice) lastVoiceSample = chunkEndSample;
 
   const anySpeech = sileroSpeechDetected || energySpeechDetected;
   speechDetected = anySpeech;
+
+  if (!endpoint && vadWork && vadWork.segmentReady && anySpeech && !currentVoice) {
+    endpoint = true;
+    endpointReason = 'silero';
+  }
 
   if (!endpoint && anySpeech && lastVoiceSample >= 0) {
     const silenceSamples = Math.max(0, capturedSamples - lastVoiceSample);
@@ -373,6 +406,8 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample) {
     endpointReason = anySpeech ? 'hard-limit' : 'no-speech-hard-limit';
     if (!anySpeech) noSpeechTimedOut = true;
   }
+
+  return { energyVoiceNow, holdRms, referenceRms };
 }
 
 function feedMessage(msg) {
@@ -388,7 +423,7 @@ function feedMessage(msg) {
   const chunkEndSample = capturedSamples;
 
   const vadWork = processVad(modelPcm);
-  processEnergy(modelStats, chunkStartSample, chunkEndSample);
+  const energyWork = processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork);
 
   self.postMessage({
     type: 'result',
@@ -406,7 +441,10 @@ function feedMessage(msg) {
     text: '',
     speechDetected,
     sileroSpeechDetected,
+    sileroActiveNow: !!vadWork.sileroActiveNow,
     energySpeechDetected,
+    energyVoiceNow: !!energyWork.energyVoiceNow,
+    energyHoldRms: energyWork.holdRms,
     endpoint,
     endpointReason,
     bufferedSeconds: totalSeconds
@@ -439,17 +477,12 @@ function finalizeMessage(requestId) {
     return;
   }
 
-  let startSample = 0;
-  let endSample = pcm.length;
-  if (speechStartSample >= 0) {
-    startSample = Math.max(0, speechStartSample - Math.round(PRE_ROLL_SEC * SAMPLE_RATE));
-  }
-  if (lastVoiceSample >= 0 && endpointReason === 'energy-silence') {
-    endSample = Math.min(pcm.length, lastVoiceSample + Math.round(POST_ROLL_SEC * SAMPLE_RATE));
-  }
-  if (endSample <= startSample) { startSample = 0; endSample = pcm.length; }
-
-  const decodePcm = pcm.subarray(startSample, endSample);
+  // v26 deliberately decodes the entire short captured utterance. v25's
+  // trimming saved little time but could remove useful onset/coda context from
+  // commands such as "حالت روشن". Endpoint control now keeps recordings short.
+  const startSample = 0;
+  const endSample = pcm.length;
+  const decodePcm = pcm;
   const started = performance.now();
   const offlineStream = recognizer.createStream();
   let text = '';

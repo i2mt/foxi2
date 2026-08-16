@@ -1,24 +1,29 @@
-# Koochik v25 deployment
+# Koochik v26 deployment
 
 Deploy the whole repository, including the hidden `.github/workflows/pages-sherpa-koochik.yml` file.
 
-The workflow builds the same sherpa-onnx v1.13.5 VAD + offline-ASR runtime used by v23 and downloads:
+The workflow builds the same sherpa-onnx v1.13.5 VAD + offline-ASR runtime used by v25 and downloads:
 
 - Koochik v1.0 non-streaming INT8 (`nemo-ctc.onnx`)
 - matching `tokens.txt`
 - Silero VAD
 
-v25 changes only browser-side utterance control; it does not change the Koochik model.
+v26 changes browser-side utterance control only; it does not change the Koochik ASR model.
 
-Expected console behavior for a short phrase:
+Expected console markers:
 
-1. `capture ... energy=true` or `silero=true`
-2. `endpoint=true reason=energy-silence` or `reason=silero`
-3. `sherpa worker final ... text=...`
+1. `adapter build=v26-noise-hysteresis`
+2. `VAD=Silero+energy-hysteresis`
+3. capture lines with `sileroNow`, `energyNow`, and `holdRms`
+4. `endpoint=true reason=energy-silence` or `reason=silero`
+5. `sherpa worker final ... text=...`
 
-If no speech is detected, capture ends after about 5 seconds instead of staying open indefinitely. The outer session safety cap is 15 seconds.
+Endpoint policy:
 
+- about 0.8 s trailing low energy after detected speech
+- about 4.5 s timeout when no speech is detected
+- 12 s absolute worker safety cap
 
-## v25 cache-consistency note
+The final offline decode receives the complete captured short utterance rather than a trimmed subrange.
 
-Voice-path JavaScript and the worker are loaded with explicit `?v=25` cache-busting URLs, and the service worker is registered with `updateViaCache: "none"`. The console prints `build=v25-hybrid-cachebust` so mixed/stale deployments are immediately visible. The large Koochik/VAD model cache remains unchanged and is not intentionally re-downloaded by this app-shell revision.
+Voice-path JavaScript and the worker use explicit `?v=26` URLs. The service worker is registered with `updateViaCache: "none"` so stale workers do not get mixed with a new page build.
