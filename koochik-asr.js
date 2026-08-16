@@ -9,7 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const WORKER_FILE = './koochik-worker.js';
+  const BUILD_ID = 'v25-hybrid-cachebust';
+  console.log('[KoochikASR] adapter build=' + BUILD_ID);
+  const WORKER_FILE = './koochik-worker.js?v=25';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
@@ -96,7 +98,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}

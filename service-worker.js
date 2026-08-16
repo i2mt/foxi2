@@ -2,7 +2,7 @@
 // App shell is network-first. Koochik VAD + offline-ASR .data/.wasm use a
 // stable cache-first model cache independent of ordinary app revisions.
 
-const CACHE_NAME = 'FoxiMed_v5.0.21';
+const CACHE_NAME = 'FoxiMed_v5.0.22';
 const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_nonstreaming_int8_vad_sherpa_1_13_5';
 
 const urlsToCache = [
@@ -10,15 +10,15 @@ const urlsToCache = [
     './index.html',
     './style.css',
     './voice-assistant.css',
-    './script.js',
-    './voice-recognition.js',
-    './koochik-asr.js',
-    './koochik-worker.js',
+    './script.js?v=25',
+    './voice-recognition.js?v=25',
+    './koochik-asr.js?v=25',
+    './koochik-worker.js?v=25',
     './sherpa-koochik/sherpa-onnx-asr.js',
     './sherpa-koochik/sherpa-onnx-vad.js',
     './sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.js',
-    './voice-commands.js',
-    './voice-ui.js',
+    './voice-commands.js?v=25',
+    './voice-ui.js?v=25',
     './converters.js',
     './drugDatabase.js',
     './manifest.json',

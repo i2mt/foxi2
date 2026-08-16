@@ -9,6 +9,7 @@
  */
 'use strict';
 
+const BUILD_ID = 'v25-hybrid-cachebust';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';
@@ -238,6 +239,7 @@ function initRuntime(url) {
             ready = true;
             self.postMessage({
               type: 'ready',
+              build: BUILD_ID,
               sampleRate: SAMPLE_RATE,
               model: 'Koochik-v1.0-non-streaming-int8',
               vad: 'silero'
@@ -254,7 +256,7 @@ function initRuntime(url) {
         createRuntimeObjects();
         ready = true;
         self.postMessage({
-          type: 'ready', sampleRate: SAMPLE_RATE,
+          type: 'ready', build: BUILD_ID, sampleRate: SAMPLE_RATE,
           model: 'Koochik-v1.0-non-streaming-int8', vad: 'silero'
         });
         resolve();
