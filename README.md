@@ -1,19 +1,14 @@
-# FoxiMed Koochik v26
+# FoxiMed Koochik v27
 
-Persian voice input uses the existing full-context Koochik non-streaming INT8 recognizer with a revised hybrid Silero + energy utterance controller.
+Koochik v27 keeps the v26 hybrid Silero + energy-hysteresis endpoint controller and the same non-streaming INT8 Koochik model.
 
-- Koochik model/runtime is unchanged from v25.
-- Silero remains the primary speech detector.
-- Energy-assisted start catches short commands that Silero sometimes misses.
-- Silero endpoints are now treated as candidates: they cannot cut the utterance while energy still looks voice-like.
-- Energy tail detection uses utterance-relative hysteresis instead of v25's fixed low threshold, so steady room noise around RMS 0.027-0.030 does not keep the microphone open.
-- ~0.8 s trailing low-energy ends an utterance when Silero does not.
-- 4.5 s no-speech timeout and 12 s hard safety cap prevent long open-mic sessions.
-- Final ASR receives the complete short captured utterance; v25's start/end trimming was removed.
-- The first 350 ms is never discarded.
-- Voice-path files use explicit `?v=26` cache-busting URLs.
-- Console build marker: `build=v26-noise-hysteresis`.
+Changes in v27:
 
-The sherpa runtime/model are built by `.github/workflows/pages-sherpa-koochik.yml`; generated large model assets are not included in this ZIP.
+- Adds an attenuation-only offline PCM conditioner before the final Koochik decode.
+- Preserves the complete utterance; no leading audio is discarded.
+- Only over-hot 20 ms frames are reduced; normal/quiet speech is never boosted.
+- Adds a 6-second cap for energy-only sessions when Silero never confirms speech.
+- Logs raw/conditioned RMS, peak, minimum gain, and number of limited frames.
+- Keeps explicit cache-busting/version markers.
 
-Deploy the whole repository, including the hidden `.github/workflows` directory.
+Expected console marker: `build=v27-offline-conditioner`.

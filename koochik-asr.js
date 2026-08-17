@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v26-noise-hysteresis';
+  const BUILD_ID = 'v27-offline-conditioner';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=26';
+  const WORKER_FILE = './koochik-worker.js?v=27';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
@@ -98,7 +98,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy-hysteresis | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy-hysteresis+offline-conditioner | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}
@@ -226,6 +226,12 @@
         '| capturedSec=', Number(msg.bufferedSeconds || 0).toFixed(2),
         '| decodeSec=', Number(msg.decodeSeconds || 0).toFixed(2),
         '| endpointReason=', String(msg.endpointReason || '-'),
+        '| rawRms=', Number(msg.rawRms || 0).toFixed(4),
+        '| conditionedRms=', Number(msg.conditionedRms || 0).toFixed(4),
+        '| rawPeak=', Number(msg.rawPeak || 0).toFixed(4),
+        '| conditionedPeak=', Number(msg.conditionedPeak || 0).toFixed(4),
+        '| minGain=', Number(msg.conditionerMinGain || 1).toFixed(3),
+        '| limitedFrames=', Number(msg.conditionerLimitedFrames || 0),
         '| text=', JSON.stringify(this.finalText));
     }
 
@@ -240,7 +246,7 @@
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return false; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad-v26'; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad-v27'; }
 
     destroy() {
       if (activeEngine === this) activeEngine = null;

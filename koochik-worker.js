@@ -9,7 +9,7 @@
  */
 'use strict';
 
-const BUILD_ID = 'v26-noise-hysteresis';
+const BUILD_ID = 'v27-offline-conditioner';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';
@@ -30,6 +30,20 @@ const ENERGY_START_CONFIRM_CHUNKS = 2;
 const ENERGY_TRAILING_SILENCE_SEC = 0.80;
 const NO_SPEECH_TIMEOUT_SEC = 4.5;
 const HARD_UTTERANCE_LIMIT_SEC = 12.0;
+const ENERGY_ONLY_MAX_SEC = 6.0;
+
+// Offline decode conditioner. Koochik has been most reliable in the browser
+// when speech frames arrive around ~0.03-0.05 RMS. Chrome/AGC can produce a
+// very hot startup burst (0.2-0.3 RMS, peaks >0.7). We preserve every sample
+// but attenuate only over-hot 20 ms frames before the offline decode. Quiet or
+// normal speech is never boosted.
+const OFFLINE_FRAME_SAMPLES = 320; // 20 ms @ 16 kHz
+const OFFLINE_LIMIT_START_RMS = 0.070;
+const OFFLINE_TARGET_RMS = 0.050;
+const OFFLINE_LIMIT_START_PEAK = 0.30;
+const OFFLINE_TARGET_PEAK = 0.25;
+const OFFLINE_MIN_GAIN = 0.10;
+const OFFLINE_RELEASE = 0.45;
 const ENERGY_REFERENCE_CAP_RMS = 0.120;
 const ENERGY_HOLD_RATIO = 0.28;
 const ENERGY_HOLD_MIN_RMS = 0.012;
@@ -113,6 +127,58 @@ function toModelSampleRate(samples, inputRate) {
     srcOffset = next;
   }
   return out;
+}
+
+
+function conditionOfflinePcm(pcm) {
+  const out = new Float32Array(pcm);
+  const before = signalStats(pcm);
+  let gain = 1.0;
+  let minGain = 1.0;
+  let limitedFrames = 0;
+  let frames = 0;
+
+  for (let start = 0; start < out.length; start += OFFLINE_FRAME_SAMPLES) {
+    const end = Math.min(out.length, start + OFFLINE_FRAME_SAMPLES);
+    let peak = 0, sumSq = 0, n = 0;
+    for (let i = start; i < end; i++) {
+      const v = out[i];
+      if (!Number.isFinite(v)) continue;
+      const a = Math.abs(v);
+      if (a > peak) peak = a;
+      sumSq += v * v;
+      n++;
+    }
+    const rms = n ? Math.sqrt(sumSq / n) : 0;
+    let targetGain = 1.0;
+    if (rms > OFFLINE_LIMIT_START_RMS) {
+      targetGain = Math.min(targetGain, OFFLINE_TARGET_RMS / Math.max(rms, 1e-9));
+    }
+    if (peak > OFFLINE_LIMIT_START_PEAK) {
+      targetGain = Math.min(targetGain, OFFLINE_TARGET_PEAK / Math.max(peak, 1e-9));
+    }
+    targetGain = Math.max(OFFLINE_MIN_GAIN, Math.min(1.0, targetGain));
+
+    // Fast attack, controlled release. This knocks down the startup burst
+    // immediately but returns to unity within a few frames once normal speech
+    // level is reached.
+    if (targetGain < gain) gain = targetGain;
+    else gain += (targetGain - gain) * OFFLINE_RELEASE;
+
+    if (gain < 0.999) limitedFrames++;
+    minGain = Math.min(minGain, gain);
+    frames++;
+    for (let i = start; i < end; i++) out[i] *= gain;
+  }
+
+  return {
+    pcm: out,
+    before,
+    after: signalStats(out),
+    minGain,
+    limitedFrames,
+    frames
+  };
 }
 
 function offlineRecognizerConfig() {
@@ -344,7 +410,7 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
       energySpeechDetected = true;
       speechDetected = true;
       // Keep the entire beginning of the recording for the offline recognizer.
-      // speechStartSample is diagnostic only in v26; final decoding no longer
+      // speechStartSample is diagnostic only; final decoding no longer
       // trims the start of short utterances.
       speechStartSample = Math.max(0, chunkStartSample - (chunkEndSample - chunkStartSample));
       lastVoiceSample = chunkEndSample;
@@ -357,7 +423,7 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
 
   // v25 capped the hold threshold at 0.020 RMS. In the user's third test,
   // steady post-speech room noise sat around 0.027-0.030 RMS, so it was
-  // incorrectly held as speech for ~12 seconds. v26 derives the tail threshold
+  // incorrectly held as speech for ~12 seconds. the current controller derives the tail threshold
   // from the utterance level, but caps the REFERENCE (not the threshold) so a
   // loud first callback cannot make quiet trailing syllables disappear.
   const referenceRms = Math.min(
@@ -399,6 +465,15 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
     endpoint = true;
     endpointReason = 'no-speech-timeout';
     noSpeechTimedOut = true;
+  }
+
+  // Energy is a fallback for cases where Silero misses a short Persian
+  // command. If Silero never confirms speech, do not let a persistent noise
+  // floor keep the microphone open for the full hard limit.
+  if (!endpoint && energySpeechDetected && !sileroSpeechDetected &&
+      totalSeconds >= ENERGY_ONLY_MAX_SEC) {
+    endpoint = true;
+    endpointReason = 'energy-only-limit';
   }
 
   if (!endpoint && totalSeconds >= HARD_UTTERANCE_LIMIT_SEC) {
@@ -477,12 +552,13 @@ function finalizeMessage(requestId) {
     return;
   }
 
-  // v26 deliberately decodes the entire short captured utterance. v25's
+  // The current path deliberately decodes the entire short captured utterance. The previous trimming pass's
   // trimming saved little time but could remove useful onset/coda context from
   // commands such as "حالت روشن". Endpoint control now keeps recordings short.
   const startSample = 0;
   const endSample = pcm.length;
-  const decodePcm = pcm;
+  const conditioned = conditionOfflinePcm(pcm);
+  const decodePcm = conditioned.pcm;
   const started = performance.now();
   const offlineStream = recognizer.createStream();
   let text = '';
@@ -506,7 +582,14 @@ function finalizeMessage(requestId) {
     decodeSeconds: decodePcm.length / SAMPLE_RATE,
     trimStartSeconds: startSample / SAMPLE_RATE,
     trimEndSeconds: endSample / SAMPLE_RATE,
-    endpointReason
+    endpointReason,
+    rawPeak: conditioned.before.peak,
+    rawRms: conditioned.before.rms,
+    conditionedPeak: conditioned.after.peak,
+    conditionedRms: conditioned.after.rms,
+    conditionerMinGain: conditioned.minGain,
+    conditionerLimitedFrames: conditioned.limitedFrames,
+    conditionerFrames: conditioned.frames
   });
 }
 
