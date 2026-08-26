@@ -446,6 +446,47 @@
     border-inline-start-color: #5ac8fa;
     background: rgba(90, 200, 250, 0.08);
 }
+.voice-confirmation {
+    display: grid;
+    gap: 10px;
+}
+.voice-confirm-title {
+    display: block;
+    color: var(--text-primary);
+}
+.voice-confirm-text {
+    display: block;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+.voice-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+}
+.voice-confirm-button {
+    min-height: 42px;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+.voice-confirm-button.approve {
+    color: #fff;
+    border-color: var(--fox-orange, #f97316);
+    background: var(--fox-orange, #f97316);
+}
+.voice-confirm-button.cancel {
+    color: var(--text-primary);
+    background: var(--surface);
+}
+.voice-confirm-button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
 .voice-tip {
     margin-top: 10px;
     font-size: 12px;

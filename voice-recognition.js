@@ -1,11 +1,11 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Primary backend on all devices: Shenava Koochik v1.0 114M streaming
+   Primary backend on all devices: Shenava Rizeh v1.0 32M non-streaming
    INT8 NeMo CTC through the official sherpa-onnx WebAssembly runtime.
 
-   sherpa-onnx owns feature extraction, FastConformer cache state,
-   streaming inference, CTC decoding, and endpoint detection. Audio is fed
+   sherpa-onnx owns feature extraction, offline inference, CTC decoding,
+   and Silero endpoint detection. Audio is fed
    to it at the model-native 16 kHz rate to match sherpa's browser demo.
    voice-recognition.js only owns microphone capture, UI events, and the
    common VoiceEngine API used by the rest of FoxiMed.
@@ -464,7 +464,7 @@
     }
 
     // ============================================
-    // BACKEND 1: KOOCHIK (primary on-device VAD + full-context CTC ASR)
+    // BACKEND 1: RIZEH (primary on-device VAD + full-context CTC ASR)
     // Driven by the official sherpa-onnx WASM runtime. sherpa owns
     // resampling, feature extraction, FastConformer caches, ONNX inference,
     // CTC decoding, and endpoint detection. This file owns mic/UI plumbing.
@@ -581,7 +581,13 @@
 
             navigator.mediaDevices.getUserMedia({
                 video: false,
-                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: true,
+                    autoGainControl: false,
+                    channelCount: 1,
+                    sampleRate: { ideal: 16000 }
+                }
             }).then(function (stream) {
                 koochikLoading = false;
                 try {
@@ -681,7 +687,7 @@
                 } else {
                     console.log('[KoochikASR] live partials disabled on',
                         engine.executionProvider ? engine.executionProvider() : 'slow backend',
-                        '— hybrid VAD captures first, then offline Koochik decodes once on finalization');
+                        '— segmented VAD captures first, then offline Rizeh decodes once on finalization');
                 }
             }).catch(function (err) {
                 koochikLoading = false;
@@ -991,7 +997,7 @@
             // are not queryable from page JS. Keep startup warmup on-demand.
             return Promise.resolve(false);
         },
-        // Frees the loaded Koochik engine (ONNX session) from memory.
+        // Frees the loaded Rizeh engine (ONNX session) from memory.
         // Not called unconditionally — keeping the model warm after
         // leaving the Voice tab is the normal default, since it makes
         // returning to voice instant. But that resident session competes

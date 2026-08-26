@@ -1,5 +1,5 @@
 /* ============================================
-   FoxiMed — Koochik ASR adapter (hybrid VAD + non-streaming sherpa-onnx)
+   FoxiMed — Rizeh ASR adapter (segmented VAD + non-streaming sherpa-onnx)
    ============================================
    sherpa's synchronous WASM inference is intentionally kept off the page
    main thread. This prevents ~500-800 ms decode calls from starving the
@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v27-offline-conditioner';
+  const BUILD_ID = 'v28-rizeh-segmented';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=27';
+  const WORKER_FILE = './koochik-worker.js?v=28';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
@@ -44,6 +44,20 @@
     pending.clear();
   }
 
+  function shutdownWorker(err) {
+    const oldWorker = worker;
+    worker = null;
+    workerReadyPromise = null;
+    workerBaseUrl = '';
+    activeEngine = null;
+    if (oldWorker) {
+      oldWorker.onmessage = null;
+      oldWorker.onerror = null;
+      try { oldWorker.terminate(); } catch (_) {}
+    }
+    if (err) rejectAll(err);
+  }
+
   function sendRequest(type, payload) {
     if (!worker) return Promise.reject(new Error('koochik-worker-not-ready'));
     const requestId = requestSeq++;
@@ -55,11 +69,14 @@
 
   function ensureWorker(baseUrl, onProgress, signal) {
     baseUrl = new URL(ensureSlash(baseUrl), window.location.href).href;
-    if (workerReadyPromise && workerBaseUrl === baseUrl) return workerReadyPromise;
-    if (workerReadyPromise && workerBaseUrl !== baseUrl) return Promise.reject(new Error('sherpa-base-url-changed'));
+    if (workerReadyPromise && worker && workerBaseUrl === baseUrl) return workerReadyPromise;
+    if (workerReadyPromise || worker) {
+      shutdownWorker(new Error('sherpa-worker-replaced'));
+    }
 
     workerBaseUrl = baseUrl;
-    workerReadyPromise = new Promise((resolve, reject) => {
+    let createdWorker = null;
+    const readyPromise = new Promise((resolve, reject) => {
       if (signal && signal.aborted) {
         reject(new DOMException('Aborted', 'AbortError'));
         return;
@@ -68,7 +85,8 @@
       let settled = false;
       const workerUrl = new URL(WORKER_FILE, window.location.href).href;
       try {
-        worker = new Worker(workerUrl);
+        createdWorker = new Worker(workerUrl);
+        worker = createdWorker;
       } catch (e) {
         reject(e);
         return;
@@ -77,14 +95,14 @@
       const abortHandler = signal ? function () {
         if (settled) return;
         settled = true;
-        try { worker.terminate(); } catch (_) {}
-        worker = null;
-        workerReadyPromise = null;
-        reject(new DOMException('Aborted', 'AbortError'));
+        const err = new DOMException('Aborted', 'AbortError');
+        shutdownWorker(err);
+        reject(err);
       } : null;
       if (signal && abortHandler) signal.addEventListener('abort', abortHandler, { once: true });
 
-      worker.onmessage = function (event) {
+      createdWorker.onmessage = function (event) {
+        if (worker !== createdWorker) return;
         const msg = event.data || {};
 
         if (msg.type === 'status') {
@@ -98,7 +116,7 @@
           return;
         }
         if (msg.type === 'ready') {
-          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Koochik-v1.0-non-streaming-int8 | VAD=Silero+energy-hysteresis+offline-conditioner | sampleRate=16000');
+          console.log('[KoochikASR] sherpa worker ready: build=' + String(msg.build || BUILD_ID) + ' | model=Rizeh-v1.0-non-streaming-int8 | VAD=Silero-segments+fixed-frame-energy | sampleRate=16000');
           if (!settled) {
             settled = true;
             if (signal && abortHandler) try { signal.removeEventListener('abort', abortHandler); } catch (_) {}
@@ -125,27 +143,36 @@
           const err = new Error(msg.message || 'sherpa-worker-error');
           const p = pending.get(msg.requestId);
           if (p) { pending.delete(msg.requestId); p.reject(err); }
-          else console.error('[KoochikASR] sherpa worker error:', err);
+          else {
+            console.error('[KoochikASR] sherpa worker error:', err);
+            if (activeEngine) activeEngine._onFatal(err);
+            shutdownWorker(err);
+          }
           if (!settled) {
             settled = true;
-            workerReadyPromise = null;
+            shutdownWorker(err);
             reject(err);
           }
         }
       };
 
-      worker.onerror = function (event) {
+      createdWorker.onerror = function (event) {
         const err = new Error('koochik-worker-error: ' + (event && event.message ? event.message : 'unknown'));
         console.error('[KoochikASR] worker crashed:', err);
-        rejectAll(err);
+        if (activeEngine) activeEngine._onFatal(err);
+        shutdownWorker(err);
         if (!settled) {
           settled = true;
-          workerReadyPromise = null;
           reject(err);
         }
       };
 
-      worker.postMessage({ type: 'init', baseUrl, requestId: 0 });
+      createdWorker.postMessage({ type: 'init', baseUrl, requestId: 0 });
+    });
+
+    workerReadyPromise = readyPromise.catch(function (err) {
+      if (!createdWorker || worker === createdWorker) shutdownWorker(err);
+      throw err;
     });
 
     return workerReadyPromise;
@@ -160,6 +187,7 @@
       this.finalText = '';
       this.lastSpeechDetected = false;
       this.lastEndpointReason = '';
+      this.fatalError = null;
       activeEngine = this;
     }
 
@@ -171,10 +199,12 @@
       this.sequence = 0;
       this.lastSpeechDetected = false;
       this.lastEndpointReason = '';
+      this.fatalError = null;
       if (worker) sendRequest('reset').catch((e) => console.warn('[KoochikASR] worker reset failed:', e));
     }
 
     feed(samples, sampleRate) {
+      if (this.fatalError) throw this.fatalError;
       if (!worker || !samples || !samples.length) return;
       const inputRate = Number(sampleRate) || SAMPLE_RATE;
       const copy = new Float32Array(samples);
@@ -225,20 +255,25 @@
         '| ms=', Number(msg.ms || 0).toFixed(1),
         '| capturedSec=', Number(msg.bufferedSeconds || 0).toFixed(2),
         '| decodeSec=', Number(msg.decodeSeconds || 0).toFixed(2),
+        '| decodeSource=', String(msg.decodeSource || '-'),
+        '| segments=', Number(msg.sileroSegments || 0),
         '| endpointReason=', String(msg.endpointReason || '-'),
         '| rawRms=', Number(msg.rawRms || 0).toFixed(4),
-        '| conditionedRms=', Number(msg.conditionedRms || 0).toFixed(4),
+        '| decodeRms=', Number(msg.decodeRms || 0).toFixed(4),
         '| rawPeak=', Number(msg.rawPeak || 0).toFixed(4),
-        '| conditionedPeak=', Number(msg.conditionedPeak || 0).toFixed(4),
-        '| minGain=', Number(msg.conditionerMinGain || 1).toFixed(3),
-        '| limitedFrames=', Number(msg.conditionerLimitedFrames || 0),
+        '| decodePeak=', Number(msg.decodePeak || 0).toFixed(4),
         '| text=', JSON.stringify(this.finalText));
+    }
+
+    _onFatal(err) {
+      this.fatalError = err instanceof Error ? err : new Error(String(err || 'sherpa-worker-error'));
     }
 
 
     decode() { return Promise.resolve(''); }
 
     finalize() {
+      if (this.fatalError) return Promise.reject(this.fatalError);
       if (!worker) return Promise.resolve(this.lastText || '');
       return sendRequest('finalize').then((text) => String(text || this.lastText || '').trim());
     }
@@ -246,11 +281,14 @@
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return false; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-nonstreaming-int8-hybrid-vad-v27'; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-rizeh-int8-segmented-vad-v28'; }
 
     destroy() {
-      if (activeEngine === this) activeEngine = null;
-      if (worker) sendRequest('destroy').catch(function () {});
+      // Worker.terminate() is the only reliable way to release the complete
+      // Emscripten heap on iOS. It also resets the ready promise, so the next
+      // load creates a genuinely fresh worker instead of reusing stale state.
+      shutdownWorker(new DOMException('Rizeh worker released', 'AbortError'));
+      return Promise.resolve();
     }
   }
 
@@ -275,6 +313,6 @@
         });
     },
     runtime: 'sherpa-onnx-dedicated-worker-wasm',
-    model: 'Shenava-Koochik-v1.0-non-streaming-int8'
+    model: 'Shenava-Rizeh-v1.0-non-streaming-int8'
   };
 })(window);

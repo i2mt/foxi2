@@ -19,7 +19,7 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.0';
+const APP_VERSION = '5.0.25';
 
 const CHANGELOG = {
     '5.0.0': [

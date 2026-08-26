@@ -1,15 +1,16 @@
-/* FoxiMed — Koochik non-streaming sherpa-onnx worker
+/* FoxiMed — Rizeh non-streaming sherpa-onnx worker
  *
- * v24 architecture:
- *   microphone PCM -> hybrid Silero+energy endpoint -> full-context Koochik INT8
+ * v28 architecture:
+ *   microphone PCM -> Silero VAD + fixed-frame energy fallback
+ *   -> detected speech segment -> one offline Rizeh INT8 decode
  *
- * VAD runs continuously in this Dedicated Worker. The expensive non-streaming
- * ASR pass runs only once, after capture stops, so it cannot starve microphone
- * callbacks on the page thread.
+ * Both VAD and ASR stay inside this Dedicated Worker. The page thread only
+ * captures audio, which keeps microphone callbacks responsive on low-memory
+ * iOS PWAs.
  */
 'use strict';
 
-const BUILD_ID = 'v27-offline-conditioner';
+const BUILD_ID = 'v28-rizeh-segmented';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';
@@ -19,35 +20,25 @@ const TOKENS_PATH = './tokens.txt';
 const VAD_MODEL_PATH = './silero_vad.onnx';
 const VAD_WINDOW = 512;
 
-// Hybrid utterance controller. Silero remains primary, but a lightweight
-// energy fallback prevents missed speech on short commands from keeping the
-// microphone open for tens of seconds. Thresholds are deliberately below the
-// RMS observed in real speech tests (~0.02-0.05) and above post-speech noise
-// (~0.005-0.009).
+// Energy detection is evaluated on fixed 20 ms frames. Browser audio callback
+// sizes vary by device, so counting callbacks made the old detector require
+// ~170 ms on one device and ~510 ms on another.
+const ENERGY_FRAME_SAMPLES = 320;
 const ENERGY_START_RMS = 0.016;
 const ENERGY_START_PEAK = 0.030;
-const ENERGY_START_CONFIRM_CHUNKS = 2;
-const ENERGY_TRAILING_SILENCE_SEC = 0.80;
-const NO_SPEECH_TIMEOUT_SEC = 4.5;
-const HARD_UTTERANCE_LIMIT_SEC = 12.0;
-const ENERGY_ONLY_MAX_SEC = 6.0;
-
-// Offline decode conditioner. Koochik has been most reliable in the browser
-// when speech frames arrive around ~0.03-0.05 RMS. Chrome/AGC can produce a
-// very hot startup burst (0.2-0.3 RMS, peaks >0.7). We preserve every sample
-// but attenuate only over-hot 20 ms frames before the offline decode. Quiet or
-// normal speech is never boosted.
-const OFFLINE_FRAME_SAMPLES = 320; // 20 ms @ 16 kHz
-const OFFLINE_LIMIT_START_RMS = 0.070;
-const OFFLINE_TARGET_RMS = 0.050;
-const OFFLINE_LIMIT_START_PEAK = 0.30;
-const OFFLINE_TARGET_PEAK = 0.25;
-const OFFLINE_MIN_GAIN = 0.10;
-const OFFLINE_RELEASE = 0.45;
+const ENERGY_START_CONFIRM_FRAMES = 4; // 80 ms
 const ENERGY_REFERENCE_CAP_RMS = 0.120;
 const ENERGY_HOLD_RATIO = 0.28;
 const ENERGY_HOLD_MIN_RMS = 0.012;
 const ENERGY_HOLD_MAX_RMS = 0.034;
+const ENERGY_TRAILING_SILENCE_SEC = 0.80;
+const NO_SPEECH_TIMEOUT_SEC = 4.5;
+const HARD_UTTERANCE_LIMIT_SEC = 12.0;
+const ENERGY_ONLY_MAX_SEC = 6.0;
+const ENERGY_PREROLL_SEC = 0.25;
+const ENERGY_POSTROLL_SEC = 0.45;
+const SEGMENT_GAP_SEC = 0.08;
+const MIN_DECODE_SEC = 0.15;
 
 var Module = null;
 let recognizer = null;
@@ -61,10 +52,14 @@ let totalSeconds = 0;
 let initPromise = null;
 let capturedChunks = [];
 let capturedSamples = 0;
+let detectedSegments = [];
 let sileroSpeechDetected = false;
 let energySpeechDetected = false;
 let energyStartConfirm = 0;
+let energyCandidateStartSample = -1;
 let energyPeakRms = 0;
+let energyRemainder = new Float32Array(0);
+let energyProcessedSamples = 0;
 let speechStartSample = -1;
 let lastVoiceSample = -1;
 let endpointReason = '';
@@ -76,7 +71,9 @@ function ensureSlash(s) {
 }
 
 function signalStats(samples) {
-  let peak = 0, sumSq = 0, finite = 0;
+  let peak = 0;
+  let sumSq = 0;
+  let finite = 0;
   for (let i = 0; i < samples.length; i++) {
     const v = samples[i];
     if (!Number.isFinite(v)) continue;
@@ -92,10 +89,18 @@ function signalStats(samples) {
   };
 }
 
+function sanitizeCopy(samples) {
+  const out = new Float32Array(samples || []);
+  for (let i = 0; i < out.length; i++) {
+    if (!Number.isFinite(out[i])) out[i] = 0;
+  }
+  return out;
+}
+
 function toModelSampleRate(samples, inputRate) {
   const src = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
   const sr = Number(inputRate) || SAMPLE_RATE;
-  if (!src.length || sr === SAMPLE_RATE) return new Float32Array(src);
+  if (!src.length || sr === SAMPLE_RATE) return sanitizeCopy(src);
 
   if (sr < SAMPLE_RATE) {
     const outLen = Math.max(1, Math.round(src.length * SAMPLE_RATE / sr));
@@ -106,7 +111,9 @@ function toModelSampleRate(samples, inputRate) {
       const a = Math.min(src.length - 1, Math.floor(pos));
       const b = Math.min(src.length - 1, a + 1);
       const t = pos - a;
-      out[i] = src[a] + (src[b] - src[a]) * t;
+      const av = Number.isFinite(src[a]) ? src[a] : 0;
+      const bv = Number.isFinite(src[b]) ? src[b] : 0;
+      out[i] = av + (bv - av) * t;
     }
     return out;
   }
@@ -118,67 +125,19 @@ function toModelSampleRate(samples, inputRate) {
   let srcOffset = 0;
   for (let i = 0; i < outLen; i++) {
     const next = Math.min(src.length, Math.round((i + 1) * ratio));
-    let sum = 0, n = 0;
+    let sum = 0;
+    let n = 0;
     for (let j = srcOffset; j < next; j++) {
       const v = src[j];
-      if (Number.isFinite(v)) { sum += v; n++; }
+      if (Number.isFinite(v)) {
+        sum += v;
+        n++;
+      }
     }
     out[i] = n ? sum / n : 0;
     srcOffset = next;
   }
   return out;
-}
-
-
-function conditionOfflinePcm(pcm) {
-  const out = new Float32Array(pcm);
-  const before = signalStats(pcm);
-  let gain = 1.0;
-  let minGain = 1.0;
-  let limitedFrames = 0;
-  let frames = 0;
-
-  for (let start = 0; start < out.length; start += OFFLINE_FRAME_SAMPLES) {
-    const end = Math.min(out.length, start + OFFLINE_FRAME_SAMPLES);
-    let peak = 0, sumSq = 0, n = 0;
-    for (let i = start; i < end; i++) {
-      const v = out[i];
-      if (!Number.isFinite(v)) continue;
-      const a = Math.abs(v);
-      if (a > peak) peak = a;
-      sumSq += v * v;
-      n++;
-    }
-    const rms = n ? Math.sqrt(sumSq / n) : 0;
-    let targetGain = 1.0;
-    if (rms > OFFLINE_LIMIT_START_RMS) {
-      targetGain = Math.min(targetGain, OFFLINE_TARGET_RMS / Math.max(rms, 1e-9));
-    }
-    if (peak > OFFLINE_LIMIT_START_PEAK) {
-      targetGain = Math.min(targetGain, OFFLINE_TARGET_PEAK / Math.max(peak, 1e-9));
-    }
-    targetGain = Math.max(OFFLINE_MIN_GAIN, Math.min(1.0, targetGain));
-
-    // Fast attack, controlled release. This knocks down the startup burst
-    // immediately but returns to unity within a few frames once normal speech
-    // level is reached.
-    if (targetGain < gain) gain = targetGain;
-    else gain += (targetGain - gain) * OFFLINE_RELEASE;
-
-    if (gain < 0.999) limitedFrames++;
-    minGain = Math.min(minGain, gain);
-    frames++;
-    for (let i = start; i < end; i++) out[i] *= gain;
-  }
-
-  return {
-    pcm: out,
-    before,
-    after: signalStats(out),
-    minGain,
-    limitedFrames,
-    frames
-  };
 }
 
 function offlineRecognizerConfig() {
@@ -209,8 +168,6 @@ function vadConfig() {
     sileroVad: {
       model: VAD_MODEL_PATH,
       threshold: 0.40,
-      // Short command mode: enough trailing silence to avoid chopping natural
-      // pauses, but faster than v23's 0.8 s when Silero is confident.
       minSilenceDuration: 0.70,
       minSpeechDuration: 0.20,
       maxSpeechDuration: 15,
@@ -259,7 +216,10 @@ function resetSession() {
   sileroSpeechDetected = false;
   energySpeechDetected = false;
   energyStartConfirm = 0;
+  energyCandidateStartSample = -1;
   energyPeakRms = 0;
+  energyRemainder = new Float32Array(0);
+  energyProcessedSamples = 0;
   speechStartSample = -1;
   lastVoiceSample = -1;
   endpointReason = '';
@@ -267,6 +227,7 @@ function resetSession() {
   totalSeconds = 0;
   capturedChunks = [];
   capturedSamples = 0;
+  detectedSegments = [];
 }
 
 function postError(err, requestId) {
@@ -274,6 +235,16 @@ function postError(err, requestId) {
     type: 'error',
     requestId: requestId || 0,
     message: String(err && (err.stack || err.message) || err || 'worker-error')
+  });
+}
+
+function readyMessage() {
+  self.postMessage({
+    type: 'ready',
+    build: BUILD_ID,
+    sampleRate: SAMPLE_RATE,
+    model: 'Shenava-Rizeh-v1.0-non-streaming-int8',
+    vad: 'silero-segmented'
   });
 }
 
@@ -305,13 +276,7 @@ function initRuntime(url) {
           try {
             createRuntimeObjects();
             ready = true;
-            self.postMessage({
-              type: 'ready',
-              build: BUILD_ID,
-              sampleRate: SAMPLE_RATE,
-              model: 'Koochik-v1.0-non-streaming-int8',
-              vad: 'silero'
-            });
+            readyMessage();
             resolve();
           } catch (e) {
             reject(e);
@@ -323,10 +288,7 @@ function initRuntime(url) {
       if (Module && Module.calledRun && !ready) {
         createRuntimeObjects();
         ready = true;
-        self.postMessage({
-          type: 'ready', build: BUILD_ID, sampleRate: SAMPLE_RATE,
-          model: 'Koochik-v1.0-non-streaming-int8', vad: 'silero'
-        });
+        readyMessage();
         resolve();
       }
     } catch (e) {
@@ -356,12 +318,30 @@ function flattenCaptured() {
   return out;
 }
 
+function drainVadSegments() {
+  let count = 0;
+  while (vad && !vad.isEmpty()) {
+    try {
+      const segment = vad.front();
+      if (segment && segment.samples && segment.samples.length) {
+        // front().samples points into WASM-owned memory. Copy it before pop().
+        detectedSegments.push(new Float32Array(segment.samples));
+        count++;
+      }
+      vad.pop();
+    } catch (_) {
+      break;
+    }
+  }
+  return count;
+}
+
 function processVad(modelPcm) {
   circularBuffer.push(modelPcm);
   const started = performance.now();
   let windows = 0;
   let sileroActiveNow = false;
-  let segmentReady = false;
+  let completedSegments = 0;
 
   while (circularBuffer.size() >= VAD_WINDOW) {
     const s = circularBuffer.get(circularBuffer.head(), VAD_WINDOW);
@@ -374,58 +354,22 @@ function processVad(modelPcm) {
       sileroSpeechDetected = true;
       speechDetected = true;
       if (speechStartSample < 0) {
-        // Silero can assert detection after some latency. Preserve generous
-        // pre-context instead of treating this late detection point as the
-        // literal beginning of speech.
         speechStartSample = Math.max(0, capturedSamples - Math.round(1.25 * SAMPLE_RATE));
       }
     }
 
-    if (!vad.isEmpty()) {
-      // A completed Silero segment is only a CANDIDATE endpoint. v25 showed
-      // that Silero can finish a segment while energy still says the speaker
-      // is talking. processEnergy() arbitrates the final stop decision.
-      segmentReady = true;
-      while (!vad.isEmpty()) {
-        try { vad.pop(); } catch (_) { break; }
-      }
-    }
+    completedSegments += drainVadSegments();
   }
 
   return {
     windows,
     ms: performance.now() - started,
     sileroActiveNow,
-    segmentReady
+    segmentReady: completedSegments > 0
   };
 }
 
-function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
-  const strong = modelStats.rms >= ENERGY_START_RMS && modelStats.peak >= ENERGY_START_PEAK;
-
-  if (!energySpeechDetected) {
-    energyStartConfirm = strong ? energyStartConfirm + 1 : 0;
-    if (strong) energyPeakRms = Math.max(energyPeakRms, modelStats.rms);
-    if (energyStartConfirm >= ENERGY_START_CONFIRM_CHUNKS) {
-      energySpeechDetected = true;
-      speechDetected = true;
-      // Keep the entire beginning of the recording for the offline recognizer.
-      // speechStartSample is diagnostic only; final decoding no longer
-      // trims the start of short utterances.
-      speechStartSample = Math.max(0, chunkStartSample - (chunkEndSample - chunkStartSample));
-      lastVoiceSample = chunkEndSample;
-    }
-  }
-
-  if (energySpeechDetected) {
-    energyPeakRms = Math.max(energyPeakRms, modelStats.rms);
-  }
-
-  // v25 capped the hold threshold at 0.020 RMS. In the user's third test,
-  // steady post-speech room noise sat around 0.027-0.030 RMS, so it was
-  // incorrectly held as speech for ~12 seconds. the current controller derives the tail threshold
-  // from the utterance level, but caps the REFERENCE (not the threshold) so a
-  // loud first callback cannot make quiet trailing syllables disappear.
+function energyThresholds() {
   const referenceRms = Math.min(
     ENERGY_REFERENCE_CAP_RMS,
     Math.max(ENERGY_START_RMS, energyPeakRms || ENERGY_START_RMS)
@@ -434,23 +378,72 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
     ENERGY_HOLD_MIN_RMS,
     Math.min(ENERGY_HOLD_MAX_RMS, referenceRms * ENERGY_HOLD_RATIO)
   );
-  const softPeakGate = Math.max(0.070, holdRms * 2.2);
-  const energyVoiceNow = modelStats.rms >= holdRms ||
-    (modelStats.rms >= holdRms * 0.85 && modelStats.peak >= softPeakGate);
+  return { referenceRms, holdRms };
+}
 
-  // Current Silero activity is authoritative for "still speaking" even when
-  // energy briefly dips. Conversely, a completed Silero segment cannot stop
-  // the utterance while energy still looks voice-like.
-  const currentVoice = !!(vadWork && vadWork.sileroActiveNow) ||
-    (energySpeechDetected && energyVoiceNow);
-  if (currentVoice) lastVoiceSample = chunkEndSample;
+function processEnergy(modelPcm, vadWork) {
+  const merged = new Float32Array(energyRemainder.length + modelPcm.length);
+  merged.set(energyRemainder, 0);
+  merged.set(modelPcm, energyRemainder.length);
+
+  let offset = 0;
+  let energyVoiceNow = false;
+  let lastFrameStats = { peak: 0, rms: 0, nonFinite: 0 };
+
+  while (offset + ENERGY_FRAME_SAMPLES <= merged.length) {
+    const frame = merged.subarray(offset, offset + ENERGY_FRAME_SAMPLES);
+    const stats = signalStats(frame);
+    lastFrameStats = stats;
+    const frameStart = energyProcessedSamples;
+    const frameEnd = frameStart + ENERGY_FRAME_SAMPLES;
+    const strong = stats.rms >= ENERGY_START_RMS && stats.peak >= ENERGY_START_PEAK;
+
+    if (!energySpeechDetected) {
+      if (strong) {
+        if (energyStartConfirm === 0) energyCandidateStartSample = frameStart;
+        energyStartConfirm++;
+        energyPeakRms = Math.max(energyPeakRms, stats.rms);
+      } else {
+        energyStartConfirm = 0;
+        energyCandidateStartSample = -1;
+      }
+
+      if (energyStartConfirm >= ENERGY_START_CONFIRM_FRAMES) {
+        energySpeechDetected = true;
+        speechDetected = true;
+        const candidate = energyCandidateStartSample >= 0 ? energyCandidateStartSample : frameStart;
+        speechStartSample = speechStartSample < 0
+          ? Math.max(0, candidate - Math.round(ENERGY_PREROLL_SEC * SAMPLE_RATE))
+          : Math.min(speechStartSample, candidate);
+        lastVoiceSample = frameEnd;
+      }
+    }
+
+    if (energySpeechDetected) energyPeakRms = Math.max(energyPeakRms, stats.rms);
+    const thresholds = energyThresholds();
+    const softPeakGate = Math.max(0.070, thresholds.holdRms * 2.2);
+    energyVoiceNow = energySpeechDetected && (
+      stats.rms >= thresholds.holdRms ||
+      (stats.rms >= thresholds.holdRms * 0.85 && stats.peak >= softPeakGate)
+    );
+    if (energyVoiceNow) lastVoiceSample = frameEnd;
+
+    energyProcessedSamples = frameEnd;
+    offset += ENERGY_FRAME_SAMPLES;
+  }
+
+  energyRemainder = new Float32Array(merged.subarray(offset));
+
+  // Silero remains authoritative while it sees active speech.
+  const currentVoice = !!(vadWork && vadWork.sileroActiveNow) || energyVoiceNow;
+  if (vadWork && vadWork.sileroActiveNow) lastVoiceSample = capturedSamples;
 
   const anySpeech = sileroSpeechDetected || energySpeechDetected;
   speechDetected = anySpeech;
 
   if (!endpoint && vadWork && vadWork.segmentReady && anySpeech && !currentVoice) {
     endpoint = true;
-    endpointReason = 'silero';
+    endpointReason = 'silero-segment';
   }
 
   if (!endpoint && anySpeech && lastVoiceSample >= 0) {
@@ -467,9 +460,6 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
     noSpeechTimedOut = true;
   }
 
-  // Energy is a fallback for cases where Silero misses a short Persian
-  // command. If Silero never confirms speech, do not let a persistent noise
-  // floor keep the microphone open for the full hard limit.
   if (!endpoint && energySpeechDetected && !sileroSpeechDetected &&
       totalSeconds >= ENERGY_ONLY_MAX_SEC) {
     endpoint = true;
@@ -482,7 +472,14 @@ function processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork) {
     if (!anySpeech) noSpeechTimedOut = true;
   }
 
-  return { energyVoiceNow, holdRms, referenceRms };
+  const thresholds = energyThresholds();
+  return {
+    energyVoiceNow,
+    holdRms: thresholds.holdRms,
+    referenceRms: thresholds.referenceRms,
+    frameRms: lastFrameStats.rms,
+    framePeak: lastFrameStats.peak
+  };
 }
 
 function feedMessage(msg) {
@@ -493,12 +490,10 @@ function feedMessage(msg) {
   const modelPcm = toModelSampleRate(input, inputRate);
   const modelStats = signalStats(modelPcm);
   totalSeconds += input.length / inputRate;
-  const chunkStartSample = capturedSamples;
   appendCaptured(modelPcm);
-  const chunkEndSample = capturedSamples;
 
   const vadWork = processVad(modelPcm);
-  const energyWork = processEnergy(modelStats, chunkStartSample, chunkEndSample, vadWork);
+  const energyWork = processEnergy(modelPcm, vadWork);
 
   self.postMessage({
     type: 'result',
@@ -512,11 +507,14 @@ function feedMessage(msg) {
     inputRms: inputStats.rms,
     modelPeak: modelStats.peak,
     modelRms: modelStats.rms,
+    energyFramePeak: energyWork.framePeak,
+    energyFrameRms: energyWork.frameRms,
     nonFinite: modelStats.nonFinite,
     text: '',
     speechDetected,
     sileroSpeechDetected,
     sileroActiveNow: !!vadWork.sileroActiveNow,
+    sileroSegments: detectedSegments.length,
     energySpeechDetected,
     energyVoiceNow: !!energyWork.energyVoiceNow,
     energyHoldRms: energyWork.holdRms,
@@ -526,39 +524,98 @@ function feedMessage(msg) {
   });
 }
 
+function concatenateSegments(segments) {
+  const valid = segments.filter((segment) =>
+    segment && segment.length >= Math.round(MIN_DECODE_SEC * SAMPLE_RATE)
+  );
+  if (!valid.length) return new Float32Array(0);
+  const gapLength = Math.round(SEGMENT_GAP_SEC * SAMPLE_RATE);
+  let total = 0;
+  for (let i = 0; i < valid.length; i++) total += valid[i].length + (i ? gapLength : 0);
+  const out = new Float32Array(total);
+  let offset = 0;
+  for (let i = 0; i < valid.length; i++) {
+    if (i) offset += gapLength;
+    out.set(valid[i], offset);
+    offset += valid[i].length;
+  }
+  return out;
+}
+
+function chooseDecodePcm(captured) {
+  const segmented = concatenateSegments(detectedSegments);
+  if (segmented.length) {
+    return { pcm: segmented, source: 'silero-segments', startSample: 0, endSample: segmented.length };
+  }
+
+  if (!speechDetected) {
+    return { pcm: new Float32Array(0), source: 'no-speech', startSample: 0, endSample: 0 };
+  }
+
+  const startSample = Math.max(0, speechStartSample >= 0 ? speechStartSample : 0);
+  const endSample = Math.min(
+    captured.length,
+    lastVoiceSample >= 0
+      ? lastVoiceSample + Math.round(ENERGY_POSTROLL_SEC * SAMPLE_RATE)
+      : captured.length
+  );
+  if (endSample - startSample < Math.round(MIN_DECODE_SEC * SAMPLE_RATE)) {
+    return { pcm: new Float32Array(0), source: 'too-short', startSample, endSample };
+  }
+  return {
+    pcm: new Float32Array(captured.subarray(startSample, endSample)),
+    source: 'energy-crop',
+    startSample,
+    endSample
+  };
+}
+
+function postEmptyFinal(requestId, pcmLength, decodeSource) {
+  self.postMessage({
+    type: 'final', requestId, steps: 0, ms: 0,
+    text: '', bufferedSeconds: totalSeconds, capturedSamples: pcmLength,
+    decodeSamples: 0, decodeSeconds: 0, endpointReason,
+    decodeSource: decodeSource || 'no-speech', sileroSegments: detectedSegments.length
+  });
+}
+
 function finalizeMessage(requestId) {
   if (!ready || !recognizer) throw new Error('sherpa-worker-not-ready');
 
-  try { if (vad) vad.flush(); } catch (_) {}
+  // Process the last partial VAD window with zero padding, then flush and
+  // retain any completed segment before freeing the VAD-owned view.
+  try {
+    if (circularBuffer && circularBuffer.size() > 0) {
+      const remaining = circularBuffer.size();
+      const padded = new Float32Array(VAD_WINDOW);
+      padded.set(circularBuffer.get(circularBuffer.head(), remaining));
+      vad.acceptWaveform(padded);
+      circularBuffer.pop(remaining);
+    }
+    vad.flush();
+    drainVadSegments();
+  } catch (_) {}
 
-  const pcm = flattenCaptured();
-  if (!pcm.length) {
-    self.postMessage({
-      type: 'final', requestId, steps: 0, ms: 0,
-      text: '', bufferedSeconds: totalSeconds, capturedSamples: 0,
-      decodeSamples: 0, decodeSeconds: 0, endpointReason
-    });
+  const captured = flattenCaptured();
+  if (!captured.length) {
+    postEmptyFinal(requestId, 0, 'empty-capture');
     return;
   }
 
-  // If the automatic no-speech timeout fired, don't waste several seconds
-  // asking the large ASR model to decode pure room noise.
   if (noSpeechTimedOut && !speechDetected) {
-    self.postMessage({
-      type: 'final', requestId, steps: 0, ms: 0,
-      text: '', bufferedSeconds: totalSeconds, capturedSamples: pcm.length,
-      decodeSamples: 0, decodeSeconds: 0, endpointReason
-    });
+    postEmptyFinal(requestId, captured.length, 'no-speech-timeout');
     return;
   }
 
-  // The current path deliberately decodes the entire short captured utterance. The previous trimming pass's
-  // trimming saved little time but could remove useful onset/coda context from
-  // commands such as "حالت روشن". Endpoint control now keeps recordings short.
-  const startSample = 0;
-  const endSample = pcm.length;
-  const conditioned = conditionOfflinePcm(pcm);
-  const decodePcm = conditioned.pcm;
+  const chosen = chooseDecodePcm(captured);
+  const decodePcm = chosen.pcm;
+  if (!decodePcm.length) {
+    postEmptyFinal(requestId, captured.length, chosen.source);
+    return;
+  }
+
+  const rawStats = signalStats(captured);
+  const decodeStats = signalStats(decodePcm);
   const started = performance.now();
   const offlineStream = recognizer.createStream();
   let text = '';
@@ -577,20 +634,39 @@ function finalizeMessage(requestId) {
     ms: performance.now() - started,
     text,
     bufferedSeconds: totalSeconds,
-    capturedSamples: pcm.length,
+    capturedSamples: captured.length,
     decodeSamples: decodePcm.length,
     decodeSeconds: decodePcm.length / SAMPLE_RATE,
-    trimStartSeconds: startSample / SAMPLE_RATE,
-    trimEndSeconds: endSample / SAMPLE_RATE,
+    trimStartSeconds: chosen.startSample / SAMPLE_RATE,
+    trimEndSeconds: chosen.endSample / SAMPLE_RATE,
+    decodeSource: chosen.source,
+    sileroSegments: detectedSegments.length,
     endpointReason,
-    rawPeak: conditioned.before.peak,
-    rawRms: conditioned.before.rms,
-    conditionedPeak: conditioned.after.peak,
-    conditionedRms: conditioned.after.rms,
-    conditionerMinGain: conditioned.minGain,
-    conditionerLimitedFrames: conditioned.limitedFrames,
-    conditionerFrames: conditioned.frames
+    rawPeak: rawStats.peak,
+    rawRms: rawStats.rms,
+    decodePeak: decodeStats.peak,
+    decodeRms: decodeStats.rms
   });
+}
+
+function freeRuntimeObjects() {
+  if (circularBuffer) {
+    try { circularBuffer.free(); } catch (_) {}
+    circularBuffer = null;
+  }
+  if (vad) {
+    try { vad.free(); } catch (_) {}
+    vad = null;
+  }
+  if (recognizer) {
+    try { recognizer.free(); } catch (_) {}
+    recognizer = null;
+  }
+  capturedChunks = [];
+  detectedSegments = [];
+  capturedSamples = 0;
+  ready = false;
+  initPromise = null;
 }
 
 self.onmessage = function (event) {
@@ -614,14 +690,8 @@ self.onmessage = function (event) {
       return;
     }
     if (msg.type === 'destroy') {
-      if (circularBuffer) { try { circularBuffer.free(); } catch (_) {} circularBuffer = null; }
-      if (vad) { try { vad.free(); } catch (_) {} vad = null; }
-      if (recognizer) { try { recognizer.free(); } catch (_) {} recognizer = null; }
-      capturedChunks = [];
-      capturedSamples = 0;
-      ready = false;
+      freeRuntimeObjects();
       self.postMessage({ type: 'destroyed', requestId: msg.requestId || 0 });
-      return;
     }
   } catch (e) {
     postError(e, msg.requestId);

@@ -1,24 +1,24 @@
 // MedCalc Pro Service Worker
-// App shell is network-first. Koochik VAD + offline-ASR .data/.wasm use a
+// App shell is network-first. Rizeh VAD + offline-ASR .data/.wasm use a
 // stable cache-first model cache independent of ordinary app revisions.
 
-const CACHE_NAME = 'FoxiMed_v5.0.24';
-const MODEL_CACHE_NAME = 'FoxiMed_Model_Koochik_v1_nonstreaming_int8_vad_sherpa_1_13_5';
+const CACHE_NAME = 'FoxiMed_v5.0.25';
+const MODEL_CACHE_NAME = 'FoxiMed_Model_Rizeh_v1_nonstreaming_int8_vad_sherpa_1_13_5';
 
 const urlsToCache = [
     './',
     './index.html',
     './style.css',
     './voice-assistant.css',
-    './script.js?v=27',
-    './voice-recognition.js?v=27',
-    './koochik-asr.js?v=27',
-    './koochik-worker.js?v=27',
+    './script.js?v=28',
+    './voice-recognition.js?v=28',
+    './koochik-asr.js?v=28',
+    './koochik-worker.js?v=28',
     './sherpa-koochik/sherpa-onnx-asr.js',
     './sherpa-koochik/sherpa-onnx-vad.js',
     './sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.js',
-    './voice-commands.js?v=27',
-    './voice-ui.js?v=27',
+    './voice-commands.js?v=28',
+    './voice-ui.js?v=28',
     './converters.js',
     './drugDatabase.js',
     './manifest.json',
@@ -58,8 +58,13 @@ self.addEventListener('activate', event => {
         caches.keys().then(cacheNames =>
             Promise.all(
                 cacheNames
-                    // Only retire older FoxiMed app-shell caches.
-                    .filter(name => name.startsWith('FoxiMed_v') && name !== CACHE_NAME)
+                    // Retire old app shells and obsolete model payloads. The
+                    // v27 Koochik cache is ~145 MB, so leaving it beside the
+                    // smaller Rizeh model wastes scarce iOS site storage.
+                    .filter(name =>
+                        (name.startsWith('FoxiMed_v') && name !== CACHE_NAME) ||
+                        (name.startsWith('FoxiMed_Model_') && name !== MODEL_CACHE_NAME)
+                    )
                     .map(name => caches.delete(name))
             )
         )
@@ -71,8 +76,8 @@ self.addEventListener('activate', event => {
 // Fetch strategy:
 // - Small app assets: network-first, app-version cache fallback.
 // - The large sherpa VAD+offline-ASR .data/.wasm payload: cache-first in a STABLE model cache
-//   whose name is independent of FoxiMed app versions. This means a normal
-//   v19/v20 JavaScript update does not invalidate/redownload Koochik.
+//   whose name is independent of FoxiMed app versions. A JavaScript-only
+//   update therefore does not invalidate or redownload Rizeh.
 //
 // v18 was the first release that stores the large runtime/model this way, so
 // users coming from v17 may need one final full download. Later app-shell

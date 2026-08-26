@@ -22,11 +22,26 @@
 
     let lastCommand = null;
     let lastParams = null;
+    let confirmationSequence = 0;
 
     function showVoiceResult(message, type) {
         if (window.VoiceUI && typeof window.VoiceUI.showResult === 'function') {
             window.VoiceUI.showResult(message, type || 'success');
         }
+    }
+
+    function normalizeTranscript(text) {
+        return String(text || '')
+            .replace(/[يى]/g, 'ی')
+            .replace(/ك/g, 'ک')
+            .replace(/[ۀة]/g, 'ه')
+            .replace(/[ؤ]/g, 'و')
+            .replace(/[إأ]/g, 'ا')
+            .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+            .replace(/\u200c/g, ' ')
+            .replace(/[,،؛;؟?!:«»"“”'`()\[\]{}]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     // ============================================
@@ -205,6 +220,7 @@
     // PARAM EXTRACTION
     // ============================================
     function extractParams(text) {
+        const originalText = text;
         const params = {};
 
         const rangeMatch = text.match(/(?:between|از)\s*(\d+(?:\.\d+)?)\s*(?:and|تا)\s*(\d+(?:\.\d+)?)/i);
@@ -366,7 +382,7 @@
         const morseMatch = text.match(/مورس\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)/i);
         if (morseMatch) params.morseScores = morseMatch.slice(1, 7).map(Number);
 
-        params._original = text;
+        params._original = originalText;
         return params;
     }
 
@@ -387,29 +403,29 @@
         bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
         ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
         crcl: { triggers: ['crcl', 'creatinine clearance', 'کلیرانس کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
-        drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'ساعت', 'حجم', 'زمان', 'ست', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
+        drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
         gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
-        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'آرام', 'بی قرار', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
+        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
         braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر'], scoreWeight: 0.8 },
         morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط'], scoreWeight: 0.8 },
         burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
-        oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'flow', 'فشار', 'pressure', 'duration', 'مدت', 'جریان', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
+        oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
         vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
         ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'دستگاه تنفس'], scoreWeight: 0.8 },
         nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'تغذیه انترال'], scoreWeight: 0.8 },
 
-        convert: { triggers: ['convert', 'تبدیل', 'meq', 'to', 'به', 'میلی اکی والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
+        convert: { triggers: ['convert', 'تبدیل', 'meq', 'میلی اکی والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
         electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی کربنات', 'electrolyte'], scoreWeight: 0.9 },
         percentage: { triggers: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی', 'درصد دارو'], scoreWeight: 0.9 },
-        unit_convert: { triggers: ['تبدیل واحد', 'واحد', 'میکروگرم', 'میلی گرم', 'گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
+        unit_convert: { triggers: ['تبدیل واحد', 'میکروگرم', 'میلی گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
         temp_convert: { triggers: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature', 'دمای بدن', 'تب'], scoreWeight: 0.9 },
-        weight_convert: { triggers: ['تبدیل وزن', 'کیلوگرم', 'پوند', 'گرم', 'weight conversion', 'وزن به پوند', 'وزن به کیلو'], scoreWeight: 0.9 },
+        weight_convert: { triggers: ['تبدیل وزن', 'پوند', 'weight conversion', 'وزن به پوند', 'وزن به کیلو'], scoreWeight: 0.9 },
 
-        drug: { triggers: ['دارو', 'دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'میکروگرم', 'میلی گرم', 'واحد', 'kg/h', 'mcg', 'mg', 'units', 'میلی لیتر', 'سی سی', 'حجم', 'محلول', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
+        drug: { triggers: ['دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'kg/h', 'mcg', 'mg', 'units', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
         druginfo: { triggers: ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe', 'معرفی', 'راهنما دارو'], scoreWeight: 0.9 },
         dose_calc: { triggers: [' دوز', 'دوز دارو', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی', 'مقدار مصرف دارو'], scoreWeight: 0.9 },
         compat_tool: { triggers: ['سازگاری دارو', 'compatibility', 'تداخل دارویی', 'داروها', 'drug compatibility', 'سازگاری y-site', 'y-site', 'مخلوط داروها'], scoreWeight: 0.9 },
-        ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'دارو', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
+        ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
 
         settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
         theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
@@ -417,15 +433,39 @@
         help: { triggers: ['help', 'راهنما', 'کمک', 'راهنمایی', 'نمونه', 'example', 'چه کارایی', 'چطور کار کنم', 'راهنمای صوتی', 'چه کار کنم'], scoreWeight: 0.6 }
     };
 
+    const GENERIC_FUZZY_TRIGGERS = new Set(['به', 'در', 'to', 'be', 'mg', 'mcg']);
+
+    function exactTriggerMatch(text, trigger) {
+        const haystack = ' ' + normalizeTranscript(text).toLowerCase() + ' ';
+        const needle = normalizeTranscript(trigger).toLowerCase();
+        return !!needle && haystack.includes(' ' + needle + ' ');
+    }
+
+    function triggerScore(text, triggers) {
+        const lower = normalizeTranscript(text).toLowerCase();
+        let exactMatches = 0;
+        let bestFuzzy = 0;
+        for (let i = 0; i < triggers.length; i++) {
+            const trigger = normalizeTranscript(triggers[i]).toLowerCase();
+            if (!trigger) continue;
+            if (exactTriggerMatch(lower, trigger)) {
+                exactMatches++;
+                continue;
+            }
+            const compact = trigger.replace(/\s+/g, '');
+            if (compact.length >= 4 && !GENERIC_FUZZY_TRIGGERS.has(trigger)) {
+                bestFuzzy = Math.max(bestFuzzy, bestFuzzyScoreInText(lower, compact));
+            }
+        }
+        const fuzzyThreshold = bestFuzzy >= 0.80 || (bestFuzzy >= 0.76 && lower.length >= 6);
+        return Math.min(2, exactMatches) + (exactMatches === 0 && fuzzyThreshold ? 0.70 : 0);
+    }
+
     function scoreCommand(text, params) {
-        const lower = text.toLowerCase();
         const scores = {};
         for (const cmd in COMMAND_KEYWORDS) {
             const info = COMMAND_KEYWORDS[cmd];
-            let score = 0;
-            for (let i = 0; i < info.triggers.length; i++) {
-                if (lower.includes(info.triggers[i])) score += 1;
-            }
+            let score = triggerScore(text, info.triggers);
             if (cmd === 'drug' && params.drugId) score += 2;
             if (cmd === 'druginfo' && params.drugId) score += 2;
             if (cmd === 'bmi' && params.weight && params.height) score += 2;
@@ -455,6 +495,7 @@
         'فونت معمولی': function () { AppState.settings.largeFont = false; saveSettings(); applySettings(); showVoiceResult('فونت معمولی فعال شد', 'success'); },
         'راهنما': function () { showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تاریک»، «فونت بزرگ»', 'info'); },
         'ماشین حساب': function () { switchTab('calculator'); showVoiceResult('بخش ماشین حساب باز شد', 'success'); },
+        'دارو': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
         'داروها': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
         'ابزارها': function () { switchTab('tools'); showVoiceResult('ابزارهای بالینی باز شد', 'success'); }
     };
@@ -821,9 +862,9 @@
         // don't match each other. Normalizing here means trigger phrases
         // only need to be listed once, with regular spaces, instead of
         // needing every separator permutation hand-typed out.
-        normalized = normalized.replace(/\u200c/g, ' ');
-        normalized = normalized.replace(/[،،]/g, ' ').replace(/\s+/g, ' ').trim();
+        normalized = normalizeTranscript(normalized);
         const lower = normalized.toLowerCase();
+        confirmationSequence++;
 
         for (const key in FAST_COMMANDS) {
             if (lower === key || lower === 'برو به ' + key || lower === 'رفتن به ' + key) {
@@ -874,11 +915,11 @@
         for (let i = 0; i < infoTriggers.length; i++) { if (lower.includes(infoTriggers[i])) { hasInfoTrigger = true; break; } }
         if (hasInfoTrigger) {
             const drugId = params.drugId || findDrugName(normalized);
-            if (drugId) { executeCommand('druginfo', textWithDigits, { drugId: drugId }); return; }
+            if (drugId) { dispatchCommand('druginfo', textWithDigits, { drugId: drugId }); return; }
         }
 
         if ((lower.includes('سطح بدن') || lower.includes('body surface')) && params.weight && params.height) {
-            executeCommand('bsa', textWithDigits, params);
+            dispatchCommand('bsa', textWithDigits, params);
             return;
         }
 
@@ -893,20 +934,78 @@
         const sorted = Object.entries(scores).sort(function (a, b) { return b[1] - a[1]; });
         const best = sorted[0];
 
-        if (!best || best[1] === 0) {
-            if (params.weight && params.height) { executeCommand('bmi', textWithDigits, params); return; }
+        if (!best || best[1] < 0.55) {
+            if (params.weight && params.height) { dispatchCommand('bmi', textWithDigits, params); return; }
             if (tryGenericChatFiller(normalized, lower)) return;
             logUnrecognizedPhrase(text, normalized);
             showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
             return;
         }
 
-        executeCommand(best[0], textWithDigits, params);
+        const second = sorted[1];
+        if (second && best[1] < 2.5 && best[1] - second[1] < 0.20) {
+            const bodyMeasureTie = (best[0] === 'bmi' && second[0] === 'bsa') ||
+                (best[0] === 'bsa' && second[0] === 'bmi');
+            logUnrecognizedPhrase(text, normalized);
+            showVoiceResult(bodyMeasureTie
+                ? 'دستور مبهم است. لطفاً مشخص کنید BMI یا BSA را می‌خواهید.'
+                : 'دو دستور شبیه هم شنیدم. لطفاً نام محاسبه را واضح‌تر بگویید.', 'info');
+            return;
+        }
+
+        dispatchCommand(best[0], textWithDigits, params);
     }
 
     // ============================================
     // COMMAND EXECUTION
     // ============================================
+    const CLINICAL_CONFIRM_COMMANDS = new Set([
+        'drug', 'bmi', 'bsa', 'ibw', 'crcl', 'drip', 'convert',
+        'electrolyte', 'percentage', 'unit_convert', 'temp_convert',
+        'weight_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse',
+        'oxygen', 'vbg', 'ventilator', 'nutrition', 'ysite'
+    ]);
+
+    const CONFIRM_LABELS = {
+        drug: 'محاسبه دارو و دوز', bmi: 'محاسبه BMI', bsa: 'محاسبه BSA',
+        ibw: 'محاسبه وزن ایده‌آل', crcl: 'محاسبه کلیرانس کراتینین',
+        drip: 'محاسبه سرعت قطره', convert: 'تبدیل الکترولیت',
+        electrolyte: 'تبدیل الکترولیت', percentage: 'محاسبه غلظت درصدی',
+        unit_convert: 'تبدیل واحد', temp_convert: 'تبدیل دما',
+        weight_convert: 'تبدیل وزن', dose_calc: 'محاسبه دوز',
+        gcs: 'محاسبه GCS', rass: 'ثبت RASS', braden: 'محاسبه Braden',
+        morse: 'محاسبه Morse', oxygen: 'محاسبه مدت اکسیژن',
+        vbg: 'تفسیر گاز خون', ventilator: 'محاسبه ونتیلاتور',
+        nutrition: 'محاسبه تغذیه', ysite: 'بررسی سازگاری Y-Site'
+    };
+
+    function dispatchCommand(cmd, text, params) {
+        if (!CLINICAL_CONFIRM_COMMANDS.has(cmd)) {
+            executeCommand(cmd, text, params);
+            return;
+        }
+
+        if (!window.VoiceUI || typeof window.VoiceUI.showConfirmation !== 'function') {
+            showVoiceResult('برای ایمنی، اجرای این محاسبه به تأیید دستی نیاز دارد.', 'error');
+            return;
+        }
+
+        const requestId = confirmationSequence;
+        const label = CONFIRM_LABELS[cmd] || 'محاسبه بالینی';
+        const heard = normalizeTranscript(text).slice(0, 180);
+        window.VoiceUI.showConfirmation(
+            'عملیات: ' + label + '\nشنیده شد: «' + heard + '»',
+            function () {
+                if (requestId !== confirmationSequence) return;
+                executeCommand(cmd, text, params);
+            },
+            function () {
+                if (requestId !== confirmationSequence) return;
+                showVoiceResult('دستور لغو شد و هیچ محاسبه‌ای اجرا نشد.', 'info');
+            }
+        );
+    }
+
     function executeCommand(cmd, text, params) {
         lastCommand = cmd;
         lastParams = params;

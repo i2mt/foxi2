@@ -12,6 +12,7 @@
 
    Public API used by voice-commands.js:
      window.VoiceUI.showResult(message, type)
+     window.VoiceUI.showConfirmation(message, onConfirm, onCancel)
      window.VoiceUI.appendTip(html)
 
    © Mohammad Mahdi Taghavi — FoxiMed
@@ -103,6 +104,53 @@
             setOrbState('idle');
             setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
         }, 12000);
+    }
+
+    function showConfirmation(message, onConfirm, onCancel) {
+        if (!els.result) return;
+        clearTimeout(resultClearTimer);
+        els.result.style.display = 'block';
+        els.result.className = 'voice-result info voice-confirmation';
+        while (els.result.firstChild) els.result.removeChild(els.result.firstChild);
+
+        const title = document.createElement('strong');
+        title.className = 'voice-confirm-title';
+        title.textContent = 'تأیید دستور بالینی';
+
+        const text = document.createElement('span');
+        text.className = 'voice-result-text voice-confirm-text';
+        text.textContent = message;
+
+        const actions = document.createElement('div');
+        actions.className = 'voice-confirm-actions';
+        const approve = document.createElement('button');
+        approve.type = 'button';
+        approve.className = 'voice-confirm-button approve';
+        approve.textContent = 'تأیید و اجرا';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'voice-confirm-button cancel';
+        cancel.textContent = 'لغو';
+        actions.appendChild(approve);
+        actions.appendChild(cancel);
+
+        els.result.appendChild(title);
+        els.result.appendChild(text);
+        els.result.appendChild(actions);
+        setStatus('مقادیر را بررسی و تأیید کنید', 'processing');
+        setOrbState('processing');
+
+        let settled = false;
+        function finish(callback) {
+            if (settled) return;
+            settled = true;
+            approve.disabled = true;
+            cancel.disabled = true;
+            els.result.style.display = 'none';
+            if (typeof callback === 'function') callback();
+        }
+        approve.addEventListener('click', function () { finish(onConfirm); });
+        cancel.addEventListener('click', function () { finish(onCancel); });
     }
 
     function appendTip(html) {
@@ -362,7 +410,7 @@
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
                 if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
-                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Koochik (حدود ۱۴۵ مگابایت)...';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Rizeh (حدود ۶۵ مگابایت)...';
             }
         });
         window.VoiceEngine.on('model-progress', function (p) {
@@ -534,6 +582,10 @@
         }
     }
 
-    window.VoiceUI = { showResult: showResult, appendTip: appendTip };
+    window.VoiceUI = {
+        showResult: showResult,
+        showConfirmation: showConfirmation,
+        appendTip: appendTip
+    };
     window.initVoiceTab = init;
 })(window, document);
