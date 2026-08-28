@@ -44,18 +44,51 @@
             .trim();
     }
 
+    // Persian ASR models usually write spoken Latin acronyms phonetically
+    // ("بی ام آی") rather than returning ASCII ("BMI"). Normalize only
+    // well-known clinical acronyms, with token boundaries, before number
+    // conversion/scoring. This also prevents the letter name "سی" inside
+    // GCS/CrCl from being mistaken for the number thirty.
+    const SPOKEN_CLINICAL_ACRONYMS = [
+        { pattern: /(^|\s)(?:بی\s*ام\s*(?:آی|ای|ایی|عای)|بیامای)(?=\s|$)/g, value: 'bmi' },
+        { pattern: /(^|\s)(?:بی\s*اس\s*(?:ای|آی|آ)|بیاسای)(?=\s|$)/g, value: 'bsa' },
+        { pattern: /(^|\s)(?:جی\s*سی\s*اس|جیسیاس|جی\s*سیاس)(?=\s|$)/g, value: 'gcs' },
+        { pattern: /(^|\s)(?:آر\s*(?:ای\s*)?اس\s*اس|آراس\s*اس)(?=\s|$)/g, value: 'rass' },
+        { pattern: /(^|\s)(?:ای\s*بی\s*جی|ایبیجی)(?=\s|$)/g, value: 'abg' },
+        { pattern: /(^|\s)(?:وی\s*بی\s*جی|ویبیجی)(?=\s|$)/g, value: 'vbg' },
+        { pattern: /(^|\s)(?:سی\s*آر\s*سی\s*ال|سی\s*آر\s*کل)(?=\s|$)/g, value: 'crcl' },
+        { pattern: /(^|\s)(?:تی\s*بی\s*اس\s*(?:ای|آی)|تیبیاسای)(?=\s|$)/g, value: 'tbsa' }
+    ];
+
+    function normalizeSpokenClinicalTerms(text) {
+        let result = text;
+        SPOKEN_CLINICAL_ACRONYMS.forEach(function (item) {
+            result = result.replace(item.pattern, function (_, lead) {
+                return (lead || '') + item.value;
+            });
+        });
+        // Curated corrections from real FoxiMed transcripts. Keep these
+        // exact-token and evidence-based: broad autocorrection of drug
+        // fragments would be unsafe. Drug commands still require the user
+        // to confirm the original, unmodified transcript before execution.
+        result = result
+            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)هپار(?=\s|$)/g, '$1هپارین');
+        return result.replace(/\s+/g, ' ').trim();
+    }
+
     // ============================================
     // CONTEXTUAL TIPS (shown after a successful command)
     // ============================================
     const TIPS = {
-        bmi: '💡 همچنین می‌توانید BSA (سطح بدن) را با گفتن «BSA وزن ۷۰ قد ۱۷۰» محاسبه کنید.',
-        bsa: '💡 برای BMI بگویید «BMI وزن ۷۵ قد ۱۷۵».',
+        bmi: '💡 برای محاسبه سطح بدن بگویید «سطح بدن، وزن ۷۰، قد ۱۷۰».',
+        bsa: '💡 برای BMI بگویید «شاخص توده بدنی، وزن ۷۵، قد ۱۷۵».',
         crcl: '💡 می‌توانید جنسیت را هم مشخص کنید: «زن» یا «مرد».',
         drip: '💡 نوع ست را هم می‌توانید بگویید: «ماکروست» یا «میکروست».',
         convert: '💡 عناصر پشتیبانی‌شده: سدیم، پتاسیم، کلسیم، منیزیم، بی‌کربنات.',
         drug: '💡 می‌توانید روش تزریق، حجم محلول، تعداد آمپول و مقدار دلخواه را هم مشخص کنید.',
-        gcs: '💡 برای RASS بگویید «RASS 2» یا «RASS منفی ۳».',
-        rass: '💡 برای GCS بگویید «GCS 4 5 6».',
+        gcs: '💡 برای RASS بگویید «مقیاس ریچموند ۲» یا «ریچموند منفی ۳».',
+        rass: '💡 برای GCS بگویید «گلاسکو ۴ ۵ ۶».',
         braden: '💡 مقیاس برادن ۶ بخش دارد: حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک.',
         morse: '💡 مقیاس مورس ۶ بخش دارد: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی.',
         burns: '💡 روی نواحی سوختگی در تصویر کلیک کنید — بزرگسال یا کودک را انتخاب کنید.',
@@ -399,18 +432,18 @@
         history: { triggers: ['تاریخچه', 'محاسبات قبلی', 'سابقه محاسبات', 'تاریخچه محاسبات', 'history', 'گزارش محاسبات'], scoreWeight: 0.9 },
         reverse: { triggers: ['reverse', 'معکوس', 'برعکس', 'وارونه', 'حالت معکوس'], scoreWeight: 0.9 },
 
-        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
-        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
+        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'شاخص توده بدنی', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
+        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'سطح بدن بیمار', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
         ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
-        crcl: { triggers: ['crcl', 'creatinine clearance', 'کلیرانس کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
+        crcl: { triggers: ['crcl', 'سی آر سی ال', 'creatinine clearance', 'کلیرانس کراتینین', 'تصفیه کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
         drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
-        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
-        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
+        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'امتیاز گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
+        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'مقیاس ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
         braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر'], scoreWeight: 0.8 },
         morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط'], scoreWeight: 0.8 },
-        burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
+        burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'درصد سوخت', 'درصد سطح سوخت', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'درصد سوختگی', 'درصد سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
         oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
-        vbg: { triggers: ['vbg', 'abg', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
+        vbg: { triggers: ['vbg', 'abg', 'وی بی جی', 'ای بی جی', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
         ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'دستگاه تنفس'], scoreWeight: 0.8 },
         nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'تغذیه انترال'], scoreWeight: 0.8 },
 
@@ -477,7 +510,13 @@
             if (cmd === 'rass' && params.rassScore !== undefined) score += 2;
             if (cmd === 'braden' && params.bradenScores) score += 2;
             if (cmd === 'morse' && params.morseScores) score += 2;
-            if (cmd === 'burns' && text.includes('سوختگی')) score += 2;
+            const burnsPhrase = /درصد\s+(?:سطح\s+)?سوخت(?:گی)?/.test(text);
+            if (cmd === 'burns' && (text.includes('سوختگی') || burnsPhrase)) score += 3;
+            // "درصد" normally means solution concentration, but in
+            // "درصد [سطح] سوخت(گی)" it is part of the burns calculation.
+            // Do not let the generic percentage tool outrank that much
+            // more specific clinical phrase when ASR clips the final "گی".
+            if (cmd === 'percentage' && burnsPhrase) score = 0;
             if (cmd === 'oxygen' && (params.flow || params.pressure || params.liters)) score += 2;
             if (cmd === 'ventilator' && score > 0 && (params.height || params.weight)) score += 2;
             if (cmd === 'nutrition' && score > 0 && (params.weight || params.height || params.age)) score += 2;
@@ -493,7 +532,7 @@
         'روشن': function () { AppState.settings.themeMode = 'light'; saveSettings(); applyThemeMode(); showVoiceResult('حالت روشن فعال شد', 'success'); },
         'فونت بزرگ': function () { AppState.settings.largeFont = true; saveSettings(); applySettings(); showVoiceResult('فونت بزرگ فعال شد', 'success'); },
         'فونت معمولی': function () { AppState.settings.largeFont = false; saveSettings(); applySettings(); showVoiceResult('فونت معمولی فعال شد', 'success'); },
-        'راهنما': function () { showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تاریک»، «فونت بزرگ»', 'info'); },
+        'راهنما': function () { showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «شاخص توده بدنی وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تاریک»، «فونت بزرگ»', 'info'); },
         'ماشین حساب': function () { switchTab('calculator'); showVoiceResult('بخش ماشین حساب باز شد', 'success'); },
         'دارو': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
         'داروها': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
@@ -863,6 +902,8 @@
         // only need to be listed once, with regular spaces, instead of
         // needing every separator permutation hand-typed out.
         normalized = normalizeTranscript(normalized);
+        const heardTranscript = normalized;
+        normalized = normalizeSpokenClinicalTerms(normalized);
         const lower = normalized.toLowerCase();
         confirmationSequence++;
 
@@ -909,6 +950,9 @@
         }
 
         const params = extractParams(textWithDigits);
+        // Preserve what ASR actually returned for the clinical confirmation;
+        // internal acronym normalization must never rewrite the audit text.
+        params._heard = heardTranscript;
 
         const infoTriggers = ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe'];
         let hasInfoTrigger = false;
@@ -963,7 +1007,8 @@
         'drug', 'bmi', 'bsa', 'ibw', 'crcl', 'drip', 'convert',
         'electrolyte', 'percentage', 'unit_convert', 'temp_convert',
         'weight_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse',
-        'oxygen', 'vbg', 'ventilator', 'nutrition', 'ysite'
+        'burns', 'oxygen', 'vbg', 'ventilator', 'nutrition', 'ysite',
+        'compat_tool'
     ]);
 
     const CONFIRM_LABELS = {
@@ -974,10 +1019,51 @@
         unit_convert: 'تبدیل واحد', temp_convert: 'تبدیل دما',
         weight_convert: 'تبدیل وزن', dose_calc: 'محاسبه دوز',
         gcs: 'محاسبه GCS', rass: 'ثبت RASS', braden: 'محاسبه Braden',
-        morse: 'محاسبه Morse', oxygen: 'محاسبه مدت اکسیژن',
+        morse: 'محاسبه Morse', burns: 'محاسبه درصد سوختگی', oxygen: 'محاسبه مدت اکسیژن',
         vbg: 'تفسیر گاز خون', ventilator: 'محاسبه ونتیلاتور',
-        nutrition: 'محاسبه تغذیه', ysite: 'بررسی سازگاری Y-Site'
+        nutrition: 'محاسبه تغذیه', ysite: 'بررسی سازگاری Y-Site',
+        compat_tool: 'بررسی سازگاری Y-Site'
     };
+
+    // Recognition and navigation are separate from calculation. Once the
+    // nurse confirms the transcript, always reveal the relevant calculator
+    // even when required values are missing; the handler can then ask for
+    // those values while the correct form is already visible.
+    const COMMAND_TARGETS = {
+        drug: { tab: 'calculator' },
+        dose_calc: { tab: 'calculator' },
+        bmi: { tab: 'tools', accordion: 'bmiAccordionItem' },
+        bsa: { tab: 'tools', accordion: 'bsaAccordionItem' },
+        ibw: { tab: 'tools', accordion: 'ibwAccordionItem' },
+        crcl: { tab: 'tools', accordion: 'crclAccordionItem' },
+        drip: { tab: 'tools', accordion: 'dripAccordionItem' },
+        convert: { tab: 'tools', accordion: 'electrolyteAccordionItem' },
+        electrolyte: { tab: 'tools', accordion: 'electrolyteAccordionItem' },
+        percentage: { tab: 'tools', accordion: 'percentageAccordionItem' },
+        unit_convert: { tab: 'tools', accordion: 'unitAccordionItem' },
+        temp_convert: { tab: 'tools', accordion: 'tempAccordionItem' },
+        weight_convert: { tab: 'tools', accordion: 'weightAccordionItem' },
+        gcs: { tab: 'tools', accordion: 'gcsAccordionItem' },
+        rass: { tab: 'tools', accordion: 'rassAccordionItem' },
+        braden: { tab: 'tools', accordion: 'bradenAccordionItem' },
+        morse: { tab: 'tools', accordion: 'morseAccordionItem' },
+        burns: { tab: 'tools', accordion: 'burnsAccordionItem' },
+        oxygen: { tab: 'tools', accordion: 'oxygenAccordionItem' },
+        vbg: { tab: 'tools', accordion: 'vbgAccordionItem' },
+        ventilator: { tab: 'tools', accordion: 'ventilatorAccordionItem' },
+        nutrition: { tab: 'tools', accordion: 'nutritionAccordionItem' },
+        ysite: { tab: 'tools', accordion: 'ysiteAccordionItem' },
+        compat_tool: { tab: 'tools', accordion: 'ysiteAccordionItem' }
+    };
+
+    function revealCommandTarget(cmd) {
+        const target = COMMAND_TARGETS[cmd];
+        if (!target) return;
+        switchTab(target.tab);
+        if (target.accordion) {
+            setTimeout(function () { openAccordionById(target.accordion); }, 120);
+        }
+    }
 
     function dispatchCommand(cmd, text, params) {
         if (!CLINICAL_CONFIRM_COMMANDS.has(cmd)) {
@@ -992,11 +1078,12 @@
 
         const requestId = confirmationSequence;
         const label = CONFIRM_LABELS[cmd] || 'محاسبه بالینی';
-        const heard = normalizeTranscript(text).slice(0, 180);
+        const heard = normalizeTranscript((params && params._heard) || text).slice(0, 180);
         window.VoiceUI.showConfirmation(
             'عملیات: ' + label + '\nشنیده شد: «' + heard + '»',
             function () {
                 if (requestId !== confirmationSequence) return;
+                revealCommandTarget(cmd);
                 executeCommand(cmd, text, params);
             },
             function () {
@@ -1033,7 +1120,7 @@
                 showVoiceResult('تنظیمات باز شد', 'success');
                 break;
             case 'help':
-                showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تبدیل ۲۰ mEq سدیم به mg»، «GCS 4 5 6»، «سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰»، «سازگاری هپارین و وانکومایسین»، «تاریک»، «فونت بزرگ»', 'info');
+                showVoiceResult('دستورات نمونه: «هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰»، «شاخص توده بدنی وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «تبدیل ۲۰ میلی اکی والان سدیم به میلی گرم»، «گلاسکو ۴ ۵ ۶»، «درصد سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰»، «سازگاری هپارین و وانکومایسین»، «تاریک»، «فونت بزرگ»', 'info');
                 break;
             case 'reverse':
                 AppState.reverseMode = !AppState.reverseMode;
@@ -1376,7 +1463,7 @@
 
         const w = params.weight || 0;
         const h = params.height || 0;
-        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: BMI وزن ۷۵ قد ۱۷۵)', 'error'); return; }
+        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: شاخص توده بدنی وزن ۷۵ قد ۱۷۵)', 'error'); return; }
         document.getElementById('bmiWeight').value = w;
         document.getElementById('bmiHeight').value = h;
         calculateBMI();
@@ -1388,7 +1475,7 @@
     function handleBSAVoice(params) {
         const w = params.weight || 0;
         const h = params.height || 0;
-        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: BSA وزن ۷۰ قد ۱۷۰)', 'error'); return; }
+        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: سطح بدن وزن ۷۰ قد ۱۷۰)', 'error'); return; }
         document.getElementById('bsaWeight').value = w;
         document.getElementById('bsaHeight').value = h;
         const text = params._original || '';
@@ -1475,7 +1562,7 @@
             const nums = text.match(/(\d+)\s*(\d+)\s*(\d+)/);
             if (nums) { e = parseInt(nums[1]); v = parseInt(nums[2]); m = parseInt(nums[3]); }
         }
-        if (!e || !v || !m) { showVoiceResult('لطفاً سه عدد برای GCS وارد کنید (مثال: GCS 4 5 6)', 'error'); return; }
+        if (!e || !v || !m) { showVoiceResult('لطفاً سه عدد برای GCS وارد کنید (مثال: گلاسکو ۴ ۵ ۶)', 'error'); return; }
 
         document.querySelectorAll('.gcs-btn[data-domain="eye"]').forEach(function (btn) { if (parseInt(btn.dataset.score) === e) btn.click(); });
         document.querySelectorAll('.gcs-btn[data-domain="verbal"]').forEach(function (btn) { if (parseInt(btn.dataset.score) === v) btn.click(); });

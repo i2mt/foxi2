@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const BUILD_ID = 'v29-rizeh-adaptive';
+const BUILD_ID = 'v31-medical-speech';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';
@@ -543,11 +543,6 @@ function concatenateSegments(segments) {
 }
 
 function chooseDecodePcm(captured) {
-  const segmented = concatenateSegments(detectedSegments);
-  if (segmented.length) {
-    return { pcm: segmented, source: 'silero-segments', startSample: 0, endSample: segmented.length };
-  }
-
   if (!speechDetected) {
     return { pcm: new Float32Array(0), source: 'no-speech', startSample: 0, endSample: 0 };
   }
@@ -559,12 +554,35 @@ function chooseDecodePcm(captured) {
       ? lastVoiceSample + Math.round(ENERGY_POSTROLL_SEC * SAMPLE_RATE)
       : captured.length
   );
+
+  // Prefer the raw capture bounded by the independent energy detector when
+  // it is available. Silero's completed segment is excellent for endpoint
+  // timing, but its returned samples can end at the speech boundary. The
+  // non-streaming CTC model then repeatedly loses the last syllable of the
+  // final medical word (observed: سوختگی→سوخت, هپارین→هپار,
+  // برادن→بر). Keeping 250 ms of real preroll and 450 ms of real postroll
+  // gives Rizeh the acoustic context without decoding the whole session.
+  if (energySpeechDetected && lastVoiceSample >= 0 &&
+      endSample - startSample >= Math.round(MIN_DECODE_SEC * SAMPLE_RATE)) {
+    return {
+      pcm: new Float32Array(captured.subarray(startSample, endSample)),
+      source: 'energy-context',
+      startSample,
+      endSample
+    };
+  }
+
+  const segmented = concatenateSegments(detectedSegments);
+  if (segmented.length) {
+    return { pcm: segmented, source: 'silero-segments', startSample: 0, endSample: segmented.length };
+  }
+
   if (endSample - startSample < Math.round(MIN_DECODE_SEC * SAMPLE_RATE)) {
     return { pcm: new Float32Array(0), source: 'too-short', startSample, endSample };
   }
   return {
     pcm: new Float32Array(captured.subarray(startSample, endSample)),
-    source: 'energy-crop',
+    source: 'energy-context-fallback',
     startSample,
     endSample
   };

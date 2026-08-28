@@ -19,9 +19,20 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.26';
+const APP_VERSION = '5.0.28';
 
 const CHANGELOG = {
+    '5.0.28': [
+        'بهبود تشخیص نام‌های پزشکی و مخفف‌های فارسی در دستیار صوتی',
+        'اصلاح مسیر «درصد سوختگی» و جلوگیری از اشتباه با غلظت درصدی',
+        'نمونه‌دستورهای فارسی و بازیابی عبارت‌های ناقص Rizeh'
+    ],
+    '5.0.27': [
+        'راهنمای واضح‌تر برای شروع دستیار صوتی و نمایش بهتر روباه در حالت روشن',
+        'درخواست اختیاری نام پس از آشنایی اولیه با برنامه، با امکان یادآوری بعدی یا رد دائمی',
+        'نام کاربر همچنان فقط روی همان دستگاه ذخیره می‌شود و از تنظیمات قابل ویرایش است',
+        'اصلاح محاسبه معکوس دوزهای میکروگرمی و الزام وزن برای دوزهای وزنی'
+    ],
     '5.0.26': [
         'موتور صوتی سبک‌تر Rizeh برای پایداری بهتر روی گوشی‌های کم‌حافظه',
         'بازگشت به بخش صدا بدون بارگذاری دوباره‌ی مدل',
@@ -1070,6 +1081,7 @@ function initializeApp() {
     setupUpdateDetection();
     setupThemeModeListener();
     setupUserName();
+    setupNamePrompt();
     setTimeout(showGreetingBanner, 3200);
     setupHelpPopovers();
 }
@@ -3123,6 +3135,15 @@ function updateDoseRangeIndicator() {
         return;
     }
     const { min, max, unit } = drug.typicalDoseRange;
+    const activeUnit = AppState.useWeight && drug.weightBased?.active
+        ? drug.weightBased.unit
+        : (drug.weightBased?.nonWeightUnit || drug.standardUnit);
+    // A weight-based range must never be shown beside an absolute dose (or
+    // vice versa): that would make an unrelated value look reassuringly safe.
+    if (String(unit || '').toLowerCase() !== String(activeUnit || '').toLowerCase()) {
+        if (DOM.doseRangeIndicator) DOM.doseRangeIndicator.style.display = 'none';
+        return;
+    }
     let status, color, text;
     if (val < min * 0.8) {
         status = 'low'; color = '#60a5fa';
@@ -3135,7 +3156,7 @@ function updateDoseRangeIndicator() {
         text = `بالاتر از محدوده معمول — بررسی شود`;
     } else {
         status = 'danger'; color = '#f87171';
-        text = `خارج از محدوده ایمن — دوز را بررسی کنید`;
+        text = `بسیار خارج از محدوده معمول — دوز را بررسی کنید`;
     }
     if (DOM.doseRangeDot) DOM.doseRangeDot.style.background = color;
     if (DOM.doseRangeText) { DOM.doseRangeText.textContent = text; DOM.doseRangeText.style.color = color; }
@@ -3157,15 +3178,39 @@ function calculateReverse() {
         return;
     }
     DOM.doctorOrder.style.borderColor = '';
-    const totalDrug = AppState.ampouleCount * ampoule.strength;
+    const totalDrug = getEffectiveTotalDrug();
+    if (totalDrug === null) {
+        showToast('خطا', 'لطفاً مقدار دارو را وارد کنید', 'error');
+        if (DOM.customAmountInput) DOM.customAmountInput.focus();
+        return;
+    }
     const concentration = totalDrug / AppState.solutionVolume;
-    let derivedDose = pumpRateVal * concentration;
     const unit = AppState.useWeight && drug.weightBased?.active ? drug.weightBased.unit : (drug.weightBased?.nonWeightUnit || drug.standardUnit);
-    const isPerMin = unit && unit.toLowerCase().includes('min');
-    if (isPerMin) derivedDose = derivedDose / 60;
-    const isPerKg = unit && unit.toLowerCase().includes('kg');
-    const weight = AppState.useWeight ? (parseFloat(DOM.patientWeight?.dataset.numericValue) || 1) : 1;
-    if (isPerKg && AppState.useWeight) derivedDose = derivedDose / weight;
+    let weight = null;
+    if (unit && unit.toLowerCase().includes('/kg')) {
+        weight = DOM.patientWeight?.dataset.numericValue
+            ? parseFloat(DOM.patientWeight.dataset.numericValue)
+            : PersianNumbers.parseNumber(DOM.patientWeight?.value);
+        if (!weight || isNaN(weight) || weight <= 0) {
+            showToast('خطا', 'برای محاسبه دوز وزنی، وزن بیمار را وارد کنید', 'error');
+            DOM.patientWeight?.focus();
+            return;
+        }
+    }
+    let derivedDose;
+    try {
+        derivedDose = window.FoxiCalcCore.reverseInfusionDose({
+            pumpRate: pumpRateVal,
+            totalDrug,
+            solutionVolume: AppState.solutionVolume,
+            drugUnit: ampoule.unit,
+            doseUnit: unit,
+            weight
+        });
+    } catch (error) {
+        showToast('خطا', 'واحدهای دارو برای محاسبه معکوس سازگار نیستند', 'error');
+        return;
+    }
     const duration = AppState.solutionVolume / pumpRateVal;
     displayResultsReverse(totalDrug, concentration, pumpRateVal, derivedDose, duration, ampoule.unit, unit);
     generateStepByStepGuide(drug, totalDrug, concentration, pumpRateVal, derivedDose);
@@ -4279,6 +4324,14 @@ function showGreetingBanner() {
     closeBtn.addEventListener('click', dismissBanner);
 }
 
+function saveUserNameValue(name) {
+    const cleanName = String(name || '').trim().slice(0, 30);
+    if (!cleanName) return false;
+    localStorage.setItem('userName', cleanName);
+    window.dispatchEvent(new CustomEvent('foximed:user-name-changed', { detail: { name: cleanName } }));
+    return true;
+}
+
 function setupUserName() {
     const input   = document.getElementById('userNameInput');
     const saveBtn = document.getElementById('userNameSaveBtn');
@@ -4300,7 +4353,7 @@ function setupUserName() {
     function saveName() {
         if (!saveBtn.classList.contains('active')) return;
         const newName = input.value.trim();
-        localStorage.setItem('userName', newName);
+        saveUserNameValue(newName);
         storedName = newName;
         if (hint) {
             hint.textContent = newName ? `نام ذخیره شد: ${newName}` : 'نامی ذخیره نشده';
@@ -4326,6 +4379,95 @@ function setupUserName() {
                 input.blur();
             }
         }
+    });
+
+    window.addEventListener('foximed:user-name-changed', (event) => {
+        storedName = event.detail && event.detail.name ? event.detail.name : '';
+        input.value = storedName;
+        updateButtonState();
+    });
+}
+
+// A gentle profile invitation: not on the first launch, at least a week
+// between appearances even if it is ignored, two weeks after "later", and
+// permanently dismissible. It is fixed-position, so it cannot make the main
+// calculator taller.
+function setupNamePrompt() {
+    if ((localStorage.getItem('userName') || '').trim()) return;
+
+    const prompt = document.getElementById('namePrompt');
+    const input = document.getElementById('namePromptInput');
+    const save = document.getElementById('namePromptSave');
+    const later = document.getElementById('namePromptLater');
+    const never = document.getElementById('namePromptNever');
+    if (!prompt || !input || !save || !later || !never) return;
+
+    const storageKey = 'foximed_name_prompt';
+    let state = { launches: 0, remindAfter: 0, optedOut: false };
+    try {
+        state = Object.assign(state, JSON.parse(localStorage.getItem(storageKey) || '{}'));
+    } catch (e) { /* use safe defaults */ }
+    state.launches = Number(state.launches || 0) + 1;
+
+    function persist() {
+        try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch (e) {}
+    }
+    persist();
+
+    if (state.optedOut || state.launches < 2 || Number(state.remindAfter || 0) > Date.now()) return;
+
+    let retryCount = 0;
+    function anotherOverlayIsOpen() {
+        const onboarding = document.getElementById('onboardingOverlay');
+        if (onboarding && (onboarding.classList.contains('visible') || onboarding.style.display === 'flex')) return true;
+        return !!document.querySelector('.modal.active, .reverse-tooltip-overlay.visible');
+    }
+    function revealWhenClear() {
+        if (anotherOverlayIsOpen() && retryCount < 12) {
+            retryCount += 1;
+            setTimeout(revealWhenClear, 2000);
+            return;
+        }
+        if (anotherOverlayIsOpen()) return;
+        // Record the appearance before showing it. If the app is backgrounded
+        // or killed without a tap, this still cannot recur on every startup.
+        state.remindAfter = Date.now() + 7 * 24 * 60 * 60 * 1000;
+        persist();
+        prompt.hidden = false;
+        requestAnimationFrame(() => prompt.classList.add('is-visible'));
+    }
+    setTimeout(revealWhenClear, 8500);
+
+    function closePrompt() {
+        prompt.classList.remove('is-visible');
+        setTimeout(() => { prompt.hidden = true; }, 230);
+    }
+    function saveFromPrompt() {
+        const name = input.value.trim();
+        if (!name || !saveUserNameValue(name)) return;
+        state.optedOut = true;
+        persist();
+        closePrompt();
+        haptic(20);
+    }
+
+    input.addEventListener('input', () => { save.disabled = !input.value.trim(); });
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && input.value.trim()) {
+            event.preventDefault();
+            saveFromPrompt();
+        }
+    });
+    save.addEventListener('click', saveFromPrompt);
+    later.addEventListener('click', () => {
+        state.remindAfter = Date.now() + 14 * 24 * 60 * 60 * 1000;
+        persist();
+        closePrompt();
+    });
+    never.addEventListener('click', () => {
+        state.optedOut = true;
+        persist();
+        closePrompt();
     });
 }
 
@@ -5037,6 +5179,7 @@ function renderMatrix(selected) {
         <span class="ysite-legend-item ysite-verify">🟡 محدود / متناقض</span>
         <span class="ysite-legend-item ysite-unk">⚪ بدون داده</span>
     </div>`;
+    html += '<div class="ysite-clinical-note"><i class="fas fa-triangle-exclamation"></i><span>سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است؛ پیش از تزریق با منبع دارویی به‌روز بیمارستان یا داروساز بررسی کنید.</span></div>';
 
     matrix.innerHTML = html;
     haptic(15);

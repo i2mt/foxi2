@@ -47,7 +47,7 @@ The workflow must generate these files in the deployed
 
 Open the browser console and confirm:
 
-- `adapter build=v29-rizeh-adaptive`
+- `adapter build=v30-rizeh-adaptive`
 - worker ready reports `Rizeh-v1.0-non-streaming-int8`
 - final logs report `decodeSource=silero-segments` for ordinary speech
 - model download is roughly 50–60 MB, not the old ~145 MB payload

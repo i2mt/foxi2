@@ -50,7 +50,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 5.0.26</div>
+            <div class="loading-version">نسخه 5.0.28</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -133,6 +133,23 @@
         <span class="greeting-text" id="greetingText"></span>
         <button class="greeting-close" id="greetingClose" aria-label="بستن"><i class="fas fa-times"></i></button>
     </div>
+
+    <!-- A compact, non-modal profile invitation. It is fixed above the page,
+         so showing it never changes the calculator's height or alignment. -->
+    <aside class="name-prompt" id="namePrompt" hidden aria-labelledby="namePromptTitle">
+        <div class="name-prompt-copy">
+            <strong id="namePromptTitle"><i class="fas fa-user-nurse" aria-hidden="true"></i> دوست دارید با چه نامی صدایتان کنم؟</strong>
+            <span>نام فقط روی همین دستگاه ذخیره می‌شود.</span>
+        </div>
+        <div class="name-prompt-input-row">
+            <input type="text" id="namePromptInput" maxlength="30" autocomplete="name" placeholder="نام شما">
+            <button type="button" class="name-prompt-save" id="namePromptSave" disabled>ذخیره</button>
+        </div>
+        <div class="name-prompt-actions">
+            <button type="button" id="namePromptLater">بعداً یادآوری کن</button>
+            <button type="button" id="namePromptNever">دیگر نپرس</button>
+        </div>
+    </aside>
 
     <!-- Main App Container -->
     <div class="app-container">
@@ -1672,7 +1689,7 @@
         <!-- Fox mark: FoxiMed's mascot doubling as the assistant's "face" —
              the dominant element on this page by design -->
         <div class="voice-orb-zone">
-            <button type="button" class="voice-orb-container is-idle" id="voiceOrbContainer" aria-label="شروع یا پایان دستور صوتی">
+            <button type="button" class="voice-orb-container is-idle" id="voiceOrbContainer" aria-label="برای شروع یا پایان شنیدن، روباه را لمس کنید">
                 <span class="voice-ambient-glow" aria-hidden="true"></span>
                 <span class="voice-ripple" aria-hidden="true"></span>
                 <span class="voice-ripple" aria-hidden="true"></span>
@@ -1681,9 +1698,10 @@
                 <span class="voice-eye-spark right" aria-hidden="true"></span>
                 <span class="voice-fox-mark" id="voiceOrb" aria-hidden="true"></span>
                 <span class="voice-embers" id="voiceEmbers" aria-hidden="true"></span>
+                <span class="voice-tap-hint" aria-hidden="true"><i class="fas fa-microphone"></i><span>برای صحبت لمس کنید</span></span>
             </button>
         </div>
-        <div class="voice-status" id="voiceStatus">برای شروع، دکمه را بزنید یا تایپ کنید</div>
+        <div class="voice-status" id="voiceStatus">روباه را لمس کنید یا دستور را تایپ کنید</div>
         <div class="voice-model-progress" id="voiceModelProgress" style="display:none;">
             <div class="voice-model-progress-track">
                 <div class="voice-model-progress-fill" id="voiceModelProgressFill"></div>
@@ -1717,8 +1735,8 @@
         <div class="voice-examples" id="voiceExamples">
             <div class="voice-chips">
                 <button type="button" class="voice-example-chip" data-command="هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰"><span class="chip-emoji">💉</span> هپارین</button>
-                <button type="button" class="voice-example-chip" data-command="BMI وزن ۷۵ قد ۱۷۵"><span class="chip-emoji">📊</span> BMI</button>
-                <button type="button" class="voice-example-chip" data-command="GCS 4 5 6"><span class="chip-emoji">🧠</span> GCS</button>
+                <button type="button" class="voice-example-chip" data-command="شاخص توده بدنی وزن ۷۵ قد ۱۷۵"><span class="chip-emoji">📊</span> شاخص توده</button>
+                <button type="button" class="voice-example-chip" data-command="گلاسکو ۴ ۵ ۶"><span class="chip-emoji">🧠</span> گلاسکو</button>
                 <button type="button" class="voice-example-chip" data-command="قطره ۵۰۰ میلی‌لیتر در ۸ ساعت"><span class="chip-emoji">💧</span> قطره</button>
                 <button type="button" class="voice-example-chip" data-command="تبدیل ۲۰ mEq سدیم به mg"><span class="chip-emoji">🧪</span> تبدیل</button>
                 <button type="button" class="voice-example-chip" data-command="تاریک"><span class="chip-emoji">🌙</span> تاریک</button>
@@ -1900,7 +1918,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.26</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.28</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2041,15 +2059,16 @@
 
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
-    <script src="script.js?v=29"></script>
-    <script src="koochik-asr.js?v=29"></script>
-    <script src="voice-recognition.js?v=29"></script>
-    <script src="voice-commands.js?v=29"></script>
-    <script src="voice-ui.js?v=29"></script>
+    <script src="calculation-core.js?v=31"></script>
+    <script src="script.js?v=31"></script>
+    <script src="koochik-asr.js?v=31"></script>
+    <script src="voice-recognition.js?v=31"></script>
+    <script src="voice-commands.js?v=31"></script>
+    <script src="voice-ui.js?v=31"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=29', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=31', { updateViaCache: 'none' });
             });
         }
     </script>

@@ -102,7 +102,7 @@
         resultClearTimer = setTimeout(function () {
             els.result.style.display = 'none';
             setOrbState('idle');
-            setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
+            setStatus('روباه را لمس کنید یا دستور را تایپ کنید');
         }, 12000);
     }
 
