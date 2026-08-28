@@ -53,6 +53,11 @@ function testCommandRouting() {
             persianName: 'وانکومایسین',
             englishName: 'Vancomycin',
             alternativeNames: []
+        },
+        insulin_regular: {
+            persianName: 'انسولین رگولار',
+            englishName: 'Regular Insulin',
+            alternativeNames: ['انسولین معمولی']
         }
     };
 
@@ -73,8 +78,8 @@ function testCommandRouting() {
         applyThemeMode() {},
         applySettings() {},
         switchTab(tab) { events.push({ kind: 'tab', tab }); },
-        setTimeout,
-        clearTimeout
+        setTimeout(fn) { events.push({ kind: 'deferred', fn }); return events.length; },
+        clearTimeout() {}
     };
     window.window = window;
     window.drugDatabase = drugDatabase;
@@ -94,6 +99,60 @@ function testCommandRouting() {
     result = run('بي ام آي وزن ۷۰ قد ۱۷۰');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
         'Arabic/Persian letter variants should normalize');
+
+    result = run('بی ام عای وزن ۷۰ قد ۱۷۰');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
+        'common Persian ASR spelling of spoken BMI should normalize');
+
+    result = run('شاخص توده بدنی وزن ۷۰ قد ۱۷۰');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
+        'natural Persian BMI name should route to BMI');
+
+    result = run('جی سی اس ۴ ۵ ۶');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('GCS')),
+        'spoken Persian GCS acronym must survive number conversion');
+
+    result = run('گلاسکو ۴ ۵ ۶');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('GCS')),
+        'natural Persian GCS name should route to GCS');
+
+    result = run('محاسبه درصد سوخت');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('درصد سوختگی')),
+        'clipped ASR transcript for burns must route to burns');
+    assert(!result.some(e => e.kind === 'confirmation' && e.message.includes('غلظت درصدی')),
+        'burns phrase must never route to percentage concentration');
+
+    result = run('محاسبه درصد سوختگی');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('درصد سوختگی')),
+        'complete burns phrase should route to burns');
+
+    result = run('چندفزیون هپار');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'observed clipped heparin infusion transcript should route to the drug calculator');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیون هپار')),
+        'clinical confirmation must preserve the exact ASR transcript after correction');
+
+    result = run('چندفزیان انسولین رگو');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'observed clipped regular-insulin infusion transcript should route to the drug calculator');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیان انسولین رگو')),
+        'regular-insulin recovery must preserve the original ASR transcript');
+
+    result = run('شاخص توده بدنی');
+    const bmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
+    assert(bmiConfirmation, 'recognized BMI without values should still ask for confirmation');
+    bmiConfirmation.onConfirm();
+    assert(events.some(e => e.kind === 'tab' && e.tab === 'tools'),
+        'confirmed BMI command must open the tools tab even when values are missing');
+
+    result = run('مقیاس برادن');
+    const bradenConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('Braden'));
+    assert(bradenConfirmation, 'recognized Braden command should ask for confirmation');
+    bradenConfirmation.onConfirm();
+    assert(events.some(e => e.kind === 'tab' && e.tab === 'tools'),
+        'confirmed Braden command must open the tools tab');
+    assert(events.some(e => e.kind === 'deferred'),
+        'confirmed Braden command must schedule its calculator accordion to open');
 
     result = run('قطره ۵۰۰ ml در ۸ ساعت');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('سرعت قطره')),
@@ -148,16 +207,70 @@ function testDeploymentWiring() {
         'the obsolete Vosk archive must not be shipped in the Pages site');
     assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8_f2b9251'),
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
-    assert(serviceWorker.includes('koochik-worker.js?v=29'),
-        'service worker must precache the v29 worker URL');
-    assert(index.includes('service-worker.js?v=29'),
-        'page must register the v29 service worker');
+    assert(serviceWorker.includes('koochik-worker.js?v=31'),
+        'service worker must precache the v31 worker URL');
+    assert(read('koochik-asr.js').includes("koochik-worker.js?v=31"),
+        'voice adapter must instantiate the v31 worker URL');
+    assert(index.includes('service-worker.js?v=31'),
+        'page must register the v31 service worker');
     assert(!script.includes('VoiceEngine.releaseModel'),
         'tab changes must keep the loaded voice model warm');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
         'offline failures must expose an explicit online retry');
     assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود'),
         'online retry must disclose that speech leaves the device');
+    assert(index.includes('voice-tap-hint') && index.includes('برای صحبت لمس کنید'),
+        'voice mascot must visibly explain that it is the microphone control');
+    assert(index.includes('id="namePrompt"') && script.includes("state.launches < 2"),
+        'name prompt must be delayed beyond the first launch');
+    assert(script.includes('14 * 24 * 60 * 60 * 1000') && script.includes('state.optedOut = true'),
+        'name prompt must support a long snooze and permanent dismissal');
+    assert(script.includes('7 * 24 * 60 * 60 * 1000'),
+        'an ignored name prompt must not reappear on every startup');
+    assert(script.includes("localStorage.setItem('userName', cleanName)"),
+        'profile name must remain device-local');
+    assert(script.includes('سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است'),
+        'Y-site matrix must disclose context dependence and require verification');
+    assert(index.includes('calculation-core.js?v=31') && serviceWorker.includes('calculation-core.js?v=31'),
+        'tested calculation core must be loaded and cached');
+}
+
+function testReverseInfusionMath() {
+    const context = { window: {} };
+    vm.createContext(context);
+    vm.runInContext(read('calculation-core.js'), context, { filename: 'calculation-core.js' });
+    const reverse = context.window.FoxiCalcCore.reverseInfusionDose;
+
+    // 4 mg / 250 mL at 6.25 mL/h = 100 mcg/h = 1.6667 mcg/min;
+    // for 70 kg this is 0.02381 mcg/kg/min. The old UI returned 0.00002381.
+    const norepinephrine = reverse({
+        pumpRate: 6.25,
+        totalDrug: 4,
+        solutionVolume: 250,
+        drugUnit: 'mg',
+        doseUnit: 'mcg/kg/min',
+        weight: 70
+    });
+    assert(Math.abs(norepinephrine - 0.0238095238) < 1e-10,
+        'reverse catecholamine math must convert mg to mcg before /min and /kg');
+
+    const nitroglycerin = reverse({
+        pumpRate: 6,
+        totalDrug: 5,
+        solutionVolume: 100,
+        drugUnit: 'mg',
+        doseUnit: 'mcg/min'
+    });
+    assert(Math.abs(nitroglycerin - 5) < 1e-12,
+        'reverse non-weight dose must convert 0.3 mg/h to 5 mcg/min');
+
+    assert.throws(() => reverse({
+        pumpRate: 6.25,
+        totalDrug: 4,
+        solutionVolume: 250,
+        drugUnit: 'mg',
+        doseUnit: 'mcg/kg/min'
+    }), /weight-required/, 'weight-based reverse math must reject a missing weight');
 }
 
 function makeWorkerLogicContext() {
@@ -226,7 +339,25 @@ function testWorkerSegmentationAndFrames() {
     assert.strictEqual(selection.source, 'silero-segments',
         'final decoding should use the retained Silero segment');
     assert.strictEqual(selection.length, 3200,
-        'the retained segment should not be replaced by the full capture');
+        'the retained segment should remain the fallback without energy bounds');
+
+    const contextualSelection = vm.runInContext(
+        'resetSession();\n' +
+        'detectedSegments = [new Float32Array(3200).fill(0.02)];\n' +
+        'speechDetected = true; energySpeechDetected = true;\n' +
+        'speechStartSample = 3200; lastVoiceSample = 11200;\n' +
+        'var chosenContextForTest = chooseDecodePcm(new Float32Array(24000).fill(0.01));\n' +
+        '({ source: chosenContextForTest.source, length: chosenContextForTest.pcm.length,' +
+        ' start: chosenContextForTest.startSample, end: chosenContextForTest.endSample });',
+        context
+    );
+    assert.strictEqual(contextualSelection.source, 'energy-context',
+        'energy-bounded raw capture should preserve final medical syllables');
+    assert.strictEqual(contextualSelection.start, 3200);
+    assert.strictEqual(contextualSelection.end, 18400,
+        'decode window should retain 450 ms after the last detected voice frame');
+    assert.strictEqual(contextualSelection.length, 15200,
+        'decode should use bounded context rather than the full capture');
 }
 
 async function testWorkerLifecycle() {
@@ -301,6 +432,7 @@ async function testWorkerLifecycle() {
 (async function main() {
     testCommandRouting();
     testDeploymentWiring();
+    testReverseInfusionMath();
     testWorkerSegmentationAndFrames();
     await testWorkerLifecycle();
     console.log('voice pipeline smoke tests: PASS');

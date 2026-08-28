@@ -172,6 +172,35 @@
     -webkit-tap-highlight-color: transparent;
 }
 
+/* A real target surface keeps the thin fox artwork legible on light themes
+   and makes the mascot read as a button without consuming any extra height. */
+.voice-orb-container::before {
+    content: '';
+    position: absolute;
+    inset: 18px;
+    border-radius: 50%;
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 92%, #fff 8%);
+    border: 1.5px solid rgba(234, 88, 12, 0.28);
+    box-shadow:
+        0 12px 38px rgba(124, 45, 18, 0.10),
+        inset 0 0 0 5px rgba(251, 146, 60, 0.06);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+}
+.voice-orb-container:focus-visible {
+    outline: 3px solid rgba(234, 88, 12, 0.55);
+    outline: 3px solid color-mix(in srgb, var(--fox-orange) 55%, transparent);
+    outline-offset: 4px;
+    border-radius: 50%;
+}
+.voice-orb-container:active::before { transform: scale(0.98); }
+.dark-mode .voice-orb-container::before {
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 88%, #111827 12%);
+    border-color: rgba(251, 146, 60, 0.34);
+    box-shadow: 0 12px 42px rgba(0, 0, 0, 0.25), inset 0 0 0 5px rgba(251, 146, 60, 0.05);
+}
+
 /* Soft ambient room-glow behind the mark, breathing slowly, tinted by state */
 .voice-ambient-glow {
     position: absolute;
@@ -273,12 +302,58 @@
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
     filter:
+        saturate(1.35) contrast(1.22)
+        drop-shadow(0 2px 1px rgba(124, 45, 18, 0.72))
         drop-shadow(0 0 calc(10px + var(--audio-level) * 14px) rgba(234, 88, 12, calc(0.5 + var(--audio-level) * 0.3)))
         drop-shadow(0 0 calc(34px + var(--audio-level) * 26px) rgba(234, 88, 12, calc(0.3 + var(--audio-level) * 0.3)));
     transition: filter 0.2s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background-image 0.2s ease;
     animation: voiceFoxBreathe 4.2s ease-in-out infinite;
 }
+.dark-mode .voice-fox-mark {
+    filter:
+        saturate(1.2) contrast(1.12)
+        drop-shadow(0 1px 1px rgba(124, 45, 18, 0.55))
+        drop-shadow(0 0 calc(10px + var(--audio-level) * 14px) rgba(234, 88, 12, calc(0.54 + var(--audio-level) * 0.3)))
+        drop-shadow(0 0 calc(34px + var(--audio-level) * 26px) rgba(234, 88, 12, calc(0.34 + var(--audio-level) * 0.3)));
+}
 .voice-orb-container:active .voice-fox-mark { transform: scale(0.94); }
+
+.voice-tap-hint {
+    position: absolute;
+    z-index: 4;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(234, 88, 12, 0.42);
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 92%, #fff 8%);
+    color: #9a3412;
+    box-shadow: 0 5px 16px rgba(124, 45, 18, 0.16);
+    font-family: var(--font-persian);
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.voice-tap-hint i { color: var(--fox-orange); }
+.dark-mode .voice-tap-hint {
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 90%, #111827 10%);
+    color: #fed7aa;
+}
+.voice-orb-container:not(.is-idle):not(.is-error) .voice-tap-hint {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px);
+}
 
 @keyframes voiceFoxBreathe {
     0%, 100% { transform: scale(1); }

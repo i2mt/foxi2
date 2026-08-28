@@ -7848,6 +7848,94 @@ html {
 }
 
 /* ============================================
+   OPTIONAL NAME PROMPT
+   Fixed and non-modal: it never reflows the calculator.
+   ============================================ */
+.name-prompt {
+    position: fixed;
+    top: calc(62px + env(safe-area-inset-top, 0px));
+    left: 50%;
+    z-index: 1090;
+    width: min(420px, calc(100vw - 24px));
+    transform: translate(-50%, -12px);
+    opacity: 0;
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+    border-radius: 16px;
+    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    color: var(--text-primary);
+    box-shadow: 0 14px 42px rgba(15, 23, 42, 0.20);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    direction: rtl;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.name-prompt[hidden] { display: none; }
+.name-prompt.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    pointer-events: auto;
+}
+.name-prompt-copy { display: grid; gap: 3px; }
+.name-prompt-copy strong {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14px;
+}
+.name-prompt-copy strong i { color: var(--primary); }
+.name-prompt-copy > span { color: var(--text-secondary); font-size: 11.5px; }
+.name-prompt-input-row { display: flex; gap: 8px; }
+.name-prompt-input-row input {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-persian);
+    font-size: 14px;
+    outline: none;
+}
+.name-prompt-input-row input:focus { border-color: var(--primary); }
+.name-prompt-save {
+    min-width: 70px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--gradient-primary);
+    color: #fff;
+    font-family: var(--font-persian);
+    font-weight: 700;
+    cursor: pointer;
+}
+.name-prompt-save:disabled { opacity: 0.42; cursor: not-allowed; }
+.name-prompt-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.name-prompt-actions button {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: 7px;
+    font-family: var(--font-persian);
+    font-size: 11.5px;
+    cursor: pointer;
+}
+.name-prompt-actions button:hover { background: var(--surface-elevated); color: var(--text-primary); }
+body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+@media (max-width: 380px) {
+    .name-prompt { padding: 12px; }
+    .name-prompt-copy strong { font-size: 13px; }
+}
+
+/* ============================================
    USERNAME SAVE BUTTON ACTIVE STATE
    ============================================ */
 .username-save-btn {
@@ -9024,6 +9112,21 @@ html {
 .ysite-legend-item.ysite-no     { color: #dc2626; }
 .ysite-legend-item.ysite-verify { color: #b45309; }
 .ysite-legend-item.ysite-unk    { color: #64748b; }
+
+.ysite-clinical-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    background: rgba(245, 158, 11, 0.08);
+    color: var(--text-secondary);
+    direction: rtl;
+    font-family: var(--font-persian);
+    font-size: 10.5px;
+    line-height: 1.65;
+}
+.ysite-clinical-note i { color: #d97706; margin-top: 3px; flex-shrink: 0; }
 
 .dark-mode .ysite-legend-item.ysite-ok     { color: #4ade80; }
 .dark-mode .ysite-legend-item.ysite-no     { color: #f87171; }

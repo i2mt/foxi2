@@ -55,7 +55,7 @@ node --check voice-ui.js
 Expected console marker after deployment:
 
 ```text
-adapter build=v29-rizeh-adaptive
+adapter build=v30-rizeh-adaptive
 ```
 
 ## Model and safety notes
