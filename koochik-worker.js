@@ -1,6 +1,6 @@
 /* FoxiMed — Rizeh non-streaming sherpa-onnx worker
  *
- * v28 architecture:
+ * v29 architecture:
  *   microphone PCM -> Silero VAD + fixed-frame energy fallback
  *   -> detected speech segment -> one offline Rizeh INT8 decode
  *
@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const BUILD_ID = 'v28-rizeh-segmented';
+const BUILD_ID = 'v29-rizeh-adaptive';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';

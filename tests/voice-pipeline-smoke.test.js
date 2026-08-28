@@ -130,17 +130,34 @@ function testDeploymentWiring() {
     const workflow = read('.github/workflows/pages-sherpa-koochik.yml');
     const serviceWorker = read('service-worker.js');
     const index = read('index.html');
+    const script = read('script.js');
+    const voiceEngine = read('voice-recognition.js');
+    const voiceUi = read('voice-ui.js');
 
     assert(workflow.includes('shenava-rizeh-v1.0-non-streaming-int8'),
         'deployment workflow must download Rizeh');
     assert(!workflow.includes('shenava-koochik-v1.0-non-streaming-int8'),
         'deployment workflow must not download the old Koochik model');
-    assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8'),
-        'service worker must use a new Rizeh cache namespace');
-    assert(serviceWorker.includes('koochik-worker.js?v=28'),
-        'service worker must precache the v28 worker URL');
-    assert(index.includes('service-worker.js?v=28'),
-        'page must register the v28 service worker');
+    assert(workflow.includes('f2b9251cc3ceb177bc5e55ddd4114536c3bb61d3'),
+        'deployment workflow must pin the reviewed Rizeh revision');
+    assert(workflow.includes('RIZEH_MODEL_SHA256') && workflow.includes('sha256sum --check --strict'),
+        'deployment workflow must verify the Rizeh payload');
+    assert(workflow.includes('WASM_INITIAL_MEMORY_MB: "256"'),
+        'mobile build must not reserve sherpa-onnx default 512 MB at startup');
+    assert(workflow.includes("--exclude 'icons/vosk-model-small-fa-0.5.tar.gz'"),
+        'the obsolete Vosk archive must not be shipped in the Pages site');
+    assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8_f2b9251'),
+        'service worker must use a cache namespace tied to the pinned Rizeh revision');
+    assert(serviceWorker.includes('koochik-worker.js?v=29'),
+        'service worker must precache the v29 worker URL');
+    assert(index.includes('service-worker.js?v=29'),
+        'page must register the v29 service worker');
+    assert(!script.includes('VoiceEngine.releaseModel'),
+        'tab changes must keep the loaded voice model warm');
+    assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
+        'offline failures must expose an explicit online retry');
+    assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود'),
+        'online retry must disclose that speech leaves the device');
 }
 
 function makeWorkerLogicContext() {

@@ -248,6 +248,21 @@
         return true;
     }
 
+    function canOfferOnlineFallback() {
+        return ENV.isSecureContext && ENV.isOnline && ENV.hasSpeechRecognition;
+    }
+
+    // Online recognition can send speech to the browser/platform provider.
+    // Never switch to it silently in a hospital workflow. Instead, annotate
+    // the offline error so the UI can offer a clearly disclosed, user-tapped
+    // one-time retry. The tap also restores the synchronous user activation
+    // that SpeechRecognition.start() requires on iOS.
+    function withOnlineFallback(info) {
+        const normalized = info && info.code ? info : classifyError('koochik-runtime');
+        if (!canOfferOnlineFallback() || normalized.silent) return normalized;
+        return Object.assign({}, normalized, { onlineFallbackAvailable: true });
+    }
+
     function armSilenceWatchdog() {
         if (silenceWatchdog) clearTimeout(silenceWatchdog);
         silenceWatchdog = setTimeout(function () {
@@ -338,6 +353,14 @@
         const support = getSupportInfo();
         if (support.status === 'blocked') {
             emit('error', { code: support.code, title: support.title, message: support.message });
+            return;
+        }
+        if (!ENV.hasSpeechRecognition) {
+            emit('error', {
+                code: 'unsupported',
+                title: 'تشخیص آنلاین در دسترس نیست',
+                message: 'این مرورگر سرویس تشخیص گفتار آنلاین ارائه نمی‌کند.'
+            });
             return;
         }
         if (!ENV.isOnline) {
@@ -671,7 +694,7 @@
                         // Log once, stop cleanly, and don't let it repeat.
                         if (!koochikStopping) {
                             console.error('[KoochikASR] onaudioprocess failed:', e);
-                            emit('error', classifyError('koochik-runtime'));
+                            emit('error', withOnlineFallback(classifyError('koochik-runtime')));
                             stopKoochik();
                         }
                     }
@@ -701,7 +724,7 @@
                 try { koochikAudioCtx.close(); } catch (e) {}
                 koochikAudioCtx = null;
             }
-            emit('error', info && info.code ? info : classifyError('koochik-model-failed'));
+            emit('error', withOnlineFallback(info && info.code ? info : classifyError('koochik-model-failed')));
         });
     }
     // v24 non-streaming mode has no live partial ASR. This timer is retained
@@ -754,7 +777,7 @@
                 koochikConsecutiveDecodeFailures++;
                 if (koochikActive && !koochikStopping) {
                     if (koochikConsecutiveDecodeFailures >= 3) {
-                        emit('error', classifyError('koochik-runtime'));
+                        emit('error', withOnlineFallback(classifyError('koochik-runtime')));
                         stopKoochik();
                         return;
                     }
@@ -862,6 +885,7 @@
             }).catch(function (err) {
                 console.error('[KoochikASR] final decode failed:', err);
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
+                emit('error', withOnlineFallback(classifyError('koochik-runtime')));
                 finishKoochik();
             });
         } else {
@@ -897,6 +921,15 @@
         if (pickBackend() === 'koochik') startKoochik(); else startWebSpeech();
     }
 
+    function startOnline() {
+        if (active || koochikActive || koochikLoading) return;
+        // This is an explicit, one-time user choice from the disclosed UI.
+        // Do not bounce back to the failed offline engine if Web Speech also
+        // fails during this same attempt.
+        triedKoochikFallback = true;
+        startWebSpeech();
+    }
+
     function stop() {
         // Check actual runtime state rather than just the static platform
         // choice — a session that fell back from webspeech to Koochik mid-
@@ -915,6 +948,7 @@
     });
 
     window.addEventListener('offline', function () {
+        ENV.isOnline = false;
         if (active) {
             emit('error', classifyError('network'));
             stop();
@@ -922,6 +956,7 @@
         // Note: the Koochik backend deliberately keeps running when
         // offline — once its model is loaded it needs no network at all.
     });
+    window.addEventListener('online', function () { ENV.isOnline = true; });
 
     // ============================================
     // PUBLIC API
@@ -930,6 +965,7 @@
         ENV: ENV,
         getSupportInfo: getSupportInfo,
         start: start,
+        startOnline: startOnline,
         stop: stop,
         isActive: function () { return active || koochikActive || koochikLoading; },
         on: on,
@@ -996,40 +1032,6 @@
             // so would create a large memory spike), and HTTP cache entries
             // are not queryable from page JS. Keep startup warmup on-demand.
             return Promise.resolve(false);
-        },
-        // Frees the loaded Rizeh engine (ONNX session) from memory.
-        // Not called unconditionally — keeping the model warm after
-        // leaving the Voice tab is the normal default, since it makes
-        // returning to voice instant. But that resident session competes
-        // with the rest of the app for RAM even on pages that have
-        // nothing to do with voice, which matters on low-memory devices.
-        // Intended to be called from script.js only when Settings >
-        // "حالت کم‌مصرف" (low power mode) is on, right after the person
-        // leaves the Voice tab.
-        // Safe to call any time: no-ops while actively listening or
-        // mid-load. The next start()/preload() call transparently
-        // re-initializes from the model file already sitting in the
-        // Cache API (no re-download — just session creation again).
-        releaseModel: function () {
-            if (koochikActive || koochikLoading) return;
-
-            // Low-power mode may call this while an opportunistic preload
-            // is still downloading. Cancel our pending adoption of that preload before dropping the promise.
-            // Emscripten may still complete an internal .data fetch.
-            if (koochikEngineLoadPromise && !koochikEngine) {
-                koochikLoadGeneration++;
-                if (koochikLoadAbortController) {
-                    try { koochikLoadAbortController.abort(); } catch (e) {}
-                }
-            }
-
-            if (koochikEngine) {
-                try { koochikEngine.destroy(); } catch (e) { /* best-effort cleanup */ }
-                koochikEngine = null;
-            }
-            koochikEngineLoadPromise = null;
-            koochikLoadAbortController = null;
-            koochikFailInfo = null;
         }
     };
 
