@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v28-rizeh-segmented';
+  const BUILD_ID = 'v29-rizeh-adaptive';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=28';
+  const WORKER_FILE = './koochik-worker.js?v=29';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
@@ -281,7 +281,7 @@
     endpointDetected() { return !!this.endpoint; }
     bufferedSeconds() { return this.totalSeconds; }
     supportsLivePartials() { return false; }
-    executionProvider() { return 'sherpa-onnx-worker-wasm-rizeh-int8-segmented-vad-v28'; }
+    executionProvider() { return 'sherpa-onnx-worker-wasm-rizeh-int8-segmented-vad-v29'; }
 
     destroy() {
       // Worker.terminate() is the only reliable way to release the complete

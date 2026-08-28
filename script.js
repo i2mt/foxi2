@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.25';
+const APP_VERSION = '5.0.26';
 
 const CHANGELOG = {
+    '5.0.26': [
+        'موتور صوتی سبک‌تر Rizeh برای پایداری بهتر روی گوشی‌های کم‌حافظه',
+        'بازگشت به بخش صدا بدون بارگذاری دوباره‌ی مدل',
+        'امکان تلاش آنلاین با اجازه‌ی روشن کاربر در صورت آماده‌نشدن موتور آفلاین'
+    ],
     '5.0.0': [
         'دستیار صوتی هوشمند فارسی — کاملاً آفلاین، بدون نیاز به اینترنت، برای ثبت سریع محاسبات با صدا',
         'پوسته رنگی جدید «DreamFire»',
@@ -2436,14 +2441,6 @@ function switchTab(tabName) {
         // taxing every single app launch regardless of whether voice is
         // ever used that session.
         window.VoiceEngine.preload();
-    }
-    if (previousTab === 'voice' && tabName !== 'voice' && AppState.settings.lowPowerMode &&
-        window.VoiceEngine && typeof window.VoiceEngine.releaseModel === 'function') {
-        // Low power mode trades the "instant" re-entry to Voice for a
-        // lower memory footprint everywhere else in the app — the Koochik
-        // model otherwise stays resident in memory for the rest of the
-        // session even on pages that have nothing to do with voice.
-        window.VoiceEngine.releaseModel();
     }
 }
 

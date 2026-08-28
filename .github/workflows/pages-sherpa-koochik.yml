@@ -1,7 +1,9 @@
-name: Build FoxiMed + Koochik sherpa-onnx
+name: Build FoxiMed + Rizeh sherpa-onnx
 
 on:
   push:
+    branches: [main, master]
+  pull_request:
     branches: [main, master]
   workflow_dispatch:
 
@@ -11,8 +13,16 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  SHERPA_ONNX_VERSION: v1.13.5
+  RIZEH_REPOSITORY: mah92/sherpa-onnx-nemo-ctc-fa-shenava-rizeh-v1.0-non-streaming-int8-2026-06-26
+  RIZEH_REVISION: f2b9251cc3ceb177bc5e55ddd4114536c3bb61d3
+  RIZEH_MODEL_SHA256: 6bdd4ab80626ddfe0b19338a5c96fcc4f2021ad78899cece20a805a48dc5250d
+  RIZEH_TOKENS_SHA256: 8e192963f6e666dfa5721e5cbd4710bc1ef592460a45f08cefc94b2db16a6954
+  WASM_INITIAL_MEMORY_MB: "256"
 
 jobs:
   build:
@@ -21,31 +31,58 @@ jobs:
       - name: Checkout FoxiMed
         uses: actions/checkout@v4
 
+      - name: Validate voice pipeline source
+        run: |
+          node tests/voice-pipeline-smoke.test.js
+          node --check koochik-worker.js
+          node --check koochik-asr.js
+          node --check voice-recognition.js
+          node --check voice-commands.js
+          node --check voice-ui.js
+
       - name: Install Emscripten 4.0.23
         uses: mymindstorm/setup-emsdk@v14
         with:
           version: 4.0.23
           actions-cache-folder: emsdk-cache
 
-      - name: Clone sherpa-onnx v1.13.5
+      - name: Clone pinned sherpa-onnx
         run: |
-          git clone --depth 1 --branch v1.13.5 https://github.com/k2-fsa/sherpa-onnx.git "$RUNNER_TEMP/sherpa-onnx"
+          git clone --depth 1 --branch "$SHERPA_ONNX_VERSION" https://github.com/k2-fsa/sherpa-onnx.git "$RUNNER_TEMP/sherpa-onnx"
 
-      - name: Download official Koochik non-streaming INT8 + Silero VAD
+      - name: Tune WebAssembly memory for mobile browsers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "sherpa-onnx/wasm/vad-asr/CMakeLists.txt"
+          source = path.read_text(encoding="utf-8")
+          old = "INITIAL_MEMORY=512MB"
+          new = f"INITIAL_MEMORY={os.environ['WASM_INITIAL_MEMORY_MB']}MB"
+          if source.count(old) != 1:
+              raise SystemExit(f"Expected exactly one {old} setting in {path}")
+          path.write_text(source.replace(old, new), encoding="utf-8")
+          PY
+          grep -F "INITIAL_MEMORY=${WASM_INITIAL_MEMORY_MB}MB" "$RUNNER_TEMP/sherpa-onnx/wasm/vad-asr/CMakeLists.txt"
+
+      - name: Download pinned Rizeh non-streaming INT8 + Silero VAD
         shell: bash
         run: |
           set -euxo pipefail
           assets="$RUNNER_TEMP/sherpa-onnx/wasm/vad-asr/assets"
           rm -rf "$assets"/*
 
-          # Full-context Koochik INT8 for final transcription.
+          # Full-context Rizeh INT8 for final transcription.
           curl -L --fail --retry 5 --retry-delay 3 \
             -o "$assets/nemo-ctc.onnx" \
-            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-non-streaming-int8-2026-06-26/resolve/main/model.int8.onnx"
+            "https://huggingface.co/${RIZEH_REPOSITORY}/resolve/${RIZEH_REVISION}/model.int8.onnx"
 
           curl -L --fail --retry 5 --retry-delay 3 \
             -o "$assets/tokens.txt" \
-            "https://huggingface.co/mah92/sherpa-onnx-nemo-ctc-fa-shenava-koochik-v1.0-non-streaming-int8-2026-06-26/resolve/main/tokens.txt"
+            "https://huggingface.co/${RIZEH_REPOSITORY}/resolve/${RIZEH_REVISION}/tokens.txt"
 
           # sherpa's official VAD+offline-ASR WebAssembly bundle requires
           # Silero VAD in wasm/vad-asr/assets.
@@ -53,6 +90,12 @@ jobs:
             -o "$assets/silero_vad.onnx" \
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
 
+          printf '%s  %s\n' "$RIZEH_MODEL_SHA256" "$assets/nemo-ctc.onnx" | sha256sum --check --strict
+          printf '%s  %s\n' "$RIZEH_TOKENS_SHA256" "$assets/tokens.txt" | sha256sum --check --strict
+
+          model_bytes="$(stat -c '%s' "$assets/nemo-ctc.onnx")"
+          test "$model_bytes" -ge 30000000
+          test "$model_bytes" -le 50000000
           ls -lh "$assets"
 
       - name: Build sherpa-onnx WebAssembly VAD + offline ASR
@@ -72,6 +115,7 @@ jobs:
           rsync -a ./ _site/ \
             --exclude '.git/' \
             --exclude '.github/' \
+            --exclude 'icons/vosk-model-small-fa-0.5.tar.gz' \
             --exclude '_site/'
 
           built="$RUNNER_TEMP/sherpa-onnx/build-wasm-simd-vad-asr/install/bin/wasm/vad-asr"
@@ -90,15 +134,48 @@ jobs:
           test -s _site/sherpa-koochik/sherpa-onnx-asr.js
           test -s _site/sherpa-koochik/sherpa-onnx-vad.js
 
+          data_bytes="$(stat -c '%s' _site/sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.data)"
+          wasm_bytes="$(stat -c '%s' _site/sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.wasm)"
+          test "$data_bytes" -ge 30000000
+          test "$data_bytes" -le 80000000
+          test "$wasm_bytes" -le 25000000
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output = Path("_site/sherpa-koochik")
+          manifest = {
+              "model": "Shenava-Rizeh-v1.0-non-streaming-int8",
+              "model_repository": os.environ["RIZEH_REPOSITORY"],
+              "model_revision": os.environ["RIZEH_REVISION"],
+              "model_sha256": os.environ["RIZEH_MODEL_SHA256"],
+              "model_license": "CC-BY-NC-4.0",
+              "sherpa_onnx_version": os.environ["SHERPA_ONNX_VERSION"],
+              "wasm_initial_memory_mb": int(os.environ["WASM_INITIAL_MEMORY_MB"]),
+              "data_bytes": (output / "sherpa-onnx-wasm-main-vad-asr.data").stat().st_size,
+              "wasm_bytes": (output / "sherpa-onnx-wasm-main-vad-asr.wasm").stat().st_size,
+          }
+          (output / "model-build.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cat _site/sherpa-koochik/model-build.json
+
       - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

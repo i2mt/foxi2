@@ -1,4 +1,4 @@
-# FoxiMed Voice v28 — Rizeh
+# FoxiMed Voice v29 — adaptive Rizeh
 
 This release replaces the 114M Koochik speech model with the 32M Shenava Rizeh
 non-streaming INT8 model. It is intended for lower-memory phones and iOS PWAs
@@ -12,8 +12,11 @@ while preserving much better Persian accuracy than the tiny Pizeh model.
   behavior is independent of browser audio callback size.
 - Energy-only recognition decodes a conservative speech crop; it no longer
   applies the custom frame-by-frame gain conditioner.
-- Releasing the model terminates the worker and resets all ready/loading state,
-  allowing a clean reload without stale WASM objects.
+- The sherpa-onnx build starts with 256 MB of WebAssembly memory instead of
+  512 MB, reducing the initial pressure that caused iOS PWA termination.
+- Once loaded, the model remains warm while switching app tabs.
+- If offline startup fails and the browser supports Persian Web Speech, the UI
+  offers a disclosed one-time online retry instead of sending speech silently.
 - Microphone AGC and echo cancellation are disabled; noise suppression stays on.
 - Broad command words such as “time”, “volume”, “to”, and “unit” no longer route
   clinical actions by themselves.
@@ -21,9 +24,10 @@ while preserving much better Persian accuracy than the tiny Pizeh model.
 - Ambiguous command scores are rejected instead of silently choosing one.
 - Drug, dose, calculator, assessment, and clinical-value commands require a
   visible confirm/cancel tap before execution.
-- The service worker removes the obsolete Koochik model cache after activation.
+- The service worker removes the obsolete Koochik model cache after activation,
+  and the Pages bundle excludes the old 51 MB Vosk archive.
 
-Expected first-download size is about 65 MB including the WASM runtime. The
+Expected first-download size is roughly 50–60 MB including the WASM runtime. The
 exact browser memory footprint varies by browser and OS.
 
 ## Deploy
@@ -51,7 +55,7 @@ node --check voice-ui.js
 Expected console marker after deployment:
 
 ```text
-adapter build=v28-rizeh-segmented
+adapter build=v29-rizeh-adaptive
 ```
 
 ## Model and safety notes

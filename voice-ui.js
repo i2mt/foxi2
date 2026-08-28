@@ -153,6 +153,53 @@
         cancel.addEventListener('click', function () { finish(onCancel); });
     }
 
+    function showOnlineFallback(info) {
+        if (!els.result) return;
+        clearTimeout(resultClearTimer);
+        els.result.style.display = 'block';
+        els.result.className = 'voice-result info voice-confirmation';
+        while (els.result.firstChild) els.result.removeChild(els.result.firstChild);
+
+        const title = document.createElement('strong');
+        title.className = 'voice-confirm-title';
+        title.textContent = info.title || 'موتور آفلاین آماده نشد';
+
+        const text = document.createElement('span');
+        text.className = 'voice-result-text voice-confirm-text';
+        text.textContent = (info.message || '') + ' می‌توانید این بار از سرویس آنلاین مرورگر استفاده کنید؛ صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود.';
+
+        const actions = document.createElement('div');
+        actions.className = 'voice-confirm-actions';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'voice-confirm-button approve';
+        retry.textContent = 'تلاش آنلاین';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'voice-confirm-button cancel';
+        cancel.textContent = 'فعلاً نه';
+        actions.appendChild(retry);
+        actions.appendChild(cancel);
+
+        els.result.appendChild(title);
+        els.result.appendChild(text);
+        els.result.appendChild(actions);
+        setOrbState('error');
+        setStatus('موتور آفلاین در دسترس نیست', 'error');
+
+        retry.addEventListener('click', function () {
+            retry.disabled = true;
+            cancel.disabled = true;
+            els.result.style.display = 'none';
+            if (window.VoiceEngine) window.VoiceEngine.startOnline();
+        });
+        cancel.addEventListener('click', function () {
+            els.result.style.display = 'none';
+            setOrbState('idle');
+            setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
+        });
+    }
+
     function appendTip(html) {
         if (!els.result || els.result.style.display === 'none') return;
         const tip = document.createElement('div');
@@ -410,7 +457,7 @@
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
                 if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
-                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Rizeh (حدود ۶۵ مگابایت)...';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
             }
         });
         window.VoiceEngine.on('model-progress', function (p) {
@@ -458,6 +505,10 @@
         });
         window.VoiceEngine.on('error', function (info) {
             if (els.modelProgress) els.modelProgress.style.display = 'none';
+            if (info && info.onlineFallbackAvailable) {
+                showOnlineFallback(info);
+                return;
+            }
             setOrbState('error');
             setStatus(info.title || 'خطا', 'error');
             showResult((info.title ? '<strong>' + info.title + '</strong><br>' : '') + (info.message || ''), 'error');
