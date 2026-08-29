@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v31-medical-speech';
+  const BUILD_ID = 'v33-command-coverage';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=31';
+  const WORKER_FILE = './koochik-worker.js?v=33';
   const SAMPLE_RATE = 16000;
 
   let worker = null;

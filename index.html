@@ -50,7 +50,7 @@
                 <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
                 <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
             </div>
-            <div class="loading-version">نسخه 5.0.28</div>
+            <div class="loading-version">نسخه 5.0.30</div>
             <div class="loading-credit">
                 <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
@@ -418,6 +418,12 @@
             <!-- Unified Tools + Converters Tab -->
             <div class="tab-pane" id="toolsTab">
                 <div class="tools-container">
+                    <div class="tools-search" role="search">
+                        <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="search" id="toolsSearch" placeholder="جستجوی ابزار؛ مثلاً برادن یا فشار" autocomplete="off" aria-label="جستجوی ابزارهای بالینی">
+                        <button type="button" id="toolsSearchClear" class="tools-search-clear" aria-label="پاک کردن جستجو" hidden><i class="fas fa-xmark"></i></button>
+                    </div>
+                    <p class="tools-search-empty" id="toolsSearchEmpty" hidden>ابزاری با این عبارت پیدا نشد.</p>
 
                     <!-- Section 1: Patient Assessment -->
                     <div class="accordion-section">
@@ -1697,7 +1703,6 @@
                 <span class="voice-eye-spark left" aria-hidden="true"></span>
                 <span class="voice-eye-spark right" aria-hidden="true"></span>
                 <span class="voice-fox-mark" id="voiceOrb" aria-hidden="true"></span>
-                <span class="voice-embers" id="voiceEmbers" aria-hidden="true"></span>
                 <span class="voice-tap-hint" aria-hidden="true"><i class="fas fa-microphone"></i><span>برای صحبت لمس کنید</span></span>
             </button>
         </div>
@@ -1734,14 +1739,14 @@
         <!-- Example chips — single-row horizontal scroll, hides while busy -->
         <div class="voice-examples" id="voiceExamples">
             <div class="voice-chips">
-                <button type="button" class="voice-example-chip" data-command="هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰"><span class="chip-emoji">💉</span> هپارین</button>
-                <button type="button" class="voice-example-chip" data-command="شاخص توده بدنی وزن ۷۵ قد ۱۷۵"><span class="chip-emoji">📊</span> شاخص توده</button>
-                <button type="button" class="voice-example-chip" data-command="گلاسکو ۴ ۵ ۶"><span class="chip-emoji">🧠</span> گلاسکو</button>
-                <button type="button" class="voice-example-chip" data-command="قطره ۵۰۰ میلی‌لیتر در ۸ ساعت"><span class="chip-emoji">💧</span> قطره</button>
-                <button type="button" class="voice-example-chip" data-command="تبدیل ۲۰ mEq سدیم به mg"><span class="chip-emoji">🧪</span> تبدیل</button>
-                <button type="button" class="voice-example-chip" data-command="تاریک"><span class="chip-emoji">🌙</span> تاریک</button>
-                <button type="button" class="voice-example-chip" data-command="سازگاری هپارین و وانکومایسین"><span class="chip-emoji">🔬</span> سازگاری</button>
-                <button type="button" class="voice-example-chip" data-command="راهنما"><span class="chip-emoji">❓</span> راهنما</button>
+                <button type="button" class="voice-example-chip" data-command="هپارین ۱۲ واحد/کیلوگرم/ساعت وزن ۷۰"><i class="fas fa-syringe voice-chip-icon" aria-hidden="true"></i> هپارین</button>
+                <button type="button" class="voice-example-chip" data-command="شاخص توده بدنی وزن ۷۵ قد ۱۷۵"><i class="fas fa-weight-scale voice-chip-icon" aria-hidden="true"></i> شاخص توده</button>
+                <button type="button" class="voice-example-chip" data-command="گلاسکو ۴ ۵ ۶"><i class="fas fa-brain voice-chip-icon" aria-hidden="true"></i> گلاسکو</button>
+                <button type="button" class="voice-example-chip" data-command="قطره ۵۰۰ میلی‌لیتر در ۸ ساعت"><i class="fas fa-droplet voice-chip-icon" aria-hidden="true"></i> قطره</button>
+                <button type="button" class="voice-example-chip" data-command="تبدیل ۲۰ mEq سدیم به mg"><i class="fas fa-flask voice-chip-icon" aria-hidden="true"></i> تبدیل</button>
+                <button type="button" class="voice-example-chip" data-command="تاریک"><i class="fas fa-moon voice-chip-icon" aria-hidden="true"></i> تاریک</button>
+                <button type="button" class="voice-example-chip" data-command="سازگاری هپارین و وانکومایسین"><i class="fas fa-vials voice-chip-icon" aria-hidden="true"></i> سازگاری</button>
+                <button type="button" class="voice-example-chip" data-command="راهنما"><i class="fas fa-circle-question voice-chip-icon" aria-hidden="true"></i> راهنما</button>
             </div>
         </div>
 
@@ -1918,7 +1923,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.28</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.30</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2059,16 +2064,16 @@
 
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
-    <script src="calculation-core.js?v=31"></script>
-    <script src="script.js?v=31"></script>
-    <script src="koochik-asr.js?v=31"></script>
-    <script src="voice-recognition.js?v=31"></script>
-    <script src="voice-commands.js?v=31"></script>
-    <script src="voice-ui.js?v=31"></script>
+    <script src="calculation-core.js?v=33"></script>
+    <script src="script.js?v=33"></script>
+    <script src="koochik-asr.js?v=33"></script>
+    <script src="voice-recognition.js?v=33"></script>
+    <script src="voice-commands.js?v=33"></script>
+    <script src="voice-ui.js?v=33"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=31', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=33', { updateViaCache: 'none' });
             });
         }
     </script>

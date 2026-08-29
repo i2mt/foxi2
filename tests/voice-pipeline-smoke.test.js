@@ -31,6 +31,11 @@ function toLatinDigits(value) {
 function testCommandRouting() {
     const events = [];
     const storage = makeStorage();
+    const elements = {
+        bmiWeight: { value: '' },
+        bmiHeight: { value: '' },
+        bmiResult: { textContent: '18.9' }
+    };
     const window = {
         VoiceUI: {
             showResult(message, type) {
@@ -71,12 +76,19 @@ function testCommandRouting() {
         JSON,
         RegExp,
         localStorage: storage,
+        document: {
+            getElementById(id) { return elements[id] || null; },
+            querySelectorAll() { return []; }
+        },
         PersianNumbers: { toLatin: toLatinDigits },
         drugDatabase,
         AppState: { settings: {} },
         saveSettings() {},
         applyThemeMode() {},
         applySettings() {},
+        calculateBMI() {
+            events.push({ kind: 'bmi-calculation', weight: Number(elements.bmiWeight.value), height: Number(elements.bmiHeight.value) });
+        },
         switchTab(tab) { events.push({ kind: 'tab', tab }); },
         setTimeout(fn) { events.push({ kind: 'deferred', fn }); return events.length; },
         clearTimeout() {}
@@ -132,11 +144,29 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیون هپار')),
         'clinical confirmation must preserve the exact ASR transcript after correction');
 
+    result = run('هموزیان هپاری');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'new observed heparin substitution should route to the drug calculator');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('هموزیان هپاری')),
+        'heparin recovery must preserve the exact transcript');
+
     result = run('چندفزیان انسولین رگو');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'observed clipped regular-insulin infusion transcript should route to the drug calculator');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیان انسولین رگو')),
         'regular-insulin recovery must preserve the original ASR transcript');
+
+    result = run('انفوزیون انسولین رگووللا');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'observed regular-insulin qualifier should route to the drug calculator');
+
+    result = run('یه مای برای مریضی که قدش صد و هفتاد و دو و وزنش پنجاه و شش کیلوه');
+    const colloquialBmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
+    assert(colloquialBmiConfirmation, 'observed BMI substitution should route with height and weight');
+    assert(colloquialBmiConfirmation.message.includes('یه مای'), 'BMI recovery must preserve original wording');
+    colloquialBmiConfirmation.onConfirm();
+    assert(events.some(e => e.kind === 'bmi-calculation' && e.weight === 56 && e.height === 172),
+        'colloquial BMI command must apply height 172 and weight 56');
 
     result = run('شاخص توده بدنی');
     const bmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
@@ -153,6 +183,40 @@ function testCommandRouting() {
         'confirmed Braden command must open the tools tab');
     assert(events.some(e => e.kind === 'deferred'),
         'confirmed Braden command must schedule its calculator accordion to open');
+
+    const naturalCommandCases = [
+        ['مساحت سطح بدن', 'BSA'], ['وزن مطلوب بیمار', 'وزن ایده‌آل'],
+        ['کلیرنس کراتینین', 'کلیرانس کراتینین'], ['سرم چند قطره در دقیقه', 'سرعت قطره'],
+        ['سطح هوشیاری گلاسکو', 'GCS'], ['میزان سدیشن ریچموند', 'RASS'],
+        ['ریسک زخم بستر', 'Braden'], ['ریسک سقوط بیمار', 'Morse'],
+        ['وسعت سوختگی', 'درصد سوختگی'], ['کپسول اکسیژن چقدر میمونه', 'مدت اکسیژن'],
+        ['تفسیر ای بی جی', 'گاز خون'], ['حجم جاری ونتیلاتور', 'ونتیلاتور'],
+        ['نیاز کالری بیمار', 'تغذیه'], ['تبدیل الکترولیت', 'تبدیل الکترولیت'],
+        ['محاسبه غلظت درصدی', 'غلظت درصدی'], ['مبدل واحد', 'تبدیل واحد'],
+        ['تبدیل دما', 'تبدیل دما'], ['تبدیل وزن', 'تبدیل وزن'],
+        ['مبدل فشار', 'تبدیل فشار'], ['سازگاری هپارین و وانکومایسین', 'سازگاری Y-Site']
+    ];
+    naturalCommandCases.forEach(([phrase, expectedLabel]) => {
+        const routed = run(phrase);
+        assert(routed.some(e => e.kind === 'confirmation' && e.message.includes(expectedLabel)),
+            `natural command "${phrase}" should route to ${expectedLabel}; got ${JSON.stringify(routed)}`);
+    });
+
+    result = run('چه خبر');
+    assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
+        'younger-user small talk should receive a friendly non-clinical response');
+    result = run('استرس دارم');
+    assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
+        'standalone stress chat should not be confused with nutrition');
+    result = run('خوبه محاسبه برادن');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('Braden')),
+        'social wording appended to a clinical request must not hijack it');
+    result = run('عبارت نامفهوم آزمایشی');
+    assert(result.some(e => e.kind === 'result' && e.type === 'error'),
+        'unknown speech must fail honestly instead of using generic filler');
+    result = run('فشار بیمار');
+    assert(!result.some(e => e.kind === 'confirmation' && e.message.includes('تبدیل فشار')),
+        'bare patient pressure wording must not open unit conversion');
 
     result = run('قطره ۵۰۰ ml در ۸ ساعت');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('سرعت قطره')),
@@ -207,12 +271,12 @@ function testDeploymentWiring() {
         'the obsolete Vosk archive must not be shipped in the Pages site');
     assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8_f2b9251'),
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
-    assert(serviceWorker.includes('koochik-worker.js?v=31'),
-        'service worker must precache the v31 worker URL');
-    assert(read('koochik-asr.js').includes("koochik-worker.js?v=31"),
-        'voice adapter must instantiate the v31 worker URL');
-    assert(index.includes('service-worker.js?v=31'),
-        'page must register the v31 service worker');
+    assert(serviceWorker.includes('koochik-worker.js?v=33'),
+        'service worker must precache the v33 worker URL');
+    assert(read('koochik-asr.js').includes("koochik-worker.js?v=33"),
+        'voice adapter must instantiate the v33 worker URL');
+    assert(index.includes('service-worker.js?v=33'),
+        'page must register the v33 service worker');
     assert(!script.includes('VoiceEngine.releaseModel'),
         'tab changes must keep the loaded voice model warm');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
@@ -221,6 +285,23 @@ function testDeploymentWiring() {
         'online retry must disclose that speech leaves the device');
     assert(index.includes('voice-tap-hint') && index.includes('برای صحبت لمس کنید'),
         'voice mascot must visibly explain that it is the microphone control');
+    assert(index.includes('id="toolsSearch"') && script.includes('setupToolsSearch()'),
+        'tools tab must expose compact search');
+    assert(!index.includes('chip-emoji') && index.includes('voice-chip-icon'),
+        'assistant examples must use the clinical icon system');
+    assert(!index.includes('voice-embers') && !voiceUi.includes('spawnEmbers'),
+        'assistant must avoid decorative ember work');
+    [
+        'gcsAccordionItem', 'rassAccordionItem', 'bradenAccordionItem', 'morseAccordionItem',
+        'oxygenAccordionItem', 'burnsAccordionItem', 'bmiAccordionItem', 'ysiteAccordionItem',
+        'bsaAccordionItem', 'ibwAccordionItem', 'ventilatorAccordionItem', 'nutritionAccordionItem',
+        'vbgAccordionItem', 'crclAccordionItem', 'dripAccordionItem', 'unitAccordionItem',
+        'electrolyteAccordionItem', 'percentageAccordionItem', 'tempAccordionItem',
+        'weightAccordionItem', 'pressureAccordionItem'
+    ].forEach((accordionId) => {
+        assert(index.includes(`id="${accordionId}"`) && read('voice-commands.js').includes(`accordion: '${accordionId}'`),
+            `${accordionId} must have a voice navigation target`);
+    });
     assert(index.includes('id="namePrompt"') && script.includes("state.launches < 2"),
         'name prompt must be delayed beyond the first launch');
     assert(script.includes('14 * 24 * 60 * 60 * 1000') && script.includes('state.optedOut = true'),
@@ -231,7 +312,7 @@ function testDeploymentWiring() {
         'profile name must remain device-local');
     assert(script.includes('سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است'),
         'Y-site matrix must disclose context dependence and require verification');
-    assert(index.includes('calculation-core.js?v=31') && serviceWorker.includes('calculation-core.js?v=31'),
+    assert(index.includes('calculation-core.js?v=33') && serviceWorker.includes('calculation-core.js?v=33'),
         'tested calculation core must be loaded and cached');
 }
 
