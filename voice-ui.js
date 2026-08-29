@@ -36,7 +36,6 @@
             transcript: qs('voiceTranscript'),
             transcriptArea: qs('voiceTranscriptArea'),
             result: qs('voiceResult'),
-            embers: qs('voiceEmbers'),
             banner: qs('voiceEnvBanner'),
             bannerText: qs('voiceEnvBannerText'),
             bannerAction: qs('voiceEnvBannerAction'),
@@ -359,7 +358,7 @@
 
     // ============================================
     // FOX MARK AUDIO REACTIVITY
-    // The ripples/embers/glow are all driven by CSS state classes already,
+    // The ripples/glow are driven by CSS state classes already,
     // so the only thing JS needs to push per audio frame is the real mic
     // level — it drives glow intensity and eye-spark brightness via the
     // --audio-level custom property (see voice-assistant.css).
@@ -367,27 +366,6 @@
     function onAudioData(data) {
         if (els.orbContainer) {
             els.orbContainer.style.setProperty('--audio-level', String(0.15 + (data.level || 0) * 0.85));
-        }
-    }
-
-    function spawnEmbers() {
-        if (!els.embers || els.embers.dataset.spawned) return;
-        els.embers.dataset.spawned = 'true';
-        const count = 9;
-        for (let i = 0; i < count; i++) {
-            const e = document.createElement('span');
-            e.className = 'voice-ember';
-            const left = 20 + Math.random() * 60;
-            const size = (2 + Math.random() * 3.2).toFixed(1);
-            const dur = (4 + Math.random() * 4).toFixed(2);
-            const delay = (Math.random() * dur).toFixed(2);
-            const dx = (Math.random() * 36 - 18).toFixed(0) + 'px';
-            e.style.left = left + '%';
-            e.style.setProperty('--s', size + 'px');
-            e.style.setProperty('--dur', dur + 's');
-            e.style.setProperty('--delay', delay + 's');
-            e.style.setProperty('--dx', dx);
-            els.embers.appendChild(e);
         }
     }
 
@@ -524,8 +502,6 @@
         renderEnvironmentBanner();
         wireVoiceEngineEvents();
         renderHistory();
-        spawnEmbers();
-
         setOrbState('idle');
         setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
         setTranscript('', false);

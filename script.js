@@ -19,9 +19,18 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.28';
+const APP_VERSION = '5.0.30';
 
 const CHANGELOG = {
+    '5.0.30': [
+        'پوشش گفتار طبیعی برای همه ابزارهای بالینی و مبدل فشار',
+        'گفت‌وگوی دوستانه دقیق‌تر و جلوگیری از پاسخ ساختگی به فرمان ناشناخته',
+        'جستجوی سریع ابزارها و ظاهر حرفه‌ای‌تر دستیار صوتی'
+    ],
+    '5.0.29': [
+        'بازیابی دقیق‌تر عبارت‌های هپارین، انسولین رگولار و BMI در گفتار فارسی',
+        'حفظ قد و وزن در جمله‌های محاوره‌ای BMI و باز کردن مستقیم ابزار مربوط'
+    ],
     '5.0.28': [
         'بهبود تشخیص نام‌های پزشکی و مخفف‌های فارسی در دستیار صوتی',
         'اصلاح مسیر «درصد سوختگی» و جلوگیری از اشتباه با غلظت درصدی',
@@ -1038,6 +1047,7 @@ function initializeApp() {
     setupMobileNumericKeyboard();
     initializeConverters();
     initializeTools();
+    setupToolsSearch();
 
     let resizeTimeout;
     window.addEventListener('resize', () => {
@@ -1084,6 +1094,48 @@ function initializeApp() {
     setupNamePrompt();
     setTimeout(showGreetingBanner, 3200);
     setupHelpPopovers();
+}
+
+function setupToolsSearch() {
+    const input = document.getElementById('toolsSearch');
+    const clearButton = document.getElementById('toolsSearchClear');
+    const emptyMessage = document.getElementById('toolsSearchEmpty');
+    if (!input) return;
+
+    const items = Array.from(document.querySelectorAll('#toolsTab .accordion-item'));
+    const sections = Array.from(document.querySelectorAll('#toolsTab .accordion-section'));
+    const normalizeSearchText = (value) => String(value || '')
+        .toLowerCase()
+        .replace(/[يى]/g, 'ی')
+        .replace(/ك/g, 'ک')
+        .replace(/[ۀة]/g, 'ه')
+        .replace(/\u200c/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const applyFilter = () => {
+        const query = normalizeSearchText(input.value);
+        let visibleCount = 0;
+        items.forEach((item) => {
+            const matches = !query || normalizeSearchText(item.textContent).includes(query);
+            item.classList.toggle('is-filtered-out', !matches);
+            if (matches) visibleCount++;
+        });
+        sections.forEach((section) => {
+            const hasVisibleItem = Array.from(section.querySelectorAll('.accordion-item'))
+                .some((item) => !item.classList.contains('is-filtered-out'));
+            section.classList.toggle('is-filtered-out', !hasVisibleItem);
+        });
+        if (clearButton) clearButton.hidden = !query;
+        if (emptyMessage) emptyMessage.hidden = visibleCount !== 0;
+    };
+
+    input.addEventListener('input', applyFilter);
+    if (clearButton) clearButton.addEventListener('click', () => {
+        input.value = '';
+        applyFilter();
+        input.focus();
+    });
 }
 
 function setupMobileOptimizations() {

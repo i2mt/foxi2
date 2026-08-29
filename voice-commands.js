@@ -72,8 +72,15 @@
         // fragments would be unsafe. Drug commands still require the user
         // to confirm the original, unmodified transcript before execution.
         result = result
-            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن)(?=\s|$)/g, '$1انفوزیون')
-            .replace(/(^|\s)هپار(?=\s|$)/g, '$1هپارین');
+            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)(?:هپار|هپاری)(?=\s|$)/g, '$1هپارین');
+
+        if (/(?:^|\s)یه\s+مای(?=\s|$)/.test(result) && /(?:قد|وزن)/.test(result)) {
+            result = result.replace(/(^|\s)یه\s+مای(?=\s|$)/g, '$1bmi');
+        }
+        if (result.includes('انسولین')) {
+            result = result.replace(/(^|\s)رگووللا(?=\s|$)/g, '$1رگولار');
+        }
         return result.replace(/\s+/g, ' ').trim();
     }
 
@@ -81,22 +88,22 @@
     // CONTEXTUAL TIPS (shown after a successful command)
     // ============================================
     const TIPS = {
-        bmi: '💡 برای محاسبه سطح بدن بگویید «سطح بدن، وزن ۷۰، قد ۱۷۰».',
-        bsa: '💡 برای BMI بگویید «شاخص توده بدنی، وزن ۷۵، قد ۱۷۵».',
-        crcl: '💡 می‌توانید جنسیت را هم مشخص کنید: «زن» یا «مرد».',
-        drip: '💡 نوع ست را هم می‌توانید بگویید: «ماکروست» یا «میکروست».',
-        convert: '💡 عناصر پشتیبانی‌شده: سدیم، پتاسیم، کلسیم، منیزیم، بی‌کربنات.',
-        drug: '💡 می‌توانید روش تزریق، حجم محلول، تعداد آمپول و مقدار دلخواه را هم مشخص کنید.',
-        gcs: '💡 برای RASS بگویید «مقیاس ریچموند ۲» یا «ریچموند منفی ۳».',
-        rass: '💡 برای GCS بگویید «گلاسکو ۴ ۵ ۶».',
-        braden: '💡 مقیاس برادن ۶ بخش دارد: حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک.',
-        morse: '💡 مقیاس مورس ۶ بخش دارد: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی.',
-        burns: '💡 روی نواحی سوختگی در تصویر کلیک کنید — بزرگسال یا کودک را انتخاب کنید.',
-        oxygen: '💡 فرمول: حجم کپسول (لیتر) × فشار (بار) × ۰.۹ ÷ جریان (L/min) = مدت (دقیقه).',
-        vbg: '💡 برای VBG می‌توانید Na، Cl و آلبومین را هم برای آنیون گپ وارد کنید.',
-        ventilator: '💡 همچنین می‌توانید از طول اولنا برای تخمین قد استفاده کنید.',
-        nutrition: '💡 ضریب استرس را می‌توانید با گفتن «سپسیس» یا «سوختگی» تنظیم کنید.',
-        ysite: '💡 دو دارو را با هم در یک جمله بگویید تا سازگاری Y-Site بررسی شود.'
+        bmi: 'نکته: برای محاسبه سطح بدن بگویید «سطح بدن، وزن ۷۰، قد ۱۷۰».',
+        bsa: 'نکته: برای BMI بگویید «شاخص توده بدنی، وزن ۷۵، قد ۱۷۵».',
+        crcl: 'نکته: می‌توانید جنسیت را هم مشخص کنید: «زن» یا «مرد».',
+        drip: 'نکته: نوع ست را هم می‌توانید بگویید: «ماکروست» یا «میکروست».',
+        convert: 'نکته: عناصر پشتیبانی‌شده: سدیم، پتاسیم، کلسیم، منیزیم، بی‌کربنات.',
+        drug: 'نکته: می‌توانید روش تزریق، حجم محلول، تعداد آمپول و مقدار دلخواه را هم مشخص کنید.',
+        gcs: 'نکته: برای RASS بگویید «مقیاس ریچموند ۲» یا «ریچموند منفی ۳».',
+        rass: 'نکته: برای GCS بگویید «گلاسکو ۴ ۵ ۶».',
+        braden: 'نکته: مقیاس برادن ۶ بخش دارد: حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک.',
+        morse: 'نکته: مقیاس مورس ۶ بخش دارد: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی.',
+        burns: 'نکته: روی نواحی سوختگی در تصویر کلیک کنید — بزرگسال یا کودک را انتخاب کنید.',
+        oxygen: 'نکته: فرمول: حجم کپسول (لیتر) × فشار (بار) × ۰.۹ ÷ جریان (L/min) = مدت (دقیقه).',
+        vbg: 'نکته: برای VBG می‌توانید Na، Cl و آلبومین را هم برای آنیون گپ وارد کنید.',
+        ventilator: 'نکته: همچنین می‌توانید از طول اولنا برای تخمین قد استفاده کنید.',
+        nutrition: 'نکته: ضریب استرس را می‌توانید با گفتن «سپسیس» یا «سوختگی» تنظیم کنید.',
+        ysite: 'نکته: دو دارو را با هم در یک جمله بگویید تا سازگاری Y-Site بررسی شود.'
     };
 
     // ============================================
@@ -432,33 +439,34 @@
         history: { triggers: ['تاریخچه', 'محاسبات قبلی', 'سابقه محاسبات', 'تاریخچه محاسبات', 'history', 'گزارش محاسبات'], scoreWeight: 0.9 },
         reverse: { triggers: ['reverse', 'معکوس', 'برعکس', 'وارونه', 'حالت معکوس'], scoreWeight: 0.9 },
 
-        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'شاخص توده بدنی', 'body mass index', 'توده بدنی', 'وزن و قد'], scoreWeight: 0.9 },
-        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'سطح بدن بیمار', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
-        ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد'], scoreWeight: 0.9 },
-        crcl: { triggers: ['crcl', 'سی آر سی ال', 'creatinine clearance', 'کلیرانس کراتینین', 'تصفیه کراتینین', 'کراتینین', 'کلیرانس', 'clearance', 'نارسایی کلیه'], scoreWeight: 0.9 },
-        drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'میکروست', 'ماکروست', 'قطره در دقیقه'], scoreWeight: 0.9 },
-        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'امتیاز گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری'], scoreWeight: 0.8 },
-        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'مقیاس ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی'], scoreWeight: 0.8 },
-        braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر'], scoreWeight: 0.8 },
-        morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط'], scoreWeight: 0.8 },
-        burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'درصد سوخت', 'درصد سطح سوخت', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'درصد سوختگی', 'درصد سطح سوختگی', 'سوختگی پوست'], scoreWeight: 0.8 },
-        oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'اکسیژن درمانی', 'کپسول اکسیژن'], scoreWeight: 0.8 },
-        vbg: { triggers: ['vbg', 'abg', 'وی بی جی', 'ای بی جی', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'اسید باز'], scoreWeight: 0.8 },
-        ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'دستگاه تنفس'], scoreWeight: 0.8 },
-        nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'تغذیه انترال'], scoreWeight: 0.8 },
+        bmi: { triggers: ['bmi', 'بی ام آی', 'بی ام ای', 'بیامای', 'b.m.i', 'شاخص توده', 'شاخص توده بدنی', 'body mass index', 'توده بدنی', 'جرم بدن', 'شاخص وزن', 'وزن و قد'], scoreWeight: 0.9 },
+        bsa: { triggers: ['bsa', 'بی اس ای', 'بی اس آی', 'بیاسای', 'b.s.a', 'سطح بدن', 'سطح بدن بیمار', 'مساحت سطح بدن', 'body surface area', 'mosteller', 'dubois', 'haycock', 'مساحت بدن'], scoreWeight: 0.9 },
+        ibw: { triggers: ['وزن ایده آل', 'ideal weight', 'ibw', 'وزن ایده ال', 'وزن مناسب', 'وزن استاندارد', 'وزن مطلوب', 'وزن ایده آل بیمار'], scoreWeight: 0.9 },
+        crcl: { triggers: ['crcl', 'سی آر سی ال', 'creatinine clearance', 'کلیرانس کراتینین', 'کلیرنس کراتینین', 'کراتینین کلیرنس', 'تصفیه کراتینین', 'کراتینین', 'کلیرانس', 'کلیرنس', 'clearance', 'کارکرد کلیه', 'نارسایی کلیه', 'cockcroft'], scoreWeight: 0.9 },
+        drip: { triggers: ['drip', 'قطره', 'سرعت قطره', 'gravity', 'میکروست', 'ماکروست', 'قطره در دقیقه', 'تعداد قطره', 'سرعت سرم', 'سرم چند قطره'], scoreWeight: 0.9 },
+        gcs: { triggers: ['gcs', 'جی سی اس', 'جیسیاس', 'گلاسکو', 'امتیاز گلاسکو', 'glasgow', 'coma', 'کما', 'eye', 'verbal', 'motor', 'چشمی', 'کلامی', 'حرکتی', 'امتیاز هوشیاری', 'سطح هوشیاری', 'هوشیاری گلاسکو'], scoreWeight: 0.8 },
+        rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'مقیاس ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی', 'میزان سدیشن', 'سدیشن ریچموند'], scoreWeight: 0.8 },
+        braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر', 'ریسک زخم بستر', 'خطر زخم فشاری'], scoreWeight: 0.8 },
+        morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط', 'ریسک سقوط', 'احتمال افتادن'], scoreWeight: 0.8 },
+        burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'درصد سوخت', 'درصد سطح سوخت', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'درصد سوختگی', 'درصد سطح سوختگی', 'سوختگی پوست', 'وسعت سوختگی', 'سطح سوختگی بدن'], scoreWeight: 0.8 },
+        oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'اکسیژن درمانی', 'کپسول اکسیژن', 'مدت اکسیژن', 'زمان باقی مانده کپسول', 'کپسول چقدر میمونه'], scoreWeight: 0.8 },
+        vbg: { triggers: ['vbg', 'abg', 'وی بی جی', 'ای بی جی', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'تفسیر وی بی جی', 'تفسیر ای بی جی', 'اسید باز', 'اسید و باز'], scoreWeight: 0.8 },
+        ventilator: { triggers: ['ventilator', 'ونتیلاتور', 'tidal volume', 'حجم جاری', 'pbw', 'ards', 'lung protective', 'تهویه', 'حجم تنفسی', 'تی وی', 'تایدال', 'دستگاه تنفس'], scoreWeight: 0.8 },
+        nutrition: { triggers: ['nutrition', 'تغذیه', 'کالری', 'calories', 'protein', 'پروتئین', 'bmr', 'harris', 'mifflin', 'استرس', 'stress', 'نیاز کالری', 'کالری روزانه', 'پروتئین مورد نیاز', 'نیاز انرژی', 'تغذیه انترال'], scoreWeight: 0.8 },
 
         convert: { triggers: ['convert', 'تبدیل', 'meq', 'میلی اکی والان', 'الکترولیت', 'تبدیل واحد'], scoreWeight: 0.9 },
         electrolyte: { triggers: ['الکترولیت', 'تبدیل الکترولیت', 'meq به mg', 'mg به meq', 'سدیم', 'پتاسیم', 'کلسیم', 'منیزیم', 'بی کربنات', 'electrolyte'], scoreWeight: 0.9 },
         percentage: { triggers: ['درصد', 'غلظت درصد', 'percentage solution', 'محلول درصدی', 'درصد دارو'], scoreWeight: 0.9 },
-        unit_convert: { triggers: ['تبدیل واحد', 'میکروگرم', 'میلی گرم', 'unit conversion', 'مبدل واحد'], scoreWeight: 0.9 },
+        unit_convert: { triggers: ['تبدیل واحد', 'تبدیل units', 'میکروگرم', 'میلی گرم', 'unit conversion', 'مبدل واحد', 'مبدل units'], scoreWeight: 0.9 },
         temp_convert: { triggers: ['تبدیل دما', 'درجه', 'سلسیوس', 'فارنهایت', 'temperature', 'دمای بدن', 'تب'], scoreWeight: 0.9 },
         weight_convert: { triggers: ['تبدیل وزن', 'پوند', 'weight conversion', 'وزن به پوند', 'وزن به کیلو'], scoreWeight: 0.9 },
+        pressure_convert: { triggers: ['مبدل فشار', 'تبدیل فشار', 'pressure conversion', 'پی اس آی', 'میلی متر جیوه', 'سانتی متر آب', 'کیلو پاسکال'], scoreWeight: 0.9 },
 
-        drug: { triggers: ['دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'kg/h', 'mcg', 'mg', 'units', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
+        drug: { triggers: ['دوز', 'انفوزیون', 'تزریق', 'پمپ', 'سرنگ', 'سرعت پمپ', 'دوز انفوزیون', 'محاسبه دارو', 'kg/h', 'mcg', 'mg', 'units', 'آمپول', 'ویال', 'دوز دارو'], scoreWeight: 1.0 },
         druginfo: { triggers: ['اطلاعات', 'درباره', 'توضیح', 'شرح', 'کاربرد', 'مقدار مصرف', 'نحوه مصرف', 'چیه', 'چیست', 'info', 'about', 'describe', 'معرفی', 'راهنما دارو'], scoreWeight: 0.9 },
         dose_calc: { triggers: [' دوز', 'دوز دارو', 'حجم ویال', 'dose calculation', 'vial', 'حجم تزریقی', 'مقدار مصرف دارو'], scoreWeight: 0.9 },
         compat_tool: { triggers: ['سازگاری دارو', 'compatibility', 'تداخل دارویی', 'داروها', 'drug compatibility', 'سازگاری y-site', 'y-site', 'مخلوط داروها'], scoreWeight: 0.9 },
-        ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'y-site compatibility'], scoreWeight: 0.8 },
+        ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'همزمان وصل کنم', 'داخل یک سرم', 'میشه با هم زد', 'y-site compatibility'], scoreWeight: 0.8 },
 
         settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
         theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
@@ -518,6 +526,11 @@
             // more specific clinical phrase when ASR clips the final "گی".
             if (cmd === 'percentage' && burnsPhrase) score = 0;
             if (cmd === 'oxygen' && (params.flow || params.pressure || params.liters)) score += 2;
+            if (cmd === 'oxygen' && /(?:اکسیژن|کپسول)/.test(text) && /(?:مدت|زمان|چقدر|میمونه|باقی)/.test(text)) score += 3;
+            if (cmd === 'pressure_convert' && score > 0 && /(?:تبدیل|مبدل|psi|mmhg|cmh2o|kpa|پی اس آی|میلی متر جیوه|سانتی متر آب|کیلو پاسکال)/i.test(text)) score += 2;
+            if (cmd === 'unit_convert' && /(?:تبدیل|مبدل)\s+(?:واحد|units?)/i.test(text)) score += 2;
+            if (cmd === 'temp_convert' && /(?:تبدیل|مبدل)\s+(?:دما|درجه)/.test(text)) score += 2;
+            if (cmd === 'weight_convert' && /(?:تبدیل|مبدل)\s+وزن/.test(text)) score += 2;
             if (cmd === 'ventilator' && score > 0 && (params.height || params.weight)) score += 2;
             if (cmd === 'nutrition' && score > 0 && (params.weight || params.height || params.age)) score += 2;
             if (cmd === 'ysite' && (params.drug1 || params.drug2)) score += 2;
@@ -837,6 +850,30 @@
             'عالی، چون دارم بهت کمک می‌کنم! 😊 تو چطوری؟',
             'من همیشه برای کمک بهت آماده‌ام! ☀️'
         ],
+        'چه خبر|چخبر|چه میکنی|چیکار میکنی': [
+            'خبر خاصی نیست؛ منتظرم بگی کدوم ابزار یا محاسبه رو لازم داری.',
+            'دارم برای فرمان بعدی آماده می‌مونم. تو چه خبر؟'
+        ],
+        'حوصلم سر رفته|حوصله ام سر رفته|حوصله ندارم': [
+            'می‌تونم یک جوک کوتاه بگم، یا اگر کاری داری سریع برات انجامش بدم.',
+            'یه نفس کوتاه بین کارها بد نیست. اگر خواستی بگو «جوک بگو».'
+        ],
+        'دوستت دارم|دوست دارم|صداتو دوست دارم': [
+            'لطف داری. خوشحالم که همراه مفیدی برات هستم.',
+            'مرسی؛ من هم خوشحالم که می‌تونم کمکت کنم.'
+        ],
+        'تو واقعی هستی|رباتی|تو رباتی|آدمی': [
+            'من یک دستیار نرم‌افزاری‌ام، نه انسان. فرمان‌ها رو به ابزارهای فاکسی‌مد وصل می‌کنم.',
+            'من ربات گفت‌وگویی فاکسی‌مد هستم و پاسخ‌هام جای قضاوت بالینی رو نمی‌گیرن.'
+        ],
+        'چند سالته|سنت چقدره|پسری یا دختری|دختری|پسری': [
+            'سن یا جنسیت انسانی ندارم؛ من دستیار نرم‌افزاری فاکسی‌مدم.',
+            'من یک برنامه‌ام، ولی می‌تونم برای محاسبات و ابزارهای فاکسی‌مد کنارت باشم.'
+        ],
+        'دمت گرم|باهوشی': [
+            'ممنون! خوشحالم که درست کار کرد.',
+            'مرسی؛ بگو کار بعدی چیه.'
+        ],
         // generic confirmations — broad and low-specificity, kept last
         'بله|اوکی|باشه|چشم|حتماً|خوبه': [
             'چشم! هر وقت آماده‌ای، بگو 📝',
@@ -857,8 +894,25 @@
         const hasNumber = /\d/.test(normalized);
         if (hasDrugMention(lower) || hasNumber || normalized.length >= 50) return false;
 
+        const hasClinicalIntent = Object.keys(COMMAND_KEYWORDS).some(function (command) {
+            return COMMAND_KEYWORDS[command].triggers.some(function (trigger) {
+                const normalizedTrigger = normalizeTranscript(trigger).toLowerCase();
+                if ((normalizedTrigger === 'استرس' || normalizedTrigger === 'stress') && /^(?:استرس دارم|نگرانم|اعصابم)$/.test(lower)) return false;
+                return exactTriggerMatch(lower, normalizedTrigger);
+            });
+        });
+        if (hasClinicalIntent) return false;
+
+        if (/^(?:اسم من چیه|منو چی صدا میکنی|من رو چی صدا میکنی)$/.test(lower)) {
+            const userName = (localStorage.getItem('userName') || '').trim();
+            showVoiceResult(userName
+                ? userName + '؛ اسمیه که برای خطاب کردنت ذخیره شده.'
+                : 'هنوز اسمت رو نمی‌دونم. می‌تونی از تنظیمات واردش کنی.', 'success');
+            return true;
+        }
+
         for (const pattern in SMALL_TALK) {
-            if (new RegExp(pattern, 'i').test(lower)) {
+            if (new RegExp('(?:^|\\s)(?:' + pattern + ')(?=$|\\s)', 'i').test(lower)) {
                 const replies = SMALL_TALK[pattern];
                 showVoiceResult(replies[Math.floor(Math.random() * replies.length)], 'success');
                 return true;
@@ -866,27 +920,6 @@
         }
         return false;
     }
-
-    // Generic warm filler for short, unrecognized chat-like messages.
-    // Deliberately the LAST resort, tried only after command scoring has
-    // already failed to match anything — previously this ran as part of
-    // trySmallTalk() BEFORE scoring, which meant any short command with no
-    // digits and no drug name (e.g. "پاک کن", "تم اقیانوس", "سوختگی
-    // بزرگسال") got swallowed by small talk before the real command
-    // scorer ever saw it. Real, specific commands always get first chance.
-    function tryGenericChatFiller(normalized, lower) {
-        const hasNumber = /\d/.test(normalized);
-        if (hasDrugMention(lower) || hasNumber) return false;
-        if (normalized.length === 0 || normalized.length >= 20) return false;
-        const generic = [
-            'مطمئنم می‌تونم کمک کنم! فقط بگو چطور 🦊',
-            'هر چی بگی، گوش‌هام باهاته 👂',
-            'بگو، چیکار می‌تونم برات انجام بدم؟ 😊'
-        ];
-        showVoiceResult(generic[Math.floor(Math.random() * generic.length)], 'success');
-        return true;
-    }
-
 
     // ============================================
     // MAIN ENTRY POINT
@@ -967,7 +1000,8 @@
             return;
         }
 
-        if ((lower.includes('no') || lower.includes('نه') || lower.includes('اشتباه')) && lastCommand) {
+        const isExplicitCancellation = /(?:^|\s)(?:no|نه|اشتباه|لغو)(?=$|\s)/i.test(lower);
+        if (isExplicitCancellation && lastCommand) {
             showVoiceResult('دستور قبلی لغو شد. لطفاً دوباره بگویید.', 'info');
             lastCommand = null;
             lastParams = null;
@@ -980,7 +1014,6 @@
 
         if (!best || best[1] < 0.55) {
             if (params.weight && params.height) { dispatchCommand('bmi', textWithDigits, params); return; }
-            if (tryGenericChatFiller(normalized, lower)) return;
             logUnrecognizedPhrase(text, normalized);
             showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
             return;
@@ -988,6 +1021,15 @@
 
         const second = sorted[1];
         if (second && best[1] < 2.5 && best[1] - second[1] < 0.20) {
+            const topPair = new Set([best[0], second[0]]);
+            if (topPair.has('convert') && topPair.has('electrolyte')) {
+                dispatchCommand(params.meq && params.electrolyte ? 'convert' : 'electrolyte', textWithDigits, params);
+                return;
+            }
+            if (topPair.has('ysite') && topPair.has('compat_tool')) {
+                dispatchCommand('ysite', textWithDigits, params);
+                return;
+            }
             const bodyMeasureTie = (best[0] === 'bmi' && second[0] === 'bsa') ||
                 (best[0] === 'bsa' && second[0] === 'bmi');
             logUnrecognizedPhrase(text, normalized);
@@ -1006,7 +1048,7 @@
     const CLINICAL_CONFIRM_COMMANDS = new Set([
         'drug', 'bmi', 'bsa', 'ibw', 'crcl', 'drip', 'convert',
         'electrolyte', 'percentage', 'unit_convert', 'temp_convert',
-        'weight_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse',
+        'weight_convert', 'pressure_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse',
         'burns', 'oxygen', 'vbg', 'ventilator', 'nutrition', 'ysite',
         'compat_tool'
     ]);
@@ -1017,7 +1059,7 @@
         drip: 'محاسبه سرعت قطره', convert: 'تبدیل الکترولیت',
         electrolyte: 'تبدیل الکترولیت', percentage: 'محاسبه غلظت درصدی',
         unit_convert: 'تبدیل واحد', temp_convert: 'تبدیل دما',
-        weight_convert: 'تبدیل وزن', dose_calc: 'محاسبه دوز',
+        weight_convert: 'تبدیل وزن', pressure_convert: 'تبدیل فشار', dose_calc: 'محاسبه دوز',
         gcs: 'محاسبه GCS', rass: 'ثبت RASS', braden: 'محاسبه Braden',
         morse: 'محاسبه Morse', burns: 'محاسبه درصد سوختگی', oxygen: 'محاسبه مدت اکسیژن',
         vbg: 'تفسیر گاز خون', ventilator: 'محاسبه ونتیلاتور',
@@ -1043,6 +1085,7 @@
         unit_convert: { tab: 'tools', accordion: 'unitAccordionItem' },
         temp_convert: { tab: 'tools', accordion: 'tempAccordionItem' },
         weight_convert: { tab: 'tools', accordion: 'weightAccordionItem' },
+        pressure_convert: { tab: 'tools', accordion: 'pressureAccordionItem' },
         gcs: { tab: 'tools', accordion: 'gcsAccordionItem' },
         rass: { tab: 'tools', accordion: 'rassAccordionItem' },
         braden: { tab: 'tools', accordion: 'bradenAccordionItem' },
@@ -1213,6 +1256,13 @@
                     openAccordionForTool('weightResult', 'weightAccordionItem');
                 }, 300);
                 showVoiceResult('تبدیل وزن انجام شد', 'success');
+                break;
+            case 'pressure_convert':
+                switchTab('tools');
+                setTimeout(function () {
+                    openAccordionForTool('pressureResult', 'pressureAccordionItem');
+                }, 300);
+                showVoiceResult('مبدل فشار باز شد؛ مقدار را در یکی از واحدها وارد کنید.', 'success');
                 break;
             case 'dose_calc':
                 // NOTE: this command previously called populateDoseCalcFromDrug()
