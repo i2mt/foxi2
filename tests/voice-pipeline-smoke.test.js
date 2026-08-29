@@ -34,7 +34,8 @@ function testCommandRouting() {
     const elements = {
         bmiWeight: { value: '' },
         bmiHeight: { value: '' },
-        bmiResult: { textContent: '18.9' }
+        bmiResult: { textContent: '18.9' },
+        settingsModal: { classList: { add(value) { events.push({ kind: 'settings-class', value }); } } }
     };
     const window = {
         VoiceUI: {
@@ -77,9 +78,11 @@ function testCommandRouting() {
         RegExp,
         localStorage: storage,
         document: {
+            body: { classList: { add() {} } },
             getElementById(id) { return elements[id] || null; },
             querySelectorAll() { return []; }
         },
+        DOM: { settingsModal: elements.settingsModal },
         PersianNumbers: { toLatin: toLatinDigits },
         drugDatabase,
         AppState: { settings: {} },
@@ -150,6 +153,12 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('هموزیان هپاری')),
         'heparin recovery must preserve the exact transcript');
 
+    result = run('من فزیون هپاری');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'latest observed split heparin substitution should route to the drug calculator');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('من فزیون هپاری')),
+        'split heparin recovery must preserve the exact transcript');
+
     result = run('چندفزیان انسولین رگو');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'observed clipped regular-insulin infusion transcript should route to the drug calculator');
@@ -159,6 +168,14 @@ function testCommandRouting() {
     result = run('انفوزیون انسولین رگووللا');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'observed regular-insulin qualifier should route to the drug calculator');
+
+    result = run('امفزیان انسولین رگولایژ');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'latest observed regular-insulin substitutions should route to the drug calculator');
+
+    result = run('تنظیماتو باز کن');
+    assert(result.some(e => e.kind === 'result' && e.message.includes('تنظیمات باز شد')),
+        'colloquial settings request should open Settings directly');
 
     result = run('یه مای برای مریضی که قدش صد و هفتاد و دو و وزنش پنجاه و شش کیلوه');
     const colloquialBmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
@@ -271,14 +288,26 @@ function testDeploymentWiring() {
         'the obsolete Vosk archive must not be shipped in the Pages site');
     assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8_f2b9251'),
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
-    assert(serviceWorker.includes('koochik-worker.js?v=33'),
-        'service worker must precache the v33 worker URL');
-    assert(read('koochik-asr.js').includes("koochik-worker.js?v=33"),
-        'voice adapter must instantiate the v33 worker URL');
-    assert(index.includes('service-worker.js?v=33'),
-        'page must register the v33 service worker');
+    assert(serviceWorker.includes('koochik-worker.js?v=34'),
+        'service worker must precache the v34 Rizeh worker URL');
+    assert(serviceWorker.includes('whisper-worker.js?v=34') && serviceWorker.includes('whisper-asr.js?v=34'),
+        'service worker must precache the Whisper adapter and worker shell');
+    assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
+        'voice adapter must instantiate the v34 Rizeh worker URL');
+    assert(read('whisper-asr.js').includes("whisper-worker.js?v=34"),
+        'Whisper adapter must instantiate the v34 module worker URL');
+    assert(index.includes('service-worker.js?v=34'),
+        'page must register the v34 service worker');
+    assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
+        'Settings must expose explicit Auto, Whisper and Rizeh choices');
+    assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
+        'visiting the assistant tab must not start a large Whisper download');
     assert(!script.includes('VoiceEngine.releaseModel'),
         'tab changes must keep the loaded voice model warm');
+    assert(voiceEngine.includes("emit('decoding'") && voiceUi.includes("VoiceEngine.on('decoding'"),
+        'engine and UI must expose the listening-to-decoding lifecycle transition');
+    assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
+        'a stale result timer must never reset an active microphone to idle');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
         'offline failures must expose an explicit online retry');
     assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود'),
@@ -312,7 +341,7 @@ function testDeploymentWiring() {
         'profile name must remain device-local');
     assert(script.includes('سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است'),
         'Y-site matrix must disclose context dependence and require verification');
-    assert(index.includes('calculation-core.js?v=33') && serviceWorker.includes('calculation-core.js?v=33'),
+    assert(index.includes('calculation-core.js?v=34') && serviceWorker.includes('calculation-core.js?v=34'),
         'tested calculation core must be loaded and cached');
 }
 

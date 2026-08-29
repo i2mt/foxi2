@@ -1,8 +1,9 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Primary backend on all devices: Shenava Rizeh v1.0 32M non-streaming
-   INT8 NeMo CTC through the official sherpa-onnx WebAssembly runtime.
+   Adaptive on-device backends: Whisper Base/Tiny through WebGPU on capable
+   devices, with Shenava Rizeh v1.0 INT8 through sherpa-onnx WebAssembly as
+   the lightweight and universal fallback.
 
    sherpa-onnx owns feature extraction, offline inference, CTC decoding,
    and Silero endpoint detection. Audio is fed
@@ -174,6 +175,16 @@
                 code: 'koochik-runtime',
                 title: 'خطا در تشخیص گفتار آفلاین',
                 message: 'مشکلی در پردازش صدا رخ داد. دوباره تلاش کنید یا دستور را تایپ کنید.'
+            },
+            'whisper-model-failed': {
+                code: 'whisper-model-failed',
+                title: 'مدل Whisper آماده نشد',
+                message: 'این دستگاه نتوانست مدل دقیق‌تر را اجرا کند. موتور سبک Rizeh به‌طور خودکار امتحان می‌شود.'
+            },
+            'whisper-runtime': {
+                code: 'whisper-runtime',
+                title: 'خطا در پردازش Whisper',
+                message: 'پردازش مدل دقیق‌تر کامل نشد. لطفاً دوباره تلاش کنید یا موتور Rizeh را از تنظیمات انتخاب کنید.'
             }
         };
         return map[rawCode] || {
@@ -217,6 +228,12 @@
     let koochikLoadAbortController = null;
     let koochikLoadGeneration = 0;
     let triedKoochikFallback = false; // reset at the start of each fresh start() call
+    let activeCaptureEngine = null;
+    let activeCaptureBackend = 'rizeh';
+    let whisperEngine = null;
+    let whisperEngineModel = '';
+    let whisperEngineLoadPromise = null;
+    let whisperLoadAbortController = null;
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -499,7 +516,15 @@
         const generation = ++koochikLoadGeneration;
         const controller = new AbortController();
         koochikLoadAbortController = controller;
-        emit('model-loading');
+        // Never keep both large local runtimes resident. Switching engines is
+        // uncommon and explicit; ordinary tab changes keep the chosen model.
+        if (whisperEngine || whisperEngineLoadPromise) {
+            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
+            whisperEngine = null;
+            whisperEngineModel = '';
+            whisperEngineLoadPromise = null;
+        }
+        emit('model-loading', { engine: 'rizeh', model: 'rizeh' });
 
         const loadChain = window.KoochikASR
             ? window.KoochikASR.load({
@@ -530,7 +555,7 @@
                 }
                 koochikEngine = engine;
                 koochikFailInfo = null;
-                emit('model-ready');
+                emit('model-ready', { engine: 'rizeh', model: 'rizeh', awaitingMicrophone: koochikLoading });
                 return engine;
             })
             .catch(function (err) {
@@ -558,7 +583,54 @@
         return promise;
     }
 
-    function startKoochik() {
+    function ensureWhisperEngine(model) {
+        model = model === 'tiny' ? 'tiny' : 'base';
+        if (whisperEngine && whisperEngineModel === model) return Promise.resolve(whisperEngine);
+        if (whisperEngineLoadPromise && whisperEngineModel === model) return whisperEngineLoadPromise;
+
+        if (koochikEngine) {
+            try { koochikEngine.destroy && koochikEngine.destroy(); } catch (e) {}
+            koochikEngine = null;
+            koochikEngineLoadPromise = null;
+        }
+        if (whisperEngine || whisperEngineLoadPromise) {
+            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
+            whisperEngine = null;
+            whisperEngineLoadPromise = null;
+        }
+
+        whisperEngineModel = model;
+        const controller = new AbortController();
+        whisperLoadAbortController = controller;
+        emit('model-loading', { engine: 'whisper', model: model });
+
+        const promise = window.WhisperASR
+            ? window.WhisperASR.load({ model: model, signal: controller.signal }, function (progress) {
+                emit('model-progress', Object.assign({ engine: 'whisper', model: model }, progress || {}));
+            })
+            : Promise.reject(new Error('whisper-library-missing'));
+
+        whisperEngineLoadPromise = promise.then(function (engine) {
+            if (controller.signal.aborted) {
+                try { engine.destroy && engine.destroy(); } catch (e) {}
+                throw new DOMException('Whisper load cancelled', 'AbortError');
+            }
+            whisperEngine = engine;
+            whisperEngineLoadPromise = null;
+            whisperLoadAbortController = null;
+            emit('model-ready', { engine: 'whisper', model: model, awaitingMicrophone: koochikLoading });
+            return engine;
+        }).catch(function (error) {
+            whisperEngineLoadPromise = null;
+            whisperLoadAbortController = null;
+            whisperEngine = null;
+            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
+            throw error;
+        });
+        return whisperEngineLoadPromise;
+    }
+
+    function startKoochik(requestedBackend) {
         if (koochikActive || koochikLoading) return;
         if (!koochikConfigured()) {
             // Silent — getSupportInfo() already steered the UI toward the
@@ -570,6 +642,8 @@
 
         koochikLoading = true;
         koochikCancelRequested = false;
+        requestedBackend = requestedBackend || 'rizeh';
+        const requestedWhisperModel = requestedBackend === 'whisper-tiny' ? 'tiny' : 'base';
 
         // Create/resume Web Audio while we are still inside the user's mic
         // button gesture. Safari/iOS can keep a context suspended if it is
@@ -596,8 +670,14 @@
             return;
         }
 
-        ensureKoochikEngine().then(function (engine) {
+        const enginePromise = requestedBackend.indexOf('whisper-') === 0
+            ? ensureWhisperEngine(requestedWhisperModel)
+            : ensureKoochikEngine();
+
+        enginePromise.then(function (engine) {
             if (koochikCancelRequested) { koochikLoading = false; return; }
+            activeCaptureEngine = engine;
+            activeCaptureBackend = requestedBackend;
             engine.reset();
             koochikLastEmitted = '';
             koochikStopping = false;
@@ -693,8 +773,9 @@
                         // on a flood of error events, not a real hang).
                         // Log once, stop cleanly, and don't let it repeat.
                         if (!koochikStopping) {
-                            console.error('[KoochikASR] onaudioprocess failed:', e);
-                            emit('error', withOnlineFallback(classifyError('koochik-runtime')));
+                            const whisperActive = activeCaptureBackend.indexOf('whisper-') === 0;
+                            console.error('[' + (whisperActive ? 'WhisperASR' : 'KoochikASR') + '] onaudioprocess failed:', e);
+                            emit('error', withOnlineFallback(classifyError(whisperActive ? 'whisper-runtime' : 'koochik-runtime')));
                             stopKoochik();
                         }
                     }
@@ -723,6 +804,17 @@
             if (!koochikActive && koochikAudioCtx) {
                 try { koochikAudioCtx.close(); } catch (e) {}
                 koochikAudioCtx = null;
+            }
+            if (koochikCancelRequested || (info && info.name === 'AbortError')) return;
+            // WebGPU availability, browser allocation limits, or a first-use
+            // model download can fail. This happens before the microphone is
+            // opened, so switching to Rizeh is safe and loses no speech.
+            if (requestedBackend.indexOf('whisper-') === 0 && !koochikCancelRequested) {
+                console.warn('[WhisperASR] unavailable; falling back to Rizeh:', info);
+                activeCaptureEngine = null;
+                activeCaptureBackend = 'rizeh';
+                startKoochik('rizeh');
+                return;
             }
             emit('error', withOnlineFallback(info && info.code ? info : classifyError('koochik-model-failed')));
         });
@@ -843,18 +935,28 @@
             }
             koochikLoadAbortController = null;
             koochikEngineLoadPromise = null;
+            if (whisperLoadAbortController) {
+                try { whisperLoadAbortController.abort(); } catch (e) {}
+            }
+            whisperLoadAbortController = null;
+            whisperEngineLoadPromise = null;
             koochikLoading = false;
+            emit('model-ready', { cancelled: true });
             return;
         }
         if (!koochikActive) return;
         koochikStopping = true;
         stopKoochikCapture();
+        // Capture is now genuinely closed; inference may still take several
+        // seconds. Publishing this transition prevents the UI from looking
+        // idle while work is continuing, or listening after the mic closed.
+        emit('decoding', { engine: activeCaptureBackend });
         if (koochikSilenceWatchdog) { clearTimeout(koochikSilenceWatchdog); koochikSilenceWatchdog = null; }
         if (koochikPartialTimer) { clearTimeout(koochikPartialTimer); koochikPartialTimer = null; }
         // Run one last decode over whatever was captured before tearing
         // down, so a manual stop mid-sentence doesn't just throw the
         // words away — ensures a manual stop still flushes the online stream.
-        const engine = koochikEngine;
+        const engine = activeCaptureEngine;
         if (engine && engine.bufferedSeconds() > 0.15) {
             koochikStopTimer = setTimeout(finishKoochik, 30000);
 
@@ -876,7 +978,7 @@
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 const decodedFinal = (text || '').trim();
                 const finalText = decodedFinal || lastGoodPartial;
-                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(decodedFinal),
+                console.log('[' + (activeCaptureBackend.indexOf('whisper-') === 0 ? 'WhisperASR' : 'KoochikASR') + '] FINAL decode result:', JSON.stringify(decodedFinal),
                     '| fallback=', JSON.stringify(lastGoodPartial),
                     '| emitted=', JSON.stringify(finalText),
                     '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
@@ -885,7 +987,7 @@
             }).catch(function (err) {
                 console.error('[KoochikASR] final decode failed:', err);
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
-                emit('error', withOnlineFallback(classifyError('koochik-runtime')));
+                emit('error', withOnlineFallback(classifyError(activeCaptureBackend.indexOf('whisper-') === 0 ? 'whisper-runtime' : 'koochik-runtime')));
                 finishKoochik();
             });
         } else {
@@ -902,7 +1004,8 @@
         koochikDecodeInFlight = false;
         koochikDecodePromise = null;
         stopKoochikCapture();
-        if (koochikEngine) { try { koochikEngine.reset(); } catch (e) {} }
+        if (activeCaptureEngine) { try { activeCaptureEngine.reset(); } catch (e) {} }
+        activeCaptureEngine = null;
         if (wasActive) emit('end');
     }
 
@@ -910,15 +1013,24 @@
     // UNIFIED DISPATCHER
     // ============================================
     function pickBackend() {
-        // Koochik is intentionally the default backend on every device.
-        // It runs locally in the browser through sherpa-onnx WebAssembly.
-        return koochikConfigured() ? 'koochik' : 'webspeech';
+        if (!koochikConfigured()) return 'webspeech';
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem('appSettings') || '{}'); } catch (e) {}
+        const policy = window.VoiceEnginePolicy;
+        if (!policy || typeof policy.choose !== 'function') return 'rizeh';
+        return policy.choose({
+            mode: saved.voiceRecognitionMode || 'auto',
+            lowPower: !!saved.lowPowerMode,
+            hasWebGPU: !!(navigator.gpu && navigator.gpu.requestAdapter),
+            deviceMemory: navigator.deviceMemory
+        });
     }
 
     function start() {
         if (active || koochikActive || koochikLoading) return;
         triedKoochikFallback = false;
-        if (pickBackend() === 'koochik') startKoochik(); else startWebSpeech();
+        const backend = pickBackend();
+        if (backend === 'webspeech') startWebSpeech(); else startKoochik(backend);
     }
 
     function startOnline() {
@@ -938,7 +1050,7 @@
         // say "webspeech", so stopping the wrong one would leave it running.
         if (koochikActive || koochikLoading) { stopKoochik(); return; }
         if (active) { stopWebSpeech(); return; }
-        if (pickBackend() === 'koochik') stopKoochik(); else stopWebSpeech();
+        if (pickBackend() !== 'webspeech') stopKoochik(); else stopWebSpeech();
     }
 
     // Stop listening if the app is backgrounded/locked — prevents a
@@ -968,6 +1080,12 @@
         startOnline: startOnline,
         stop: stop,
         isActive: function () { return active || koochikActive || koochikLoading; },
+        getLifecycleState: function () {
+            if (koochikStopping) return 'decoding';
+            if (active || koochikActive) return 'listening';
+            if (koochikLoading) return 'loading';
+            return 'idle';
+        },
         on: on,
         openInSafari: function () {
             // Standalone PWAs on iOS have no tabs/windows of their own, so
@@ -1001,6 +1119,9 @@
         // can await/race it directly.
         preload: function () {
             if (!koochikConfigured()) return Promise.resolve();
+            // Whisper downloads are intentionally never started merely by
+            // visiting the tab. They begin only after a microphone tap.
+            if (pickBackend() !== 'rizeh') return Promise.resolve();
             return ensureKoochikEngine().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
         // Abort an opportunistic model load/download. Cancellation stops FoxiMed from adopting the result. The large .data
@@ -1015,6 +1136,11 @@
             }
             koochikLoadAbortController = null;
             koochikEngineLoadPromise = null;
+            if (whisperLoadAbortController) {
+                try { whisperLoadAbortController.abort(); } catch (e) {}
+            }
+            whisperLoadAbortController = null;
+            whisperEngineLoadPromise = null;
         },
         // Cheap, fast check for whether the model FILE is already sitting
         // in the Cache API from a previous session — this is NOT the same
@@ -1032,6 +1158,24 @@
             // so would create a large memory spike), and HTTP cache entries
             // are not queryable from page JS. Keep startup warmup on-demand.
             return Promise.resolve(false);
+        },
+        getSelectedBackend: pickBackend,
+        preferenceChanged: function () {
+            if (active || koochikActive || koochikLoading) return;
+            const next = pickBackend();
+            // A deliberate Settings change may release a now-unused model.
+            // Merely switching tabs never calls this, so the active choice
+            // remains warm when the user moves around the app.
+            if (next === 'rizeh' && (whisperEngine || whisperEngineLoadPromise)) {
+                try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
+                whisperEngine = null;
+                whisperEngineModel = '';
+                whisperEngineLoadPromise = null;
+            } else if (next.indexOf('whisper-') === 0 && koochikEngine) {
+                try { koochikEngine.destroy && koochikEngine.destroy(); } catch (e) {}
+                koochikEngine = null;
+                koochikEngineLoadPromise = null;
+            }
         }
     };
 

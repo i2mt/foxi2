@@ -99,6 +99,10 @@
         setOrbState(type === 'error' ? 'error' : 'success');
         speak(message);
         resultClearTimer = setTimeout(function () {
+            // A result from the previous command may expire while a new
+            // recording is already in progress. Never let that stale timer
+            // visually reset an active microphone to idle.
+            if (window.VoiceEngine && window.VoiceEngine.isActive()) return;
             els.result.style.display = 'none';
             setOrbState('idle');
             setStatus('روباه را لمس کنید یا دستور را تایپ کنید');
@@ -422,20 +426,30 @@
 
     function wireVoiceEngineEvents() {
         if (!window.VoiceEngine) return;
+        let finalReceived = false;
         window.VoiceEngine.on('start', function () {
+            clearTimeout(resultClearTimer);
+            finalReceived = false;
             setOrbState('listening');
             setStatus('گوش می‌کنم...', 'recording');
             setTranscript('', false);
             if (els.result) els.result.style.display = 'none';
             if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
         });
-        window.VoiceEngine.on('model-loading', function () {
+        let loadingModelInfo = { engine: 'rizeh', model: 'rizeh' };
+        window.VoiceEngine.on('model-loading', function (info) {
+            clearTimeout(resultClearTimer);
+            loadingModelInfo = info || { engine: 'rizeh', model: 'rizeh' };
             setOrbState('loading-model');
             setStatus('آماده‌سازی موتور آفلاین...', 'processing');
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
                 if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
-                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
+                if (els.modelProgressLabel) {
+                    els.modelProgressLabel.textContent = loadingModelInfo.engine === 'whisper'
+                        ? 'در حال آماده‌سازی Whisper ' + (loadingModelInfo.model === 'base' ? 'Base' : 'Tiny') + ' روی دستگاه...'
+                        : 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
+                }
             }
         });
         window.VoiceEngine.on('model-progress', function (p) {
@@ -455,20 +469,30 @@
             }
             els.modelProgressFill.classList.remove('is-indeterminate');
             els.modelProgressFill.style.width = Math.max(2, p.percent) + '%';
-            if (els.modelProgressLabel) els.modelProgressLabel.textContent = p.percent + '٪ دانلود شده';
+            if (els.modelProgressLabel) els.modelProgressLabel.textContent = p.percent + '٪ از فایل فعلی دانلود شده';
         });
-        window.VoiceEngine.on('model-ready', function () {
+        window.VoiceEngine.on('model-ready', function (info) {
             if (els.modelProgress) els.modelProgress.style.display = 'none';
             if (els.orbContainer && els.orbContainer.classList.contains('is-loading-model')) {
-                setOrbState('idle');
-                setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
+                if (info && info.awaitingMicrophone) {
+                    setStatus('در حال فعال‌سازی میکروفون...', 'processing');
+                } else {
+                    setOrbState('idle');
+                    setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
+                }
             }
         });
         window.VoiceEngine.on('interim', function (text) {
             setTranscript(text, true);
         });
         window.VoiceEngine.on('final', function (text) {
+            finalReceived = true;
             handleTranscript(text, 'voice');
+        });
+        window.VoiceEngine.on('decoding', function () {
+            setOrbState('processing');
+            setStatus('در حال تبدیل صدا به متن...', 'processing');
+            setTranscript('صدا دریافت شد', true);
         });
         window.VoiceEngine.on('audio', onAudioData);
         window.VoiceEngine.on('end', function () {
@@ -476,7 +500,10 @@
             if (els.orbContainer) els.orbContainer.style.setProperty('--audio-level', '0.15');
             // Only fall back to idle if we're not mid-processing/result.
             const cur = els.orbContainer && els.orbContainer.classList;
-            if (cur && !cur.contains('is-processing') && !cur.contains('is-success') && !cur.contains('is-error')) {
+            if (!finalReceived && cur && cur.contains('is-processing')) {
+                setOrbState('idle');
+                setStatus('چیزی متوجه نشدم؛ دوباره لمس کنید', 'error');
+            } else if (cur && !cur.contains('is-processing') && !cur.contains('is-success') && !cur.contains('is-error')) {
                 setOrbState('idle');
                 setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
             }
