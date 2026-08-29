@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.30';
+const APP_VERSION = '5.0.31';
 
 const CHANGELOG = {
+    '5.0.31': [
+        'Whisper Base و Tiny آفلاین برای گوشی‌های سازگار با WebGPU',
+        'انتخاب خودکار موتور صدا بر اساس توان دستگاه با بازگشت امن به Rizeh',
+        'امکان انتخاب دستی موتور تشخیص گفتار از تنظیمات'
+    ],
     '5.0.30': [
         'پوشش گفتار طبیعی برای همه ابزارهای بالینی و مبدل فشار',
         'گفت‌وگوی دوستانه دقیق‌تر و جلوگیری از پاسخ ساختگی به فرمان ناشناخته',
@@ -217,6 +222,7 @@ const AppState = {
         voiceOutput: false,
         lowPowerMode: false,
         lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
+        voiceRecognitionMode: 'auto',
         voiceLogAutoTelegram: false // off by default — see voice-commands.js: automatic sending is a different privacy posture than the manual-export design, so it only runs once explicitly turned on
     },
     reverseMode: false
@@ -1173,6 +1179,9 @@ function loadSettings() {
     if (DOM.hapticToggle) DOM.hapticToggle.checked = AppState.settings.hapticFeedback !== false;
     const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
     if (voiceLogAutoTelegramToggle) voiceLogAutoTelegramToggle.checked = !!AppState.settings.voiceLogAutoTelegram;
+    const voiceRecognitionModeSelect = document.getElementById('voiceRecognitionModeSelect');
+    if (voiceRecognitionModeSelect) voiceRecognitionModeSelect.value = AppState.settings.voiceRecognitionMode || 'auto';
+    updateVoiceRecognitionModeNote();
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
@@ -1180,6 +1189,35 @@ function loadSettings() {
 
 function saveSettings() {
     localStorage.setItem('appSettings', JSON.stringify(AppState.settings));
+}
+
+function updateVoiceRecognitionModeNote() {
+    const note = document.getElementById('voiceRecognitionModeNote');
+    if (!note) return;
+    const selected = (AppState.settings && AppState.settings.voiceRecognitionMode) || 'auto';
+    const hasWebGPU = !!(navigator.gpu && navigator.gpu.requestAdapter);
+    const memory = Number(navigator.deviceMemory);
+    let effective = 'rizeh';
+    if (window.VoiceEngine && typeof window.VoiceEngine.getSelectedBackend === 'function') {
+        effective = window.VoiceEngine.getSelectedBackend();
+    }
+    const names = { 'whisper-base': 'Whisper Base', 'whisper-tiny': 'Whisper Tiny', rizeh: 'Rizeh' };
+    if ((selected === 'whisper-base' || selected === 'whisper-tiny') && !hasWebGPU) {
+        note.textContent = 'WebGPU روی این مرورگر در دسترس نیست؛ Rizeh به‌طور خودکار استفاده می‌شود.';
+        return;
+    }
+    if (selected === 'auto') {
+        const memoryText = Number.isFinite(memory) && memory > 0 ? ' · RAM گزارش‌شده: ' + memory + ' GB' : '';
+        note.textContent = 'انتخاب فعلی این دستگاه: ' + (names[effective] || 'Rizeh') + memoryText;
+        return;
+    }
+    if (selected === 'whisper-base' && Number.isFinite(memory) && memory > 0 && memory < 6) {
+        note.textContent = 'Base قابل امتحان است، اما انتخاب خودکار روی این دستگاه Tiny را امن‌تر می‌داند.';
+        return;
+    }
+    note.textContent = selected === 'rizeh'
+        ? 'سبک‌ترین گزینه؛ مناسب گوشی‌های قدیمی‌تر و کم‌حافظه.'
+        : 'صدا روی گوشی پردازش می‌شود؛ بار اول بسته مدل از اینترنت دانلود خواهد شد.';
 }
 
 function applySettings() {
@@ -2074,6 +2112,18 @@ function setupSettingsEventListeners() {
         voiceLogAutoTelegramToggle.addEventListener('change', function() {
             AppState.settings.voiceLogAutoTelegram = this.checked;
             saveSettings();
+        });
+    }
+
+    const voiceRecognitionModeSelect = document.getElementById('voiceRecognitionModeSelect');
+    if (voiceRecognitionModeSelect) {
+        voiceRecognitionModeSelect.addEventListener('change', function () {
+            AppState.settings.voiceRecognitionMode = this.value;
+            saveSettings();
+            if (window.VoiceEngine && typeof window.VoiceEngine.preferenceChanged === 'function') {
+                window.VoiceEngine.preferenceChanged();
+            }
+            updateVoiceRecognitionModeNote();
         });
     }
 

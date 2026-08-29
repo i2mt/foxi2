@@ -7479,6 +7479,43 @@ html {
     font-family: var(--font-persian);
 }
 
+.voice-engine-setting {
+    display: grid;
+    gap: 7px;
+    padding: 4px 0 10px;
+}
+
+.voice-engine-setting > label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.voice-engine-select {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+    font-family: var(--font-persian);
+    font-size: 12px;
+    direction: rtl;
+}
+
+.voice-privacy-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.voice-privacy-hint i {
+    margin-top: 4px;
+    color: var(--success);
+}
+
 .settings-btn-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
