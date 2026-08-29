@@ -72,14 +72,15 @@
         // fragments would be unsafe. Drug commands still require the user
         // to confirm the original, unmodified transcript before execution.
         result = result
-            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان|امفزیان)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)من\s+فزیون(?=\s|$)/g, '$1انفوزیون')
             .replace(/(^|\s)(?:هپار|هپاری)(?=\s|$)/g, '$1هپارین');
 
         if (/(?:^|\s)یه\s+مای(?=\s|$)/.test(result) && /(?:قد|وزن)/.test(result)) {
             result = result.replace(/(^|\s)یه\s+مای(?=\s|$)/g, '$1bmi');
         }
         if (result.includes('انسولین')) {
-            result = result.replace(/(^|\s)رگووللا(?=\s|$)/g, '$1رگولار');
+            result = result.replace(/(^|\s)(?:رگووللا|رگولایژ)(?=\s|$)/g, '$1رگولار');
         }
         return result.replace(/\s+/g, ' ').trim();
     }
@@ -468,7 +469,7 @@
         compat_tool: { triggers: ['سازگاری دارو', 'compatibility', 'تداخل دارویی', 'داروها', 'drug compatibility', 'سازگاری y-site', 'y-site', 'مخلوط داروها'], scoreWeight: 0.9 },
         ysite: { triggers: ['ysite', 'y-site', 'سازگاری', 'تداخل', 'mix', 'مخلوط', 'همزمان', 'تزریق همزمان', 'همزمان وصل کنم', 'داخل یک سرم', 'میشه با هم زد', 'y-site compatibility'], scoreWeight: 0.8 },
 
-        settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
+        settings: { triggers: ['dark mode', 'light mode', 'تاریک', 'روشن', 'دارک', 'لایت', 'large font', 'small font', 'فونت بزرگ', 'فونت کوچک', 'تم تاریک', 'تم روشن', 'تنظیمات', 'تنظیماتو', 'تنظیمات رو باز کن', 'settings', 'حالت شب', 'حالت روز'], scoreWeight: 0.7 },
         theme: { triggers: ['فاکس', 'fox', 'روباه', 'اقیانوس', 'ocean', 'رز', 'rose', 'جنگل', 'forest', 'پیش فرض', 'default', 'تم فاکس', 'تم اقیانوس', 'تم رز', 'تم جنگل', 'theme fox', 'theme ocean', 'theme rose', 'theme forest', 'dreamfire', 'تم شرابی', 'theme dreamfire', 'هدو', 'سایرن', 'لینکس', 'ویکسن', 'شرابی', 'زرشکی', 'گیلاسی'], scoreWeight: 0.9 },
 
         help: { triggers: ['help', 'راهنما', 'کمک', 'راهنمایی', 'نمونه', 'example', 'چه کارایی', 'چطور کار کنم', 'راهنمای صوتی', 'چه کار کنم'], scoreWeight: 0.6 }
