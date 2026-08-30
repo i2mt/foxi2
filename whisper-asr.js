@@ -9,7 +9,7 @@
     'use strict';
 
     const SAMPLE_RATE = 16000;
-    const WORKER_URL = './whisper-worker.js?v=34';
+    const WORKER_URL = './whisper-worker.js?v=35';
     const LOAD_TIMEOUT_MS = 15 * 60 * 1000;
     const ENERGY_FRAME_SAMPLES = 320;
     const START_RMS = 0.015;
@@ -83,8 +83,21 @@
                         settled = true;
                         clearTimeout(timer);
                         if (signal) signal.removeEventListener('abort', abort);
+                        console.log('[WhisperASR] model ready:', model);
                         resolve();
                     }
+                    return;
+                }
+                // A load-time worker error has no transcription requestId.
+                // Previously it fell through to the pending-transcription
+                // map, found no entry, and left this promise spinning until
+                // the 15-minute timeout. Reject the model load immediately.
+                if (msg.type === 'error' && !settled) {
+                    settled = true;
+                    clearTimeout(timer);
+                    if (signal) signal.removeEventListener('abort', abort);
+                    const loadError = new Error(msg.message || 'whisper-model-load-failed');
+                    reject(loadError);
                     return;
                 }
                 if (msg.type === 'result' || msg.type === 'error') {
@@ -106,6 +119,7 @@
             };
             created.postMessage({ type: 'load', model: model });
         }).catch(function (error) {
+            console.error('[WhisperASR] model initialization failed:', error);
             if (worker === created) shutdown(error);
             throw error;
         });

@@ -406,6 +406,14 @@
     // ============================================
     function onMicClick() {
         if (!window.VoiceEngine) return;
+        if (window.VoiceEngine.getLifecycleState && window.VoiceEngine.getLifecycleState() === 'loading') {
+            setOrbState('loading-model');
+            setStatus('مدل هنوز در حال آماده‌سازی است؛ لطفاً منتظر بمانید...', 'processing');
+            if (els.modelProgressLabel && !els.modelProgressLabel.textContent) {
+                els.modelProgressLabel.textContent = 'بارگذاری بار اول ممکن است چند دقیقه طول بکشد؛ دوباره لمس نکنید.';
+            }
+            return;
+        }
         if (window.VoiceEngine.isActive()) {
             window.VoiceEngine.stop();
         } else {
@@ -444,16 +452,46 @@
             setStatus('آماده‌سازی موتور آفلاین...', 'processing');
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
-                if (els.modelProgressFill) els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressFill) {
+                    els.modelProgressFill.style.width = '0%';
+                    els.modelProgressFill.classList.add('is-indeterminate');
+                }
                 if (els.modelProgressLabel) {
                     els.modelProgressLabel.textContent = loadingModelInfo.engine === 'whisper'
-                        ? 'در حال آماده‌سازی Whisper ' + (loadingModelInfo.model === 'base' ? 'Base' : 'Tiny') + ' روی دستگاه...'
+                        ? 'در حال آماده‌سازی Whisper ' + (loadingModelInfo.model === 'base' ? 'Base (حدود ۲۱۰ مگابایت)' : 'Tiny (حدود ۱۰۰ مگابایت)') + '؛ بار اول چند دقیقه منتظر بمانید...'
                         : 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
                 }
             }
         });
         window.VoiceEngine.on('model-progress', function (p) {
             if (!els.modelProgressFill) return;
+            if (p.status === 'initialized') {
+                els.modelProgressFill.classList.remove('is-indeterminate');
+                els.modelProgressFill.style.width = '100%';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'مدل آماده شد؛ در حال فعال‌سازی میکروفون...';
+                return;
+            }
+            if (p.phase === 'initializing' || p.status === 'initializing') {
+                els.modelProgressFill.classList.remove('is-indeterminate');
+                els.modelProgressFill.style.width = '100%';
+                if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'دانلود کامل شد؛ در حال راه‌اندازی مدل روی دستگاه...';
+                return;
+            }
+            const overall = Number(p.overallPercent);
+            if (Number.isFinite(overall)) {
+                const percent = Math.max(0, Math.min(100, Math.round(overall)));
+                els.modelProgressFill.classList.remove('is-indeterminate');
+                els.modelProgressFill.style.width = percent + '%';
+                if (els.modelProgressLabel) {
+                    const doneBytes = Number(p.overallLoaded);
+                    const totalBytes = Number(p.overallTotal);
+                    const sizeText = Number.isFinite(doneBytes) && Number.isFinite(totalBytes) && totalBytes > 0
+                        ? ' · ' + (doneBytes / 1000000).toFixed(1) + ' از ' + (totalBytes / 1000000).toFixed(1) + ' مگابایت'
+                        : '';
+                    els.modelProgressLabel.textContent = percent + '٪ دانلود کلی' + sizeText;
+                }
+                return;
+            }
             if (p.fromCache) {
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = '100%';
@@ -468,8 +506,9 @@
                 return;
             }
             els.modelProgressFill.classList.remove('is-indeterminate');
-            els.modelProgressFill.style.width = Math.max(2, p.percent) + '%';
-            if (els.modelProgressLabel) els.modelProgressLabel.textContent = p.percent + '٪ از فایل فعلی دانلود شده';
+            const filePercent = Math.max(0, Math.min(100, Math.round(Number(p.percent) || 0)));
+            els.modelProgressFill.style.width = filePercent + '%';
+            if (els.modelProgressLabel) els.modelProgressLabel.textContent = filePercent + '٪ دانلود شده';
         });
         window.VoiceEngine.on('model-ready', function (info) {
             if (els.modelProgress) els.modelProgress.style.display = 'none';

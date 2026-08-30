@@ -33,9 +33,10 @@
     if (m) {
       const loaded = Number(m[1]);
       const total = Number(m[2]);
-      onProgress({ loaded, total, percent: total > 0 ? Math.max(0, Math.min(100, loaded * 100 / total)) : 0, status: 'download' });
+      const percent = total > 0 ? Math.round(Math.max(0, Math.min(100, loaded * 100 / total))) : 0;
+      onProgress({ loaded, total, percent, overallLoaded: loaded, overallTotal: total, overallPercent: percent, phase: 'download', status: 'download' });
     } else if (/Running\.\.\./i.test(status)) {
-      onProgress({ percent: 100, status: 'initializing' });
+      onProgress({ percent: 100, overallPercent: 100, phase: 'initializing', status: 'initializing' });
     }
   }
 
