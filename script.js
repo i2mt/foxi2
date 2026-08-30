@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.32';
+const APP_VERSION = '5.0.33';
 
 const CHANGELOG = {
+    '5.0.33': [
+        'ادامه خودکار دانلود Whisper پس از قطع کوتاه یا ناپایداری اتصال',
+        'نمایش واضح تلاش دوباره هنگام اختلال شبکه',
+        'بازگشت سریع‌تر به Rizeh وقتی میزبان Whisper در دسترس نیست'
+    ],
     '5.0.32': [
         'رفع توقف و شروع دوباره بارگذاری Whisper در اولین استفاده',
         'نمایش درصد کلی و دقیق دانلود برای هر سه موتور صوتی',

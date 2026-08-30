@@ -320,14 +320,14 @@ function testDeploymentWiring() {
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
     assert(serviceWorker.includes('koochik-worker.js?v=34'),
         'service worker must precache the v34 Rizeh worker URL');
-    assert(serviceWorker.includes('whisper-worker.js?v=35') && serviceWorker.includes('whisper-asr.js?v=35'),
+    assert(serviceWorker.includes('whisper-worker.js?v=36') && serviceWorker.includes('whisper-asr.js?v=36'),
         'service worker must precache the Whisper adapter and worker shell');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
         'voice adapter must instantiate the v34 Rizeh worker URL');
-    assert(read('whisper-asr.js').includes("whisper-worker.js?v=35"),
-        'Whisper adapter must instantiate the v35 module worker URL');
-    assert(index.includes('service-worker.js?v=35'),
-        'page must register the v35 service worker');
+    assert(read('whisper-asr.js').includes("whisper-worker.js?v=36"),
+        'Whisper adapter must instantiate the v36 module worker URL');
+    assert(index.includes('service-worker.js?v=36'),
+        'page must register the v36 service worker');
     assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
         'Settings must expose explicit Auto, Whisper and Rizeh choices');
     assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
@@ -340,6 +340,12 @@ function testDeploymentWiring() {
         'a stale result timer must never reset an active microphone to idle');
     assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),
         'Whisper must aggregate all files into one monotonic model percentage');
+    assert(read('whisper-worker.js').includes('retryingModelFetch') && read('whisper-worker.js').includes('retrying-model-load'),
+        'Whisper must retry interrupted model requests and body streams');
+    assert(voiceEngine.includes("info.code === 'whisper-network-failed'"),
+        'a shared model-host network failure must skip the redundant Base-to-Tiny download');
+    assert(voiceUi.includes("p.status === 'retrying-network'"),
+        'the model dialog must explain connection retries instead of looking stalled');
     assert(read('koochik-asr.js').includes('overallPercent') && voiceUi.includes('دانلود کلی'),
         'Rizeh and the shared UI must report rounded whole-model progress');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),

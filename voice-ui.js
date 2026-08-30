@@ -465,6 +465,16 @@
         });
         window.VoiceEngine.on('model-progress', function (p) {
             if (!els.modelProgressFill) return;
+            if (p.status === 'retrying-network' || p.status === 'retrying-model-load') {
+                els.modelProgressFill.classList.add('is-indeterminate');
+                if (els.modelProgressLabel) {
+                    const attempt = Number(p.attempt) || 2;
+                    const maxAttempts = Number(p.maxAttempts) || 3;
+                    els.modelProgressLabel.textContent = 'اتصال دانلود ناپایدار بود؛ تلاش دوباره ' + attempt.toLocaleString('fa-IR') + ' از ' + maxAttempts.toLocaleString('fa-IR') + '…';
+                }
+                setStatus('اتصال کند یا ناپایدار است؛ دانلود را دوباره ادامه می‌دهم…', 'processing');
+                return;
+            }
             if (p.status === 'initialized') {
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = '100%';
