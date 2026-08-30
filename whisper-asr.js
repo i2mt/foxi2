@@ -9,7 +9,7 @@
     'use strict';
 
     const SAMPLE_RATE = 16000;
-    const WORKER_URL = './whisper-worker.js?v=35';
+    const WORKER_URL = './whisper-worker.js?v=36';
     const LOAD_TIMEOUT_MS = 15 * 60 * 1000;
     const ENERGY_FRAME_SAMPLES = 320;
     const START_RMS = 0.015;
@@ -97,6 +97,7 @@
                     clearTimeout(timer);
                     if (signal) signal.removeEventListener('abort', abort);
                     const loadError = new Error(msg.message || 'whisper-model-load-failed');
+                    loadError.code = msg.code || '';
                     reject(loadError);
                     return;
                 }

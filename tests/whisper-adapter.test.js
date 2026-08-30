@@ -17,7 +17,12 @@ class MockWorker {
             if (MockWorker.failNextLoad) {
                 MockWorker.failNextLoad = false;
                 queueMicrotask(() => this.onmessage({
-                    data: { type: 'error', requestId: 0, message: 'simulated-model-load-failure' }
+                    data: {
+                        type: 'error',
+                        requestId: 0,
+                        code: 'whisper-network-failed',
+                        message: 'simulated-model-load-failure'
+                    }
                 }));
                 return;
             }
@@ -78,7 +83,7 @@ class MockWorker {
     MockWorker.failNextLoad = true;
     await assert.rejects(
         window.WhisperASR.load({ model: 'tiny' }),
-        /simulated-model-load-failure/,
+        error => error.code === 'whisper-network-failed' && /simulated-model-load-failure/.test(error.message),
         'a worker load error must reject immediately instead of waiting for the 15-minute timeout'
     );
 

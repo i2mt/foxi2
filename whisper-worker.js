@@ -7,6 +7,78 @@ import { env, pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Mobile connections can drop while Hugging Face redirects a model request
+// to its large-file CDN. A single interrupted request used to abort the whole
+// pipeline even though all files completed before it were already cached.
+// Retry both the individual fetch and (for body-stream failures) the pipeline
+// load so a brief connection interruption does not force an immediate engine
+// fallback.
+const FETCH_ATTEMPTS = 3;
+const PIPELINE_ATTEMPTS = 2;
+const nativeFetch = self.fetch.bind(self);
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function describeAsset(input) {
+    try {
+        const raw = typeof input === 'string' ? input : input.url;
+        const url = new URL(raw);
+        const parts = url.pathname.split('/').filter(Boolean);
+        const resolveAt = parts.indexOf('resolve');
+        const file = resolveAt >= 0 ? parts.slice(resolveAt + 2).join('/') : parts.slice(-2).join('/');
+        return { host: url.host, file: file || 'model asset' };
+    } catch (_) {
+        return { host: 'model host', file: 'model asset' };
+    }
+}
+
+function isRetryableStatus(status) {
+    return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isNetworkError(error) {
+    const message = String(error && (error.message || error) || '');
+    return (error && error.code === 'whisper-network-failed') || /network|failed to fetch|fetch failed|load failed|connection|err_network|ns_error_net/i.test(message);
+}
+
+env.fetch = async function retryingModelFetch(input, init) {
+    const asset = describeAsset(input);
+    for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
+        try {
+            const response = await nativeFetch(input, init);
+            if (!isRetryableStatus(response.status)) return response;
+            if (attempt === FETCH_ATTEMPTS) {
+                const statusError = new Error('whisper-network-failed: HTTP ' + response.status + ' for ' + asset.file);
+                statusError.code = 'whisper-network-failed';
+                throw statusError;
+            }
+        } catch (error) {
+            if (attempt === FETCH_ATTEMPTS || !isNetworkError(error)) throw error;
+        }
+
+        const delayMs = attempt === 1 ? 1200 : 3500;
+        console.warn('[WhisperASR] model connection interrupted; retrying:',
+            'attempt=', (attempt + 1) + '/' + FETCH_ATTEMPTS,
+            '| host=', asset.host,
+            '| file=', asset.file);
+        self.postMessage({
+            type: 'progress',
+            progress: {
+                status: 'retrying-network',
+                phase: 'download',
+                attempt: attempt + 1,
+                maxAttempts: FETCH_ATTEMPTS,
+                delayMs: delayMs,
+                host: asset.host,
+                file: asset.file
+            }
+        });
+        await sleep(delayMs);
+    }
+};
+
 const MODEL_IDS = {
     base: 'onnx-community/whisper-base',
     tiny: 'onnx-community/whisper-tiny'
@@ -114,14 +186,46 @@ async function loadModel(model) {
     const startedAt = Date.now();
     const overallProgress = createOverallProgress(model);
     self.postMessage({ type: 'progress', progress: { status: 'starting', model: model, loaded: 0, total: 0, percent: null } });
-    transcriber = await pipeline('automatic-speech-recognition', modelId, {
-        device: 'webgpu',
-        dtype: MODEL_DTYPES[model],
-        revision: MODEL_REVISIONS[model],
-        progress_callback(progress) {
-            self.postMessage({ type: 'progress', progress: overallProgress(progress) });
+    let loadError = null;
+    for (let attempt = 1; attempt <= PIPELINE_ATTEMPTS; attempt++) {
+        try {
+            transcriber = await pipeline('automatic-speech-recognition', modelId, {
+                device: 'webgpu',
+                dtype: MODEL_DTYPES[model],
+                revision: MODEL_REVISIONS[model],
+                progress_callback(progress) {
+                    self.postMessage({ type: 'progress', progress: overallProgress(progress) });
+                }
+            });
+            loadError = null;
+            break;
+        } catch (error) {
+            loadError = error;
+            if (attempt === PIPELINE_ATTEMPTS || !isNetworkError(error)) break;
+            console.warn('[WhisperASR] model stream failed; resuming from browser cache:',
+                'attempt=', (attempt + 1) + '/' + PIPELINE_ATTEMPTS,
+                '| error=', String(error && (error.message || error) || error));
+            self.postMessage({
+                type: 'progress',
+                progress: {
+                    status: 'retrying-model-load',
+                    phase: 'download',
+                    attempt: attempt + 1,
+                    maxAttempts: PIPELINE_ATTEMPTS,
+                    delayMs: 2000
+                }
+            });
+            await sleep(2000);
         }
-    });
+    }
+    if (loadError) {
+        if (isNetworkError(loadError)) {
+            const wrapped = new Error('whisper-network-failed: ' + String(loadError && (loadError.message || loadError) || loadError));
+            wrapped.code = 'whisper-network-failed';
+            throw wrapped;
+        }
+        throw loadError;
+    }
     loadedModel = model;
     self.postMessage({
         type: 'progress',
@@ -158,6 +262,7 @@ self.onmessage = async function (event) {
         self.postMessage({
             type: 'error',
             requestId: message.requestId || 0,
+            code: error && error.code ? error.code : '',
             message: String(error && (error.stack || error.message) || error || 'whisper-error')
         });
     }

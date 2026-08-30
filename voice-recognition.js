@@ -811,14 +811,19 @@
             // model download can fail. This happens before the microphone is
             // opened, so switching to Rizeh is safe and loses no speech.
             if (requestedBackend.indexOf('whisper-') === 0 && !koochikCancelRequested) {
-                if (requestedBackend === 'whisper-base') {
+                // Tiny is useful when Base fails because of memory/WebGPU
+                // limits. It is not useful when the shared model host is
+                // unreachable: starting another large download only keeps
+                // the person waiting longer on the same broken connection.
+                const networkFailed = info && (info.code === 'whisper-network-failed' || /whisper-network-failed/.test(String(info.message || info)));
+                if (requestedBackend === 'whisper-base' && !networkFailed) {
                     console.warn('[WhisperASR] Base unavailable; trying Tiny before Rizeh:', info);
                     activeCaptureEngine = null;
                     activeCaptureBackend = 'whisper-tiny';
                     startKoochik('whisper-tiny');
                     return;
                 }
-                console.warn('[WhisperASR] unavailable; falling back to Rizeh:', info);
+                console.warn('[WhisperASR] ' + (networkFailed ? 'model host remained unreachable' : 'unavailable') + '; falling back to Rizeh:', info);
                 activeCaptureEngine = null;
                 activeCaptureBackend = 'rizeh';
                 startKoochik('rizeh');
