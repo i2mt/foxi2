@@ -598,6 +598,11 @@
 
         if (els.orbContainer) els.orbContainer.addEventListener('click', onMicClick);
 
+        const capabilitiesBtn = document.getElementById('voiceCapabilitiesBtn');
+        if (capabilitiesBtn) capabilitiesBtn.addEventListener('click', function () {
+            handleTranscript(this.dataset.command || 'چه کارهایی بلدی؟', 'capabilities');
+        });
+
         if (els.ttsToggle) {
             updateTtsToggleIcon();
             updateTtsAvailability();
