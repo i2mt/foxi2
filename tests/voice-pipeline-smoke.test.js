@@ -49,42 +49,15 @@ function testCommandRouting() {
         }
     };
 
-    const drugDatabase = {
-        heparin: {
-            persianName: 'هپارین',
-            englishName: 'Heparin',
-            alternativeNames: ['هپارین سدیم']
-        },
-        vancomycin: {
-            persianName: 'وانکومایسین',
-            englishName: 'Vancomycin',
-            alternativeNames: []
-        },
-        insulin_regular: {
-            persianName: 'انسولین رگولار',
-            englishName: 'Regular Insulin',
-            alternativeNames: ['انسولین معمولی']
-        },
-        furosemide: {
-            persianName: 'فوروزماید',
-            englishName: 'Furosemide',
-            alternativeNames: ['لازیکس']
-        },
-        norepinephrine: {
-            persianName: 'نوراپی نفرین',
-            englishName: 'Norepinephrine',
-            alternativeNames: ['نورآدرنالین']
-        },
-        fentanyl: {
-            persianName: 'فنتانیل',
-            englishName: 'Fentanyl',
-            alternativeNames: []
-        },
-        midazolam: {
-            persianName: 'میدازولام',
-            englishName: 'Midazolam',
-            alternativeNames: []
-        }
+    const dbContext = { window: {} };
+    vm.createContext(dbContext);
+    vm.runInContext(read('drugDatabase.js') + '\nthis.__drugDatabase = drugDatabase;', dbContext, { filename: 'drugDatabase.js' });
+    const drugDatabase = JSON.parse(JSON.stringify(dbContext.__drugDatabase));
+    // Vancomycin is currently a Y-site reference medicine rather than a main
+    // calculator card, but keeping it in this routing harness verifies the
+    // established two-drug compatibility phrase as well.
+    drugDatabase.vancomycin = {
+        persianName: 'وانکومایسین', englishName: 'Vancomycin', alternativeNames: []
     };
 
     const context = {
@@ -155,6 +128,10 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('GCS')),
         'natural Persian GCS name should route to GCS');
 
+    result = run('کلیرانس کراتینین سن ۴۵ وزن ۶۰ زن');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('جنسیت: زن') && !e.message.includes('جنسیت: مرد')),
+        'female CrCl phrasing must never be classified as male');
+
     result = run('محاسبه درصد سوخت');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('درصد سوختگی')),
         'clipped ASR transcript for burns must route to burns');
@@ -168,26 +145,26 @@ function testCommandRouting() {
     result = run('چندفزیون هپار');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'observed clipped heparin infusion transcript should route to the drug calculator');
-    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیون هپار')),
-        'clinical confirmation must preserve the exact ASR transcript after correction');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: هپارین') && !e.message.includes('چندفزیون هپار')),
+        'clinical confirmation must show the canonical drug instead of fuzzy ASR text');
 
     result = run('هموزیان هپاری');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'new observed heparin substitution should route to the drug calculator');
-    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('هموزیان هپاری')),
-        'heparin recovery must preserve the exact transcript');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: هپارین') && !e.message.includes('هموزیان هپاری')),
+        'heparin recovery must keep fuzzy transcript text out of the visible confirmation');
 
     result = run('من فزیون هپاری');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'latest observed split heparin substitution should route to the drug calculator');
-    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('من فزیون هپاری')),
-        'split heparin recovery must preserve the exact transcript');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: هپارین') && !e.message.includes('من فزیون هپاری')),
+        'split heparin recovery must show the resolved drug only');
 
     result = run('چندفزیان انسولین رگو');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'observed clipped regular-insulin infusion transcript should route to the drug calculator');
-    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('چندفزیان انسولین رگو')),
-        'regular-insulin recovery must preserve the original ASR transcript');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: انسولین رگولار') && !e.message.includes('چندفزیان')),
+        'regular-insulin recovery must show the canonical drug only');
 
     result = run('انفوزیون انسولین رگووللا');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
@@ -196,6 +173,20 @@ function testCommandRouting() {
     result = run('امفزیان انسولین رگولایژ');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'latest observed regular-insulin substitutions should route to the drug calculator');
+
+    result = run('امفزیونتی انجی');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+        'observed joined TNG infusion transcript should route to nitroglycerin');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: نیتروگلیسیرین') &&
+        e.message.includes('روش: پمپ انفوزیون') && !e.message.includes('امفزیونتی انجی')),
+        'TNG recovery must confirm the canonical drug and method without fuzzy decoder text');
+
+    Object.entries(drugDatabase).forEach(function ([id, drug]) {
+        if (id === 'vancomycin') return;
+        result = run('انفوزیون ' + drug.persianName);
+        assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز') && e.message.includes('دارو: ' + drug.persianName)),
+            'every calculator drug must route from its displayed Persian name: ' + id + ' :: ' + JSON.stringify(result));
+    });
 
     ['انفوزیون فروزماید', 'دوز نور اپی نفرین', 'تزریق فنتانل', 'انفوزیون میدازولم'].forEach(function (phrase) {
         result = run(phrase);
@@ -210,7 +201,9 @@ function testCommandRouting() {
     result = run('یه مای برای مریضی که قدش صد و هفتاد و دو و وزنش پنجاه و شش کیلوه');
     const colloquialBmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
     assert(colloquialBmiConfirmation, 'observed BMI substitution should route with height and weight');
-    assert(colloquialBmiConfirmation.message.includes('یه مای'), 'BMI recovery must preserve original wording');
+    assert(colloquialBmiConfirmation.message.includes('وزن:') && colloquialBmiConfirmation.message.includes('قد:') &&
+        !colloquialBmiConfirmation.message.includes('یه مای'),
+        'BMI confirmation must show interpreted patient values without fuzzy ASR wording');
     colloquialBmiConfirmation.onConfirm();
     assert(events.some(e => e.kind === 'bmi-calculation' && e.weight === 56 && e.height === 172),
         'colloquial BMI command must apply height 172 and weight 56');
@@ -252,6 +245,11 @@ function testCommandRouting() {
     result = run('چه خبر');
     assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
         'younger-user small talk should receive a friendly non-clinical response');
+    ['سالا امهال اچتوره', 'سالام حالت چتوره', 'سالام هل چیث ره', 'حو بی', 'خیده هستا', 'گیدگستا'].forEach(phrase => {
+        result = run(phrase);
+        assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
+            `observed Whisper greeting variant should receive a friendly response: ${phrase} :: ${JSON.stringify(result)}`);
+    });
     result = run('استرس دارم');
     assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
         'standalone stress chat should not be confused with nutrition');
@@ -303,6 +301,8 @@ function testDeploymentWiring() {
     const script = read('script.js');
     const voiceEngine = read('voice-recognition.js');
     const voiceUi = read('voice-ui.js');
+    const voiceCommands = read('voice-commands.js');
+    const voiceAssistantCss = read('voice-assistant.css');
 
     assert(workflow.includes('shenava-rizeh-v1.0-non-streaming-int8'),
         'deployment workflow must download Rizeh');
@@ -320,32 +320,56 @@ function testDeploymentWiring() {
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
     assert(serviceWorker.includes('koochik-worker.js?v=34'),
         'service worker must precache the v34 Rizeh worker URL');
-    assert(serviceWorker.includes('whisper-worker.js?v=36') && serviceWorker.includes('whisper-asr.js?v=36'),
+    assert(serviceWorker.includes('whisper-worker.js?v=37') && serviceWorker.includes('whisper-asr.js?v=37'),
         'service worker must precache the Whisper adapter and worker shell');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
         'voice adapter must instantiate the v34 Rizeh worker URL');
-    assert(read('whisper-asr.js').includes("whisper-worker.js?v=36"),
-        'Whisper adapter must instantiate the v36 module worker URL');
-    assert(index.includes('service-worker.js?v=36'),
-        'page must register the v36 service worker');
+    assert(read('whisper-asr.js').includes("whisper-worker.js?v=37"),
+        'Whisper adapter must instantiate the v37 module worker URL');
+    assert(index.includes('service-worker.js?v=37'),
+        'page must register the v37 service worker');
     assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
         'Settings must expose explicit Auto, Whisper and Rizeh choices');
+    assert(index.includes('voice-engine-policy.js?v=37') && serviceWorker.includes('voice-engine-policy.js?v=37'),
+        'the evidence-based v37 engine policy must be loaded and precached');
     assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
         'visiting the assistant tab must not start a large Whisper download');
     assert(!script.includes('VoiceEngine.releaseModel'),
         'tab changes must keep the loaded voice model warm');
     assert(voiceEngine.includes("emit('decoding'") && voiceUi.includes("VoiceEngine.on('decoding'"),
         'engine and UI must expose the listening-to-decoding lifecycle transition');
+    assert(!voiceUi.includes('setTranscript(') && !voiceUi.includes("on('interim'") && !index.includes('id="voiceTranscript"') &&
+        voiceUi.includes("setStatus('', 'processing')") && voiceUi.includes("setAttribute('aria-label', 'در حال تبدیل صدا به متن')") &&
+        voiceAssistantCss.includes('.voice-status.processing::before') && voiceAssistantCss.includes('voiceStatusSpin'),
+        'listening and decoding must use accessible animation without exposing fuzzy raw transcripts');
+    assert(!index.includes('id="voiceModelFox"') && voiceUi.includes('setModelFoxProgress(percent, state)') &&
+        voiceUi.includes("setProperty('--model-progress'") &&
+        voiceAssistantCss.includes('.voice-orb-container.is-loading-model .voice-fox-mark::after'),
+        'model download must fill the existing main fox from the real overall progress without duplicating the mascot');
+    assert(index.includes('id="loadingFox"') && !index.includes('class="loading-logo-img"') &&
+        !index.includes('class="loading-tip') && script.includes("setProperty('--loading-progress'") &&
+        read('style.css').includes('.loading-fox-fill'),
+        'startup must use the lightweight premium fox treatment without rotating emoji tips');
+    assert(index.includes('class="header-fox-mark"') && !index.includes('<div class="logo"><i class="fas fa-syringe"') &&
+        read('style.css').includes('.dark-mode .header-fox-mark') &&
+        read('style.css').includes("fox-mark-clean-mask.png") && serviceWorker.includes('fox-mark-clean-mask.png'),
+        'top bar must use a compact high-contrast fox mark instead of the generic syringe icon');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
         'a stale result timer must never reset an active microphone to idle');
     assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),
         'Whisper must aggregate all files into one monotonic model percentage');
     assert(read('whisper-worker.js').includes('retryingModelFetch') && read('whisper-worker.js').includes('retrying-model-load'),
         'Whisper must retry interrupted model requests and body streams');
+    assert(read('whisper-worker.js').includes('degenerateTranscriptReason') && read('whisper-worker.js').includes('max_new_tokens: 96'),
+        'Whisper must cap decoding and reject repeated-token background-noise hallucinations');
     assert(voiceEngine.includes("info.code === 'whisper-network-failed'"),
         'a shared model-host network failure must skip the redundant Base-to-Tiny download');
     assert(voiceUi.includes("p.status === 'retrying-network'"),
         'the model dialog must explain connection retries instead of looking stalled');
+    assert(voiceEngine.includes("whisperProvider ? 'Whisper' : 'Rizeh'") && voiceEngine.includes("engine.audioStats ? engine.audioStats()"),
+        'voice diagnostics must name the active decoder and report available audio levels');
+    assert(voiceCommands.includes('buildConfirmationMessage') && !voiceCommands.includes("'شنیده شد: «'"),
+        'clinical confirmation must show canonical interpreted action and values rather than raw ASR text');
     assert(read('koochik-asr.js').includes('overallPercent') && voiceUi.includes('دانلود کلی'),
         'Rizeh and the shared UI must report rounded whole-model progress');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),

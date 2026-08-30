@@ -790,9 +790,11 @@
                 if (!engine.supportsLivePartials || engine.supportsLivePartials()) {
                     schedulePartialDecode(engine);
                 } else {
-                    console.log('[KoochikASR] live partials disabled on',
-                        engine.executionProvider ? engine.executionProvider() : 'slow backend',
-                        '— segmented VAD captures first, then offline Rizeh decodes once on finalization');
+                    const provider = engine.executionProvider ? engine.executionProvider() : 'offline backend';
+                    const whisperProvider = String(provider).indexOf('whisper') >= 0;
+                    console.log('[' + (whisperProvider ? 'WhisperASR' : 'KoochikASR') + '] live partials disabled on',
+                        provider,
+                        '— audio is captured first, then ' + (whisperProvider ? 'Whisper' : 'Rizeh') + ' decodes once after recording stops');
                 }
             }).catch(function (err) {
                 koochikLoading = false;
@@ -991,10 +993,13 @@
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
                 const decodedFinal = (text || '').trim();
                 const finalText = decodedFinal || lastGoodPartial;
+                const audioStats = engine.audioStats ? engine.audioStats() : null;
                 console.log('[' + (activeCaptureBackend.indexOf('whisper-') === 0 ? 'WhisperASR' : 'KoochikASR') + '] FINAL decode result:', JSON.stringify(decodedFinal),
                     '| fallback=', JSON.stringify(lastGoodPartial),
                     '| emitted=', JSON.stringify(finalText),
-                    '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2));
+                    '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2),
+                    '| rms=', audioStats ? audioStats.rms.toFixed(4) : '-',
+                    '| peak=', audioStats ? audioStats.peak.toFixed(4) : '-');
                 if (finalText) emit('final', finalText);
                 finishKoochik();
             }).catch(function (err) {

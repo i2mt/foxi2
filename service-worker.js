@@ -2,7 +2,7 @@
 // App shell is network-first. Rizeh VAD + offline-ASR .data/.wasm use a
 // stable cache-first model cache independent of ordinary app revisions.
 
-const CACHE_NAME = 'FoxiMed_v5.0.33';
+const CACHE_NAME = 'FoxiMed_v5.0.34';
 // Include the pinned model revision. The previous deployment accidentally
 // stored Koochik bytes under a Rizeh-named cache, so reusing that namespace
 // would keep serving the wrong 127 MB .data file after this release.
@@ -14,18 +14,18 @@ const urlsToCache = [
     './style.css',
     './voice-assistant.css',
     './calculation-core.js?v=34',
-    './script.js?v=36',
-    './voice-engine-policy.js?v=34',
-    './voice-recognition.js?v=36',
+    './script.js?v=37',
+    './voice-engine-policy.js?v=37',
+    './voice-recognition.js?v=37',
     './koochik-asr.js?v=35',
     './koochik-worker.js?v=34',
-    './whisper-asr.js?v=36',
-    './whisper-worker.js?v=36',
+    './whisper-asr.js?v=37',
+    './whisper-worker.js?v=37',
     './sherpa-koochik/sherpa-onnx-asr.js',
     './sherpa-koochik/sherpa-onnx-vad.js',
     './sherpa-koochik/sherpa-onnx-wasm-main-vad-asr.js',
-    './voice-commands.js?v=35',
-    './voice-ui.js?v=36',
+    './voice-commands.js?v=37',
+    './voice-ui.js?v=37',
     './converters.js',
     './drugDatabase.js',
     './manifest.json',
@@ -33,7 +33,7 @@ const urlsToCache = [
     './icons/icon-512.png',
     './icons/apple-touch-icon.png',
     './icons/fox-mark.png',
-    './icons/fox-mark-mask.png',
+    './icons/fox-mark-clean-mask.png',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
     'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap'
 ];

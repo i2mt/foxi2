@@ -34,25 +34,22 @@
     <!-- Loading Screen -->
     <div id="loadingScreen" class="loading-screen">
         <div class="loading-content">
-            <div class="loading-logo">
-                <img src="icons/icon-192.png" alt="FoxiMed" class="loading-logo-img" onerror="this.style.display='none';document.querySelector('.loading-logo-icon').style.display='flex'">
-                <div class="loading-logo-icon" style="display:none;"><i class="fas fa-syringe"></i></div>
+            <div class="loading-fox" id="loadingFox" aria-hidden="true">
+                <span class="loading-fox-base"></span>
+                <span class="loading-fox-fill"></span>
             </div>
-            <div class="loading-app-name">FoxiMed</div>
-            <div class="loading-tagline">محاسبه‌گر هوشمند</div>
+            <div class="loading-app-name"><span>Foxi</span><strong>Med</strong></div>
+            <div class="loading-tagline">همراه بالینی پرستار</div>
             <div class="loading-bar-wrap">
                 <div class="loading-bar" id="loadingBar"></div>
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
-            <div class="loading-tips" id="loadingTips">
-                <div class="loading-tip active">💊 محاسبه دقیق دوز برای داروهای رایج </div>
-                <div class="loading-tip">🧠 ارزیابی بیمار: GCS و درصد سطح سوختگی</div>
-                <div class="loading-tip">📐 ابزارهای بالینی: BMI، BSA، CrCl و مبدل‌های واحد</div>
-                <div class="loading-tip">🔒 کاملاً آفلاین — بدون نیاز به اینترنت</div>
+            <div class="loading-meta">
+                <span>نسخه 5.0.34</span>
+                <span class="loading-meta-dot" aria-hidden="true"></span>
+                <span>آماده برای کار آفلاین</span>
             </div>
-            <div class="loading-version">نسخه 5.0.33</div>
             <div class="loading-credit">
-                <i class="fas fa-code"></i>
                 <span>Designed &amp; developed by</span>
                 <strong>Mohammad Mahdi Taghavi</strong>
             </div>
@@ -104,7 +101,7 @@
     <header class="app-header">
         <div class="header-content">
             <div class="logo-section">
-                <div class="logo"><i class="fas fa-syringe"></i></div>
+                <div class="logo" aria-hidden="true"><span class="header-fox-mark"></span></div>
                 <div class="logo-text">
                     <h1>FoxiMed</h1>
                     <p>ابزار هوشمند پرستاری</p>
@@ -1714,11 +1711,6 @@
             <div class="voice-model-progress-label" id="voiceModelProgressLabel"></div>
         </div>
 
-        <!-- Transcript — only takes up space while actually listening/processing -->
-        <div class="voice-transcript-area" id="voiceTranscriptArea" style="display:none;">
-            <div class="voice-transcript" id="voiceTranscript">…</div>
-        </div>
-
         <!-- Result (dynamic) -->
         <div class="voice-result" id="voiceResult" style="display:none;"></div>
 
@@ -1907,10 +1899,10 @@
                     <div class="voice-engine-setting">
                         <label for="voiceRecognitionModeSelect">موتور تشخیص صدا</label>
                         <select id="voiceRecognitionModeSelect" class="voice-engine-select">
-                            <option value="auto">خودکار (پیشنهادی)</option>
-                            <option value="whisper-base">Whisper Base — دقت بیشتر</option>
-                            <option value="whisper-tiny">Whisper Tiny — متعادل</option>
-                            <option value="rizeh">Rizeh — سبک و سازگار</option>
+                            <option value="auto">خودکار — Rizeh (پیشنهادی)</option>
+                            <option value="whisper-base">Whisper Base — آزمایشی</option>
+                            <option value="whisper-tiny">Whisper Tiny — آزمایشی و سبک‌تر</option>
+                            <option value="rizeh">Rizeh — دقیق‌تر برای فرمان‌های فعلی</option>
                         </select>
                         <span class="setting-sublabel" id="voiceRecognitionModeNote">در حال بررسی توان دستگاه...</span>
                     </div>
@@ -1939,7 +1931,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.33</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.34</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2081,17 +2073,17 @@
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
     <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=36"></script>
-    <script src="voice-engine-policy.js?v=34"></script>
+    <script src="script.js?v=37"></script>
+    <script src="voice-engine-policy.js?v=37"></script>
     <script src="koochik-asr.js?v=35"></script>
-    <script src="whisper-asr.js?v=36"></script>
-    <script src="voice-recognition.js?v=36"></script>
-    <script src="voice-commands.js?v=35"></script>
-    <script src="voice-ui.js?v=36"></script>
+    <script src="whisper-asr.js?v=37"></script>
+    <script src="voice-recognition.js?v=37"></script>
+    <script src="voice-commands.js?v=37"></script>
+    <script src="voice-ui.js?v=37"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=36', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=37', { updateViaCache: 'none' });
             });
         }
     </script>

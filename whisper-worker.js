@@ -130,6 +130,21 @@ const MODEL_FILE_BYTES = {
 let transcriber = null;
 let loadedModel = '';
 
+function degenerateTranscriptReason(text) {
+    const tokens = String(text || '').trim().split(/\s+/).filter(Boolean);
+    if (tokens.length < 8) return '';
+    const counts = new Map();
+    let mostRepeated = 0;
+    tokens.forEach(token => {
+        const count = (counts.get(token) || 0) + 1;
+        counts.set(token, count);
+        mostRepeated = Math.max(mostRepeated, count);
+    });
+    if (mostRepeated / tokens.length >= 0.72) return 'repeated-token';
+    if (tokens.length >= 20 && counts.size <= 3) return 'low-token-diversity';
+    return '';
+}
+
 function normalizeFileName(file) {
     const clean = String(file || '').split(/[?#]/)[0].replace(/^\.\//, '');
     const onnxAt = clean.lastIndexOf('/onnx/');
@@ -249,12 +264,28 @@ self.onmessage = async function (event) {
                 task: 'transcribe',
                 return_timestamps: false,
                 condition_on_prev_tokens: false,
-                temperature: 0
+                temperature: 0,
+                do_sample: false,
+                // FoxiMed captures at most 12 seconds. A real command cannot
+                // require hundreds of decoder tokens; capping generation
+                // prevents steady background noise from producing a very
+                // long repeated-token hallucination.
+                max_new_tokens: 96
             });
+            let text = String(output && output.text || '').trim();
+            const rejectedReason = degenerateTranscriptReason(text);
+            if (rejectedReason) {
+                console.warn('[WhisperASR] rejected degenerate transcript:',
+                    'reason=', rejectedReason,
+                    '| tokens=', text.split(/\s+/).length,
+                    '| preview=', JSON.stringify(text.slice(0, 120)));
+                text = '';
+            }
             self.postMessage({
                 type: 'result',
                 requestId: message.requestId,
-                text: String(output && output.text || '').trim()
+                text: text,
+                rejectedReason: rejectedReason
             });
         }
     } catch (error) {

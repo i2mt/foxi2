@@ -265,8 +265,8 @@
     background-image: url('icons/fox-mark.png');
     background-size: cover;
     background-position: center;
-    -webkit-mask-image: url('icons/fox-mark-mask.png');
-    mask-image: url('icons/fox-mark-mask.png');
+    -webkit-mask-image: url('icons/fox-mark-clean-mask.png');
+    mask-image: url('icons/fox-mark-clean-mask.png');
     -webkit-mask-size: cover;
     mask-size: cover;
     -webkit-mask-repeat: no-repeat;
@@ -374,8 +374,28 @@
 }
 
 .voice-orb-container.is-loading-model .voice-fox-mark {
+    background-image: none;
+    background: color-mix(in srgb, var(--fox-orange, #ea580c) 13%, var(--border));
     animation: voiceFoxBreatheFast 1.3s ease-in-out infinite;
-    opacity: 0.85;
+    opacity: 1;
+}
+.voice-orb-container.is-loading-model .voice-fox-mark::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, #fbbf24 0%, #f97316 58%, #c2410c 100%);
+    clip-path: inset(calc(100% - var(--model-progress, 0%)) 0 0 0);
+    transition: clip-path 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.voice-orb-container.is-loading-model.is-model-initializing .voice-fox-mark {
+    animation: voiceModelFoxReady 1.15s ease-in-out infinite;
+}
+.voice-orb-container.is-loading-model.is-model-retrying .voice-fox-mark {
+    animation: voiceModelFoxRetry 0.9s ease-in-out infinite;
+}
+.voice-orb-container.is-loading-model.is-model-indeterminate .voice-fox-mark::after {
+    clip-path: inset(42% 0 0 0);
+    animation: voiceModelFoxIndeterminate 1.4s ease-in-out infinite;
 }
 .voice-orb-container.is-loading-model .voice-eye-spark {
     opacity: 0.5;
@@ -398,7 +418,25 @@
     transition: color 0.2s;
 }
 .voice-status.recording { color: var(--voice-c1); font-weight: 600; }
-.voice-status.processing { color: #f59e0b; font-weight: 600; }
+.voice-status.processing {
+    color: #f59e0b;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.voice-status.processing::before {
+    content: '';
+    width: 11px;
+    height: 11px;
+    flex: 0 0 11px;
+    border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: voiceStatusSpin 0.7s linear infinite;
+}
+@keyframes voiceStatusSpin { to { transform: rotate(360deg); } }
 .voice-status.success { color: #22c55e; font-weight: 600; }
 .voice-status.error { color: #ef4444; font-weight: 600; }
 
@@ -410,6 +448,18 @@
     flex-direction: column;
     align-items: center;
     gap: 5px;
+}
+@keyframes voiceModelFoxReady {
+    0%, 100% { transform: scale(0.98); filter: drop-shadow(0 4px 10px rgba(234, 88, 12, 0.25)); }
+    50% { transform: scale(1.04); filter: drop-shadow(0 6px 18px rgba(234, 88, 12, 0.48)); }
+}
+@keyframes voiceModelFoxRetry {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+@keyframes voiceModelFoxIndeterminate {
+    0%, 100% { transform: translateY(34%); opacity: 0.45; }
+    50% { transform: translateY(-34%); opacity: 1; }
 }
 .voice-model-progress-track {
     width: 100%;
@@ -432,6 +482,11 @@
 @keyframes voiceProgressIndeterminate {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(290%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .voice-orb-container.is-loading-model .voice-fox-mark,
+    .voice-orb-container.is-loading-model .voice-fox-mark::after { animation: none !important; transition-duration: 0.01ms; }
 }
 .voice-model-progress-label {
     font-size: 11.5px;
