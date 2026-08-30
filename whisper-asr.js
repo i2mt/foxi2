@@ -9,7 +9,7 @@
     'use strict';
 
     const SAMPLE_RATE = 16000;
-    const WORKER_URL = './whisper-worker.js?v=37';
+    const WORKER_URL = './whisper-worker.js?v=38';
     const LOAD_TIMEOUT_MS = 15 * 60 * 1000;
     const ENERGY_FRAME_SAMPLES = 320;
     const START_RMS = 0.015;

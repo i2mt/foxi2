@@ -111,19 +111,19 @@
     const TIPS = {
         bmi: 'نکته: برای محاسبه سطح بدن بگویید «سطح بدن، وزن ۷۰، قد ۱۷۰».',
         bsa: 'نکته: برای BMI بگویید «شاخص توده بدنی، وزن ۷۵، قد ۱۷۵».',
-        crcl: 'نکته: می‌توانید جنسیت را هم مشخص کنید: «زن» یا «مرد».',
-        drip: 'نکته: نوع ست را هم می‌توانید بگویید: «ماکروست» یا «میکروست».',
+        crcl: 'نکته: جنسیت رو هم می‌تونی بگی: «زن» یا «مرد».',
+        drip: 'نکته: نوع ست رو هم می‌تونی بگی: «ماکروست» یا «میکروست».',
         convert: 'نکته: عناصر پشتیبانی‌شده: سدیم، پتاسیم، کلسیم، منیزیم، بی‌کربنات.',
-        drug: 'نکته: می‌توانید روش تزریق، حجم محلول، تعداد آمپول و مقدار دلخواه را هم مشخص کنید.',
+        drug: 'نکته: روش تزریق، حجم محلول، تعداد آمپول و مقدار دلخواه رو هم می‌تونی بگی.',
         gcs: 'نکته: برای RASS بگویید «مقیاس ریچموند ۲» یا «ریچموند منفی ۳».',
         rass: 'نکته: برای GCS بگویید «گلاسکو ۴ ۵ ۶».',
         braden: 'نکته: مقیاس برادن ۶ بخش دارد: حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک.',
         morse: 'نکته: مقیاس مورس ۶ بخش دارد: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی.',
         burns: 'نکته: روی نواحی سوختگی در تصویر کلیک کنید — بزرگسال یا کودک را انتخاب کنید.',
         oxygen: 'نکته: فرمول: حجم کپسول (لیتر) × فشار (بار) × ۰.۹ ÷ جریان (L/min) = مدت (دقیقه).',
-        vbg: 'نکته: برای VBG می‌توانید Na، Cl و آلبومین را هم برای آنیون گپ وارد کنید.',
-        ventilator: 'نکته: همچنین می‌توانید از طول اولنا برای تخمین قد استفاده کنید.',
-        nutrition: 'نکته: ضریب استرس را می‌توانید با گفتن «سپسیس» یا «سوختگی» تنظیم کنید.',
+        vbg: 'نکته: برای VBG می‌تونی Na، Cl و آلبومین رو هم برای آنیون گپ بگی.',
+        ventilator: 'نکته: برای تخمین قد، طول اولنا رو هم می‌تونی وارد کنی.',
+        nutrition: 'نکته: با گفتن «سپسیس» یا «سوختگی» می‌تونی ضریب استرس رو تنظیم کنی.',
         ysite: 'نکته: دو دارو را با هم در یک جمله بگویید تا سازگاری Y-Site بررسی شود.'
     };
 
@@ -590,7 +590,7 @@
         'روشن': function () { AppState.settings.themeMode = 'light'; saveSettings(); applyThemeMode(); showVoiceResult('حالت روشن فعال شد', 'success'); },
         'فونت بزرگ': function () { AppState.settings.largeFont = true; saveSettings(); applySettings(); showVoiceResult('فونت بزرگ فعال شد', 'success'); },
         'فونت معمولی': function () { AppState.settings.largeFont = false; saveSettings(); applySettings(); showVoiceResult('فونت معمولی فعال شد', 'success'); },
-        'راهنما': function () { showVoiceResult('می‌توانم محاسبه‌گر دارو و ابزار بالینی را باز کنم، مقدارهای گفته‌شده را وارد کنم، اطلاعات و سازگاری داروها را پیدا کنم و ظاهر برنامه را تغییر دهم. نمونه: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «درصد سوختگی»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی فقط بعد از تأیید شما اجرا می‌شوند.', 'info'); },
+        'راهنما': function () { showVoiceResult('می‌تونم محاسبه‌گر دارو یا ابزار بالینی موردنظرت رو باز کنم، عددهایی که می‌گی رو وارد کنم، اطلاعات و سازگاری داروها رو پیدا کنم و ظاهر برنامه رو تغییر بدم. مثلاً بگو: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «درصد سوختگی»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی رو فقط بعد از تأییدت اجرا می‌کنم.', 'info'); },
         'ماشین حساب': function () { switchTab('calculator'); showVoiceResult('بخش ماشین حساب باز شد', 'success'); },
         'دارو': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
         'داروها': function () { switchTab('drugs'); showVoiceResult('مرجع داروها باز شد', 'success'); },
@@ -796,8 +796,8 @@
         ],
         // identity / about the app
         'اسمت چیه|اسمت چیست|تو کی هستی|معرفی کن خودتو|خودتو معرفی کن': [
-            'من فاکسی، دستیار فاکسی‌مد هستم. فرمانت را به ابزار یا محاسبه مربوط وصل می‌کنم.',
-            'من دستیار نرم‌افزاری فاکسی‌مدم؛ برای محاسبات، ابزارها و مرجع دارویی کنارت هستم.'
+            'من فاکسی‌ام، دستیار فاکسی‌مد. چیزی که می‌خوای رو به ابزار یا محاسبه مربوط وصل می‌کنم.',
+            'من دستیار فاکسی‌مدم؛ برای محاسبات، ابزارها و مرجع دارویی کنارتم.'
         ],
         // nurse life — tiredness / shift difficulty
         'خسته ام|خستم|خستگی|خسته شدم': [
@@ -806,10 +806,10 @@
         ],
         'شیفت بد|شیفت سخته|شیفت سخت': [
             'متأسفم که شیفت سختی داری. بگو کدوم کار رو می‌تونم برات سریع‌تر کنم.',
-            'بعضی شیفت‌ها واقعاً سنگین‌اند. قدم‌به‌قدم پیش برو و اگر لازم شد از همکارت کمک بخواه.'
+            'بعضی شیفت‌ها واقعاً سنگینن. قدم‌به‌قدم پیش برو و اگه لازم شد از همکارت کمک بخواه.'
         ],
         'تموم نمیشه|کی تموم میشه|چرا تموم نمیشه': [
-            'می‌فهمم؛ بعضی شیفت‌ها انگار خیلی کند می‌گذرند. فعلاً یکی‌یکی جلو بریم.',
+            'می‌فهمم؛ بعضی شیفت‌ها انگار خیلی کند می‌گذرن. فعلاً یکی‌یکی جلو بریم.',
             'هنوز اینجام. اگر کاری هست که می‌شه سریع‌ترش کرد، بگو.'
         ],
         'سرم خیلی شلوغه|سرم شلوغه|خیلی کار دارم|کار ریخته سرم|شلوغه|شلوغ|پرکاره|پرکار': [
@@ -817,12 +817,12 @@
             'می‌فهمم؛ وقتی کارها پشت‌سرهم می‌رسن واقعاً سنگینه. یکی‌یکی بریم—محاسبه یا ابزار بعدی چیه؟'
         ],
         'پاهام درد|کمردرد|درد میکنه|کمرم درد': [
-            'متأسفم. اگر امکانش هست وضعیت بدنت رو عوض کن و کمی استراحت کن؛ درد مداوم یا شدید رو نادیده نگیر.',
-            'سرپا موندن طولانی واقعاً سخت است. اگر درد ادامه دارد، بهتره برای ارزیابی مناسب پیگیریش کنی.'
+            'متأسفم. اگه می‌تونی وضعیت بدنت رو عوض کن و کمی استراحت کن؛ درد مداوم یا شدید رو نادیده نگیر.',
+            'سرپا موندن طولانی واقعاً سخته. اگه درد ادامه داره، بهتره برای ارزیابی مناسب پیگیریش کنی.'
         ],
         'خوابم میاد|چقدر خوابم میاد|شیفت شب سخته': [
-            'شیفت شب سخت است. اگر خواب‌آلودگی روی ایمنی کارت اثر گذاشته، حتماً به همکار یا مسئول شیفت بگو.',
-            'اگر شرایط بخش اجازه می‌ده، یک استراحت کوتاه می‌تونه کمک کند. بگو چه کاری رو برات سریع‌تر کنم.'
+            'شیفت شب سخته. اگه خواب‌آلودگی روی ایمنی کارت اثر گذاشته، حتماً به همکار یا مسئول شیفت بگو.',
+            'اگه شرایط بخش اجازه می‌ده، یه استراحت کوتاه می‌تونه کمک کنه. بگو چه کاری رو برات سریع‌تر کنم.'
         ],
         'گرسنه شدم|گرسنه ام|گرسنمه|گرسنه|گشنه ام|گشنمه|گشنم': [
             'اوه، امیدوارم خیلی زود فرصت کنی یه چیزی بخوری. تا اون موقع هر کاری می‌تونم کوتاه‌تر کنم بگو.',
@@ -834,7 +834,7 @@
         ],
         'استرس دارم|نگرانم|اعصابم': [
             'می‌فهمم. فعلاً چند نفس آرام بکش و کارها رو یکی‌یکی جلو ببر.',
-            'اگر فشار زیاد شده، صحبت با یک همکار قابل‌اعتماد یا مسئول شیفت می‌تونه کمک کند.'
+            'اگه فشار زیاد شده، حرف زدن با یه همکار قابل‌اعتماد یا مسئول شیفت می‌تونه کمک کنه.'
         ],
         // gratitude / praise
         'متشکرم|ممنون|مرسی|تشکر': [
@@ -842,7 +842,7 @@
             'قابلی نداشت؛ بگو کار بعدی چیه.'
         ],
         'دستت درد نکنه|دست شما درد نکنه': [
-            'خواهش می‌کنم. خوشحالم که مفید بود.',
+            'خواهش می‌کنم. خوشحالم به دردت خورد.',
             'ممنون؛ هر وقت لازم شد صدام کن.'
         ],
         'ایول|آفرین|چه عالی|عالیه': [
@@ -888,12 +888,12 @@
             'مرسی؛ من هم خوشحالم که می‌تونم کمکت کنم.'
         ],
         'تو واقعی هستی|رباتی|تو رباتی|آدمی': [
-            'من یک دستیار نرم‌افزاری‌ام، نه انسان. فرمان‌ها رو به ابزارهای فاکسی‌مد وصل می‌کنم.',
-            'من ربات گفت‌وگویی فاکسی‌مد هستم و پاسخ‌هام جای قضاوت بالینی رو نمی‌گیرن.'
+            'من یه دستیار نرم‌افزاری‌ام، نه آدم. درخواست‌هات رو به ابزارهای فاکسی‌مد وصل می‌کنم.',
+            'من دستیار گفت‌وگویی فاکسی‌مدم و جواب‌هام جای قضاوت بالینی رو نمی‌گیرن.'
         ],
         'چند سالته|سنت چقدره|پسری یا دختری|دختری|پسری': [
             'سن یا جنسیت انسانی ندارم؛ من دستیار نرم‌افزاری فاکسی‌مدم.',
-            'من یک برنامه‌ام، ولی می‌تونم برای محاسبات و ابزارهای فاکسی‌مد کنارت باشم.'
+            'من یه برنامه‌ام، ولی می‌تونم برای محاسبات و ابزارهای فاکسی‌مد کنارت باشم.'
         ],
         'دمت گرم|باهوشی': [
             'ممنون! خوشحالم که درست کار کرد.',
@@ -902,7 +902,7 @@
         // generic confirmations — broad and low-specificity, kept last
         'بله|اوکی|باشه|چشم|حتماً|خوبه': [
             'باشه؛ هر وقت آماده‌ای بگو.',
-            'چشم، منتظر فرمان بعدی هستم.',
+            'چشم، منتظر درخواست بعدیتم.',
             'خوبه؛ بگو چه کاری انجام بدم.'
         ]
     };
@@ -943,7 +943,7 @@
                     if (contact.classList) contact.classList.remove('voice-contact-highlight');
                 }, 1900);
             }, 250);
-            showVoiceResult('حتماً؛ راه ارتباط با محمدمهدی تقوی از طریق تلگرام در تنظیمات مشخص شده.', 'success');
+            showVoiceResult('حتماً؛ راه ارتباط با محمدمهدی تقوی رو توی بخش تلگرام تنظیمات نشونت دادم.', 'success');
             return true;
         }
 
@@ -969,7 +969,7 @@
         if (/^(?:اسم من چیه|منو چی صدا میکنی|من رو چی صدا میکنی)$/.test(lower)) {
             const userName = (localStorage.getItem('userName') || '').trim();
             showVoiceResult(userName
-                ? userName + '؛ اسمیه که برای خطاب کردنت ذخیره شده.'
+                ? userName + '؛ با همین اسم صدات می‌کنم.'
                 : 'هنوز اسمت رو نمی‌دونم. می‌تونی از تنظیمات واردش کنی.', 'success');
             return true;
         }
@@ -1078,7 +1078,7 @@
 
         const isExplicitCancellation = /(?:^|\s)(?:no|نه|اشتباه|لغو)(?=$|\s)/i.test(lower);
         if (isExplicitCancellation && lastCommand) {
-            showVoiceResult('دستور قبلی لغو شد. لطفاً دوباره بگویید.', 'info');
+            showVoiceResult('دستور قبلی لغو شد. دوباره بگو چی لازم داری.', 'info');
             lastCommand = null;
             lastParams = null;
             return;
@@ -1091,7 +1091,7 @@
         if (!best || best[1] < 0.55) {
             if (params.weight && params.height) { dispatchCommand('bmi', textWithDigits, params); return; }
             logUnrecognizedPhrase(text, normalized);
-            showVoiceResult('متوجه نشدم. لطفاً واضح‌تر بگویید یا از دکمه‌های نمونه استفاده کنید.', 'error');
+            showVoiceResult('درست متوجه نشدم. یه‌بار واضح‌تر بگو یا یکی از نمونه‌ها رو بزن.', 'error');
             return;
         }
 
@@ -1110,8 +1110,8 @@
                 (best[0] === 'bsa' && second[0] === 'bmi');
             logUnrecognizedPhrase(text, normalized);
             showVoiceResult(bodyMeasureTie
-                ? 'دستور مبهم است. لطفاً مشخص کنید BMI یا BSA را می‌خواهید.'
-                : 'دو دستور شبیه هم شنیدم. لطفاً نام محاسبه را واضح‌تر بگویید.', 'info');
+                ? 'مطمئن نیستم منظورت BMI یا BSAـه؛ اسمش رو بگو.'
+                : 'دو دستور شبیه هم پیدا کردم؛ اسم محاسبه رو واضح‌تر بگو.', 'info');
             return;
         }
 
@@ -1281,7 +1281,7 @@
                 showVoiceResult('تنظیمات باز شد', 'success');
                 break;
             case 'help':
-                showVoiceResult('می‌توانم محاسبه‌گر دارو و ابزار بالینی مرتبط را باز کنم، مقدارهای گفته‌شده را وارد کنم، اطلاعات و سازگاری داروها را پیدا کنم و تم یا اندازه نوشته را تغییر دهم. امتحان کنید: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «درصد سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی فقط بعد از تأیید شما اجرا می‌شوند.', 'info');
+                showVoiceResult('می‌تونم محاسبه‌گر دارو یا ابزار بالینی موردنظرت رو باز کنم، عددهایی که می‌گی رو وارد کنم، اطلاعات و سازگاری داروها رو پیدا کنم و تم یا اندازه نوشته رو تغییر بدم. مثلاً بگو: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «درصد سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی رو فقط بعد از تأییدت اجرا می‌کنم.', 'info');
                 break;
             case 'reverse':
                 AppState.reverseMode = !AppState.reverseMode;
@@ -1496,7 +1496,7 @@
     function handleDrugVoice(text, params) {
         const drugId = params.drugId || findDrugName(text);
         if (!drugId) {
-            showVoiceResult('دارو شناسایی نشد. لطفاً نام دارو را واضح بگویید.', 'error');
+            showVoiceResult('اسم دارو رو نگرفتم؛ یه‌بار واضح‌تر بگو.', 'error');
             return;
         }
 
@@ -1569,7 +1569,7 @@
                 DOM.doctorOrder.dataset.numericValue = doseVal;
             }
         } else {
-            showVoiceResult('دوز مشخص نشد. لطفاً مقدار دوز را بگویید.', 'error');
+            showVoiceResult('مقدار دوز رو نگرفتم؛ دوز رو هم بگو.', 'error');
             return;
         }
 
@@ -1591,7 +1591,7 @@
 
     function handleDrugInfo(text, params) {
         const drugId = params.drugId || findDrugName(text);
-        if (!drugId) { showVoiceResult('نام دارو مشخص نشد. لطفاً نام دارو را بگویید.', 'error'); return; }
+        if (!drugId) { showVoiceResult('اسم دارو مشخص نیست؛ اسمش رو هم بگو.', 'error'); return; }
         const drug = drugDatabase[drugId];
         if (!drug) { showVoiceResult('این دارو در پایگاه داده موجود نیست.', 'error'); return; }
 
@@ -1631,7 +1631,7 @@
 
         const w = params.weight || 0;
         const h = params.height || 0;
-        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: شاخص توده بدنی وزن ۷۵ قد ۱۷۵)', 'error'); return; }
+        if (!w || !h) { showVoiceResult('وزن و قد رو هم بگو؛ مثلاً «BMI وزن ۷۵ قد ۱۷۵».', 'error'); return; }
         document.getElementById('bmiWeight').value = w;
         document.getElementById('bmiHeight').value = h;
         calculateBMI();
@@ -1643,7 +1643,7 @@
     function handleBSAVoice(params) {
         const w = params.weight || 0;
         const h = params.height || 0;
-        if (!w || !h) { showVoiceResult('لطفاً وزن و قد را وارد کنید (مثال: سطح بدن وزن ۷۰ قد ۱۷۰)', 'error'); return; }
+        if (!w || !h) { showVoiceResult('وزن و قد رو هم بگو؛ مثلاً «سطح بدن وزن ۷۰ قد ۱۷۰».', 'error'); return; }
         document.getElementById('bsaWeight').value = w;
         document.getElementById('bsaHeight').value = h;
         const text = params._original || '';
@@ -1664,7 +1664,7 @@
         const w = params.weight || 0;
         const cr = params.dose || 0;
         const gender = params.gender || 'male';
-        if (!age || !w || !cr) { showVoiceResult('لطفاً سن، وزن و کراتینین را وارد کنید', 'error'); return; }
+        if (!age || !w || !cr) { showVoiceResult('سن، وزن و کراتینین رو هم بگو.', 'error'); return; }
         document.getElementById('crclAge').value = age;
         document.getElementById('crclWeight').value = w;
         document.getElementById('crclValue').value = cr;
@@ -1678,7 +1678,7 @@
     function handleDripRateVoice(params) {
         const vol = params.volume || 0;
         const time = params.time || 0;
-        if (!vol || !time) { showVoiceResult('لطفاً حجم و زمان را وارد کنید (مثال: قطره ۵۰۰ میلی‌لیتر در ۸ ساعت)', 'error'); return; }
+        if (!vol || !time) { showVoiceResult('حجم و زمان رو هم بگو؛ مثلاً «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت».', 'error'); return; }
         document.getElementById('dripVolume').value = vol;
         document.getElementById('dripTime').value = time;
         calculateDripRateLive();
@@ -1730,7 +1730,7 @@
             const nums = text.match(/(\d+)\s*(\d+)\s*(\d+)/);
             if (nums) { e = parseInt(nums[1]); v = parseInt(nums[2]); m = parseInt(nums[3]); }
         }
-        if (!e || !v || !m) { showVoiceResult('لطفاً سه عدد برای GCS وارد کنید (مثال: گلاسکو ۴ ۵ ۶)', 'error'); return; }
+        if (!e || !v || !m) { showVoiceResult('سه عدد GCS رو هم بگو؛ مثلاً «گلاسکو ۴ ۵ ۶».', 'error'); return; }
 
         document.querySelectorAll('.gcs-btn[data-domain="eye"]').forEach(function (btn) { if (parseInt(btn.dataset.score) === e) btn.click(); });
         document.querySelectorAll('.gcs-btn[data-domain="verbal"]').forEach(function (btn) { if (parseInt(btn.dataset.score) === v) btn.click(); });
@@ -1748,7 +1748,7 @@
             if (match) score = parseInt(match[1]);
         }
         if (score === undefined || score < -5 || score > 4) {
-            showVoiceResult('لطفاً عدد RASS را بین -5 تا 4 وارد کنید (مثال: RASS 2)', 'error');
+            showVoiceResult('عدد RASS رو بین ۵- تا ۴ بگو؛ مثلاً «RASS 2».', 'error');
             return;
         }
         document.querySelectorAll('.rass-level').forEach(function (level) { if (parseInt(level.dataset.score) === score) level.click(); });
@@ -1761,7 +1761,7 @@
 
         const scores = params.bradenScores;
         if (!scores || scores.length !== 6) {
-            showVoiceResult('لطفاً ۶ عدد برای برادن وارد کنید (حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک)', 'info');
+            showVoiceResult('۶ عدد برادن رو به‌ترتیب بگو: حس، رطوبت، فعالیت، تحرک، تغذیه و اصطکاک.', 'info');
             return;
         }
         const domains = ['sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction'];
@@ -1777,7 +1777,7 @@
 
         const scores = params.morseScores;
         if (!scores || scores.length !== 6) {
-            showVoiceResult('لطفاً ۶ عدد برای مورس وارد کنید (سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی)', 'info');
+            showVoiceResult('۶ عدد مورس رو به‌ترتیب بگو: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن و وضعیت ذهنی.', 'info');
             return;
         }
         const domains = ['fallHistory', 'secDiag', 'aid', 'iv', 'gait', 'mental'];
@@ -1789,7 +1789,7 @@
 
     function handleBurnsVoice(text) {
         switchTab('tools');
-        showVoiceResult('لطفاً روی نواحی سوختگی در بخش سوختگی کلیک کنید.', 'info');
+        showVoiceResult('بخش سوختگی رو باز کردم؛ ناحیه‌های سوخته رو روی تصویر بزن.', 'info');
         if (text.includes('کودک') || text.includes('pediatric')) setBurnsAge('pediatric');
         else setBurnsAge('adult');
         setTimeout(function () { openAccordionById('burnsAccordionItem'); }, 300);
@@ -1800,7 +1800,7 @@
         const pressure = params.pressure || 0;
         const flow = params.flow || 0;
         if (!size || !pressure || !flow) {
-            showVoiceResult('لطفاً حجم کپسول، فشار و جریان را وارد کنید (مثال: اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴ لیتر در دقیقه)', 'error');
+            showVoiceResult('حجم کپسول، فشار و جریان رو هم بگو؛ مثلاً «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴».', 'error');
             switchTab('tools');
             return;
         }
@@ -1823,7 +1823,7 @@
         const pco2 = params.pco2 || 0;
         const hco3 = params.hco3 || 0;
         if (!pH || !pco2 || !hco3) {
-            showVoiceResult('لطفاً pH، pCO₂ و HCO₃ را وارد کنید (مثال: VBG pH 7.4 pco2 45 hco3 24)', 'error');
+            showVoiceResult('pH، pCO₂ و HCO₃ رو هم بگو؛ مثلاً «VBG pH 7.4 pCO2 45 HCO3 24».', 'error');
             return;
         }
         document.getElementById('vbgPH').value = pH;
@@ -1840,7 +1840,7 @@
 
         const height = params.height || 0;
         const gender = params.gender || 'male';
-        if (!height) { showVoiceResult('لطفاً قد بیمار را وارد کنید (مثال: ونتیلاتور قد ۱۷۵ مرد)', 'error'); return; }
+        if (!height) { showVoiceResult('قد بیمار رو هم بگو؛ مثلاً «ونتیلاتور قد ۱۷۵ مرد».', 'error'); return; }
         document.getElementById('ventHeight').value = height;
         document.querySelectorAll('#ventGenderBtns .method-btn-compact').forEach(function (btn) { if (btn.dataset.gender === gender) btn.click(); });
         const heightTab = document.querySelector('#ventMethodTabs .vent-tab[data-tab="height"]');
@@ -1858,7 +1858,7 @@
         const age = params.age || 0;
         const gender = params.gender || 'male';
         if (!weight || !height || !age) {
-            showVoiceResult('لطفاً وزن، قد و سن را وارد کنید (مثال: تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰ مرد)', 'error');
+            showVoiceResult('وزن، قد و سن رو هم بگو؛ مثلاً «تغذیه وزن ۷۰ قد ۱۷۵ سن ۵۰ مرد».', 'error');
             return;
         }
         document.getElementById('nutWeight').value = weight;
@@ -1881,7 +1881,7 @@
         const d1 = params.drug1 || ids[0];
         const d2 = params.drug2 || ids[1];
         if (!d1 || !d2 || d1 === d2) {
-            showVoiceResult('لطفاً دو دارو را برای بررسی سازگاری وارد کنید (مثال: سازگاری هپارین و وانکومایسین)', 'error');
+            showVoiceResult('اسم هر دو دارو رو بگو؛ مثلاً «سازگاری هپارین و وانکومایسین».', 'error');
             return;
         }
         document.querySelectorAll('#ysiteDrugGrid .ysite-drug-chip').forEach(function (chip) {

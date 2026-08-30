@@ -169,6 +169,10 @@
     padding: 8px 0 4px;
     position: relative;
 }
+.voice-container.stage-locked .voice-orb-zone {
+    flex: 0 0 var(--voice-stable-stage-height);
+    min-height: var(--voice-stable-stage-height);
+}
 
 /* The fox mark is FoxiMed's brand mascot, not a theme-driven UI accent —
    like Slack's hash mark staying Slack-purple regardless of dark mode, it
@@ -553,6 +557,10 @@
     border-inline-start: 4px solid var(--voice-c1);
     background: color-mix(in srgb, var(--voice-c1) 8%, var(--surface));
     animation: voiceFadeSlideIn 0.25s ease;
+    max-height: min(30vh, 230px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    flex-shrink: 0;
 }
 @supports not (background: color-mix(in srgb, red, blue)) {
     .voice-result { background: var(--surface); }
@@ -693,6 +701,7 @@
 .voice-text-fallback-wrap {
     position: relative;
     width: 100%;
+    margin-top: auto;
 }
 .voice-autocomplete {
     position: absolute;

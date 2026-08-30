@@ -32,6 +32,8 @@
         els = {
             orb: qs('voiceOrb'),
             orbContainer: qs('voiceOrbContainer'),
+            orbZone: document.querySelector('.voice-orb-zone'),
+            container: document.querySelector('.voice-container'),
             status: qs('voiceStatus'),
             result: qs('voiceResult'),
             banner: qs('voiceEnvBanner'),
@@ -50,6 +52,24 @@
             autocomplete: qs('voiceAutocomplete'),
             examples: qs('voiceExamples')
         };
+    }
+
+    // Freeze the fox stage at its idle height once the assistant tab is
+    // visible. Result/confirmation cards then consume the flexible space
+    // below it (and scroll internally when long) instead of making the fox
+    // jump upward between listening and reply states.
+    function stabilizeLayout() {
+        if (!els.container || !els.orbZone) return;
+        const resultVisible = els.result && els.result.style.display !== 'none';
+        if (resultVisible) return;
+        els.container.classList.remove('stage-locked');
+        els.container.style.removeProperty('--voice-stable-stage-height');
+        requestAnimationFrame(function () {
+            const height = els.orbZone.getBoundingClientRect().height;
+            if (height < 100) return;
+            els.container.style.setProperty('--voice-stable-stage-height', Math.round(height) + 'px');
+            els.container.classList.add('stage-locked');
+        });
     }
 
     // ============================================
@@ -174,7 +194,7 @@
 
         const text = document.createElement('span');
         text.className = 'voice-result-text voice-confirm-text';
-        text.textContent = (info.message || '') + ' می‌توانید این بار از سرویس آنلاین مرورگر استفاده کنید؛ صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود.';
+        text.textContent = (info.message || '') + ' می‌تونی این بار از سرویس آنلاین مرورگر استفاده کنی؛ صدا برای تشخیص به سرویس مرورگر فرستاده می‌شه.';
 
         const actions = document.createElement('div');
         actions.className = 'voice-confirm-actions';
@@ -254,7 +274,13 @@
         // gets revisited later, but the toggle stays hidden unconditionally
         // and voiceOutput is forced off, including for anyone who has an
         // old localStorage value from before this was turned off.
-        if (els.ttsToggle) els.ttsToggle.style.display = 'none';
+        if (els.ttsToggle) {
+            // Keep the 34 px slot reserved so the title remains centered
+            // against the capabilities button on the opposite side.
+            els.ttsToggle.style.visibility = 'hidden';
+            els.ttsToggle.style.pointerEvents = 'none';
+            els.ttsToggle.tabIndex = -1;
+        }
         if (els.headerSpacer) els.headerSpacer.style.display = 'none';
         if (window.AppState && window.AppState.settings) {
             window.AppState.settings.voiceOutput = false;
@@ -595,6 +621,7 @@
         setOrbState('idle');
         setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
         if (els.result) els.result.style.display = 'none';
+        window.addEventListener('resize', stabilizeLayout, { passive: true });
 
         if (els.orbContainer) els.orbContainer.addEventListener('click', onMicClick);
 
@@ -706,7 +733,8 @@
     window.VoiceUI = {
         showResult: showResult,
         showConfirmation: showConfirmation,
-        appendTip: appendTip
+        appendTip: appendTip,
+        stabilizeLayout: stabilizeLayout
     };
     window.initVoiceTab = init;
 })(window, document);
