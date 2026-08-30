@@ -9,7 +9,7 @@
     'use strict';
 
     const SAMPLE_RATE = 16000;
-    const WORKER_URL = './whisper-worker.js?v=36';
+    const WORKER_URL = './whisper-worker.js?v=37';
     const LOAD_TIMEOUT_MS = 15 * 60 * 1000;
     const ENERGY_FRAME_SAMPLES = 320;
     const START_RMS = 0.015;
@@ -105,7 +105,10 @@
                     const entry = pending.get(msg.requestId);
                     if (!entry) return;
                     pending.delete(msg.requestId);
-                    if (msg.type === 'result') entry.resolve(String(msg.text || '').trim());
+                    if (msg.type === 'result') {
+                        if (msg.rejectedReason) console.warn('[WhisperASR] ignored likely background-noise hallucination:', msg.rejectedReason);
+                        entry.resolve(String(msg.text || '').trim());
+                    }
                     else entry.reject(new Error(msg.message || 'whisper-inference-failed'));
                 }
             };
@@ -156,6 +159,7 @@
         reset() {
             this.chunks = [];
             this.samples = 0;
+            this.lastAudioStats = null;
             this.endpoint = false;
             this.speech = false;
             this.confirmFrames = 0;
@@ -213,6 +217,17 @@
             if (!worker || !workerReadyPromise) return Promise.reject(new Error('whisper-worker-not-ready'));
             const audio = this.exportAudio();
             if (audio.length < SAMPLE_RATE * 0.15) return Promise.resolve('');
+            let sumSq = 0;
+            let peak = 0;
+            for (let i = 0; i < audio.length; i++) {
+                const value = Number.isFinite(audio[i]) ? audio[i] : 0;
+                sumSq += value * value;
+                peak = Math.max(peak, Math.abs(value));
+            }
+            this.lastAudioStats = {
+                rms: Math.sqrt(sumSq / audio.length),
+                peak: peak
+            };
             const id = ++requestId;
             return new Promise(function (resolve, reject) {
                 pending.set(id, { resolve: resolve, reject: reject });
@@ -223,6 +238,7 @@
         decode() { return Promise.resolve(''); }
         endpointDetected() { return this.endpoint; }
         bufferedSeconds() { return this.samples / SAMPLE_RATE; }
+        audioStats() { return this.lastAudioStats || null; }
         supportsLivePartials() { return false; }
         executionProvider() { return 'transformersjs-webgpu-whisper-' + this.model; }
         destroy() { shutdown(new DOMException('Whisper released', 'AbortError')); return Promise.resolve(); }

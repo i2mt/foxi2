@@ -33,8 +33,6 @@
             orb: qs('voiceOrb'),
             orbContainer: qs('voiceOrbContainer'),
             status: qs('voiceStatus'),
-            transcript: qs('voiceTranscript'),
-            transcriptArea: qs('voiceTranscriptArea'),
             result: qs('voiceResult'),
             banner: qs('voiceEnvBanner'),
             bannerText: qs('voiceEnvBannerText'),
@@ -60,6 +58,7 @@
     function setStatus(text, state) {
         if (!els.status) return;
         els.status.textContent = text;
+        els.status.removeAttribute('aria-label');
         els.status.className = 'voice-status' + (state ? ' ' + state : '');
     }
 
@@ -70,11 +69,9 @@
         }
         if (els.orbContainer) {
             els.orbContainer.classList.toggle('recording', state === 'listening');
-        }
-        // The transcript only matters while something is actively being
-        // heard/handled — keep it out of the layout otherwise.
-        if (els.transcriptArea) {
-            els.transcriptArea.style.display = (state === 'listening' || state === 'processing') ? '' : 'none';
+            if (state !== 'loading-model') {
+                els.orbContainer.classList.remove('is-model-initializing', 'is-model-retrying', 'is-model-indeterminate');
+            }
         }
         // Hide the example chips while busy so the page stays compact and
         // doesn't compete with the live transcript/result for attention.
@@ -83,10 +80,18 @@
         }
     }
 
-    function setTranscript(text, active) {
-        if (!els.transcript) return;
-        els.transcript.textContent = text || '…';
-        els.transcript.classList.toggle('active', !!active);
+    function setModelFoxProgress(percent, state) {
+        if (!els.orbContainer) return;
+        const value = Math.max(0, Math.min(100, Number(percent) || 0));
+        els.orbContainer.style.setProperty('--model-progress', value + '%');
+        els.orbContainer.classList.toggle('is-model-initializing', state === 'initializing');
+        els.orbContainer.classList.toggle('is-model-retrying', state === 'retrying');
+        els.orbContainer.classList.toggle('is-model-indeterminate', state === 'indeterminate');
+    }
+
+    function currentModelFoxProgress() {
+        if (!els.orbContainer) return 0;
+        return parseFloat(els.orbContainer.style.getPropertyValue('--model-progress')) || 0;
     }
 
     function showResult(message, type) {
@@ -425,7 +430,6 @@
     function handleTranscript(text, source) {
         if (!text) return;
         addToHistory(text);
-        setTranscript(text, true);
         setStatus('در حال پردازش...', 'processing');
         setOrbState('processing');
         if (els.result) els.result.style.display = 'none';
@@ -440,7 +444,6 @@
             finalReceived = false;
             setOrbState('listening');
             setStatus('گوش می‌کنم...', 'recording');
-            setTranscript('', false);
             if (els.result) els.result.style.display = 'none';
             if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
         });
@@ -452,6 +455,7 @@
             setStatus('آماده‌سازی موتور آفلاین...', 'processing');
             if (els.modelProgress) {
                 els.modelProgress.style.display = 'flex';
+                setModelFoxProgress(0, 'indeterminate');
                 if (els.modelProgressFill) {
                     els.modelProgressFill.style.width = '0%';
                     els.modelProgressFill.classList.add('is-indeterminate');
@@ -466,6 +470,7 @@
         window.VoiceEngine.on('model-progress', function (p) {
             if (!els.modelProgressFill) return;
             if (p.status === 'retrying-network' || p.status === 'retrying-model-load') {
+                setModelFoxProgress(currentModelFoxProgress(), 'retrying');
                 els.modelProgressFill.classList.add('is-indeterminate');
                 if (els.modelProgressLabel) {
                     const attempt = Number(p.attempt) || 2;
@@ -476,12 +481,14 @@
                 return;
             }
             if (p.status === 'initialized') {
+                setModelFoxProgress(100, 'initializing');
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = '100%';
                 if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'مدل آماده شد؛ در حال فعال‌سازی میکروفون...';
                 return;
             }
             if (p.phase === 'initializing' || p.status === 'initializing') {
+                setModelFoxProgress(100, 'initializing');
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = '100%';
                 if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'دانلود کامل شد؛ در حال راه‌اندازی مدل روی دستگاه...';
@@ -490,6 +497,7 @@
             const overall = Number(p.overallPercent);
             if (Number.isFinite(overall)) {
                 const percent = Math.max(0, Math.min(100, Math.round(overall)));
+                setModelFoxProgress(percent, 'downloading');
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = percent + '%';
                 if (els.modelProgressLabel) {
@@ -503,12 +511,14 @@
                 return;
             }
             if (p.fromCache) {
+                setModelFoxProgress(100, 'initializing');
                 els.modelProgressFill.classList.remove('is-indeterminate');
                 els.modelProgressFill.style.width = '100%';
                 if (els.modelProgressLabel) els.modelProgressLabel.textContent = 'بارگذاری از حافظه ذخیره‌شده...';
                 return;
             }
             if (p.percent === null || p.percent === undefined) {
+                setModelFoxProgress(currentModelFoxProgress(), 'indeterminate');
                 els.modelProgressFill.classList.add('is-indeterminate');
                 if (els.modelProgressLabel) {
                     els.modelProgressLabel.textContent = 'دانلود شده: ' + (Math.round(p.loaded / 1024 / 1024 * 10) / 10) + ' مگابایت';
@@ -517,6 +527,7 @@
             }
             els.modelProgressFill.classList.remove('is-indeterminate');
             const filePercent = Math.max(0, Math.min(100, Math.round(Number(p.percent) || 0)));
+            setModelFoxProgress(filePercent, 'downloading');
             els.modelProgressFill.style.width = filePercent + '%';
             if (els.modelProgressLabel) els.modelProgressLabel.textContent = filePercent + '٪ دانلود شده';
         });
@@ -531,17 +542,20 @@
                 }
             }
         });
-        window.VoiceEngine.on('interim', function (text) {
-            setTranscript(text, true);
-        });
+        // Raw/interim ASR text is intentionally not rendered. Bedside models
+        // often produce fuzzy partial spellings; the nurse should review the
+        // clean interpreted clinical action instead of decoder fragments.
         window.VoiceEngine.on('final', function (text) {
             finalReceived = true;
             handleTranscript(text, 'voice');
         });
         window.VoiceEngine.on('decoding', function () {
             setOrbState('processing');
-            setStatus('در حال تبدیل صدا به متن...', 'processing');
-            setTranscript('صدا دریافت شد', true);
+            setStatus('', 'processing');
+            if (els.status) els.status.setAttribute('aria-label', 'در حال تبدیل صدا به متن');
+            // Do not add a separate “audio received” step. It looked like a
+            // completed result and made local inference feel stalled. The
+            // animated fox and status are enough feedback until text exists.
         });
         window.VoiceEngine.on('audio', onAudioData);
         window.VoiceEngine.on('end', function () {
@@ -580,7 +594,6 @@
         renderHistory();
         setOrbState('idle');
         setStatus('برای شروع، دکمه را بزنید یا تایپ کنید');
-        setTranscript('', false);
         if (els.result) els.result.style.display = 'none';
 
         if (els.orbContainer) els.orbContainer.addEventListener('click', onMicClick);

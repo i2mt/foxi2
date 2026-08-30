@@ -19,9 +19,15 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.33';
+const APP_VERSION = '5.0.34';
 
 const CHANGELOG = {
+    '5.0.34': [
+        'انتخاب Rizeh در حالت خودکار بر اساس نتیجه بهتر آزمون‌های فارسی',
+        'درک بهتر شکل‌های آوایی رایج در گفت‌وگوی فارسی Whisper',
+        'نادیده گرفتن خروجی‌های تکراری ناشی از صدای ثابت محیط',
+        'ظاهر حرفه‌ای‌تر آغاز برنامه و بازخورد متحرک پردازش و دانلود صدا'
+    ],
     '5.0.33': [
         'ادامه خودکار دانلود Whisper پس از قطع کوتاه یا ناپایداری اتصال',
         'نمایش واضح تلاش دوباره هنگام اختلال شبکه',
@@ -295,19 +301,13 @@ const AppState = {
     loadingScreen.style.background = gradient;
 }
 
-    let tipIndex = 0;
-    function rotateTip() {
-        const tips = document.querySelectorAll('.loading-tip');
-        if (!tips.length) return;
-        tips[tipIndex % tips.length].classList.remove('active');
-        tipIndex = (tipIndex + 1) % tips.length;
-        tips[tipIndex].classList.add('active');
-    }
-
     window.loadingProgress = function(pct, status) {
         const bar    = document.getElementById('loadingBar');
         const stat   = document.getElementById('loadingStatus');
-        if (bar)  bar.style.width  = pct + '%';
+        const fox    = document.getElementById('loadingFox');
+        const value  = Math.max(0, Math.min(100, Number(pct) || 0));
+        if (bar)  bar.style.width  = value + '%';
+        if (fox)  fox.style.setProperty('--loading-progress', value + '%');
         if (stat) stat.textContent = status;
     };
 
@@ -337,11 +337,9 @@ const AppState = {
 
     document.addEventListener('DOMContentLoaded', () => {
         applyThemeToLoadingScreen();
-        const tipInterval = setInterval(rotateTip, 1800);
         let i = 0;
         function runStep() {
             if (i >= steps.length) {
-                clearInterval(tipInterval);
                 finishLoadingWithOptionalVoiceWarmup();
                 return;
             }
@@ -1207,27 +1205,21 @@ function updateVoiceRecognitionModeNote() {
     const selected = (AppState.settings && AppState.settings.voiceRecognitionMode) || 'auto';
     const hasWebGPU = !!(navigator.gpu && navigator.gpu.requestAdapter);
     const memory = Number(navigator.deviceMemory);
-    let effective = 'rizeh';
-    if (window.VoiceEngine && typeof window.VoiceEngine.getSelectedBackend === 'function') {
-        effective = window.VoiceEngine.getSelectedBackend();
-    }
-    const names = { 'whisper-base': 'Whisper Base', 'whisper-tiny': 'Whisper Tiny', rizeh: 'Rizeh' };
     if ((selected === 'whisper-base' || selected === 'whisper-tiny') && !hasWebGPU) {
         note.textContent = 'WebGPU روی این مرورگر در دسترس نیست؛ Rizeh به‌طور خودکار استفاده می‌شود.';
         return;
     }
     if (selected === 'auto') {
-        const memoryText = Number.isFinite(memory) && memory > 0 ? ' · RAM گزارش‌شده: ' + memory + ' GB' : '';
-        note.textContent = 'انتخاب فعلی این دستگاه: ' + (names[effective] || 'Rizeh') + memoryText;
+        note.textContent = 'انتخاب خودکار: Rizeh؛ دقیق‌ترین نتیجه فعلی برای فرمان‌های فارسی فاکسی‌مد.';
         return;
     }
     if (selected === 'whisper-base' && Number.isFinite(memory) && memory > 0 && memory < 6) {
-        note.textContent = 'Base قابل امتحان است، اما انتخاب خودکار روی این دستگاه Tiny را امن‌تر می‌داند.';
+        note.textContent = 'Base آزمایشی است و روی این دستگاه ممکن است حافظه کافی نداشته باشد.';
         return;
     }
     note.textContent = selected === 'rizeh'
-        ? 'سبک‌ترین گزینه؛ مناسب گوشی‌های قدیمی‌تر و کم‌حافظه.'
-        : 'صدا روی گوشی پردازش می‌شود؛ بار اول بسته مدل از اینترنت دانلود خواهد شد.';
+        ? 'گزینه پیشنهادی فعلی؛ سبک‌تر و در آزمون‌های فارسی فاکسی‌مد دقیق‌تر بوده است.'
+        : 'حالت آزمایشی؛ صدا روی گوشی پردازش می‌شود و بسته مدل فقط بار اول دانلود خواهد شد.';
 }
 
 function applySettings() {

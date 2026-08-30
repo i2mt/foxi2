@@ -57,7 +57,8 @@
         { pattern: /(^|\s)(?:ای\s*بی\s*جی|ایبیجی)(?=\s|$)/g, value: 'abg' },
         { pattern: /(^|\s)(?:وی\s*بی\s*جی|ویبیجی)(?=\s|$)/g, value: 'vbg' },
         { pattern: /(^|\s)(?:سی\s*آر\s*سی\s*ال|سی\s*آر\s*کل)(?=\s|$)/g, value: 'crcl' },
-        { pattern: /(^|\s)(?:تی\s*بی\s*اس\s*(?:ای|آی)|تیبیاسای)(?=\s|$)/g, value: 'tbsa' }
+        { pattern: /(^|\s)(?:تی\s*بی\s*اس\s*(?:ای|آی)|تیبیاسای)(?=\s|$)/g, value: 'tbsa' },
+        { pattern: /(^|\s)(?:تی\s*ان\s*جی|تیانجی|تی\s*انجی)(?=\s|$)/g, value: 'tng' }
     ];
 
     function normalizeSpokenClinicalTerms(text) {
@@ -72,7 +73,8 @@
         // fragments would be unsafe. Drug commands still require the user
         // to confirm the original, unmodified transcript before execution.
         result = result
-            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان|امفزیان)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)(?:امفزیون|انفوزیون)تی\s*انجی(?=\s|$)/g, '$1انفوزیون tng')
+            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان|امفزیان|امفزیون)(?=\s|$)/g, '$1انفوزیون')
             .replace(/(^|\s)من\s+فزیون(?=\s|$)/g, '$1انفوزیون')
             .replace(/(^|\s)(?:هپار|هپاری)(?=\s|$)/g, '$1هپارین');
 
@@ -83,6 +85,23 @@
             result = result.replace(/(^|\s)(?:رگووللا|رگولایژ)(?=\s|$)/g, '$1رگولار');
         }
         return result.replace(/\s+/g, ' ').trim();
+    }
+
+    // Conservative recovery for short, non-clinical Persian phrases seen in
+    // real Whisper output. Base usually preserves the phonetics but may split
+    // a word or choose a common homophonic spelling. Keep this separate from
+    // clinical-term recovery so these friendly phrases can never rewrite a
+    // drug name, dose, number or confirmation transcript.
+    function normalizeConversationalAsr(text) {
+        return text
+            .replace(/(^|\s)سالا\s+امهال\s+اچتوره(?=\s|$)/g, '$1سلام حالت چطوره')
+            .replace(/(^|\s)سالام\s+هل\s+چیث\s+ره(?=\s|$)/g, '$1سلام حالت چطوره')
+            .replace(/(^|\s)حو\s+بی(?=\s|$)/g, '$1خوبی')
+            .replace(/(^|\s)(?:خیده\s+هستا|گیدگستا)(?=\s|$)/g, '$1خیلی خسته ام')
+            .replace(/(^|\s)سالام(?=\s|$)/g, '$1سلام')
+            .replace(/(^|\s)ا?چتوره(?=\s|$)/g, '$1چطوره')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     // ============================================
@@ -402,8 +421,11 @@
             }
         }
 
-        if (text.includes('male') || text.includes('مرد')) params.gender = 'male';
-        else if (text.includes('female') || text.includes('زن')) params.gender = 'female';
+        // Check female first and use token boundaries: the English word
+        // "female" contains "male", so substring matching classified women
+        // as men in otherwise correctly recognized CrCl requests.
+        if (/(?:^|\s)(?:female|زن)(?=\s|$)/i.test(text)) params.gender = 'female';
+        else if (/(?:^|\s)(?:male|مرد)(?=\s|$)/i.test(text)) params.gender = 'male';
 
         const drugId = findDrugName(text);
         if (drugId) params.drugId = drugId;
@@ -939,6 +961,7 @@
         normalized = normalizeTranscript(normalized);
         const heardTranscript = normalized;
         normalized = normalizeSpokenClinicalTerms(normalized);
+        normalized = normalizeConversationalAsr(normalized);
         const lower = normalized.toLowerCase();
         confirmationSequence++;
 
@@ -1122,6 +1145,49 @@
         }
     }
 
+    function formatConfirmationNumber(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return '';
+        try { return number.toLocaleString('fa-IR', { maximumFractionDigits: 2 }); }
+        catch (e) { return String(number); }
+    }
+
+    function confirmationDrugName(id) {
+        const drug = id && drugDatabase[id];
+        return drug ? (drug.persianName || drug.englishName || id) : '';
+    }
+
+    // Present the canonical action that FoxiMed will execute, not the fuzzy
+    // raw decoder transcript. This is safer for confirmation: the nurse
+    // reviews the resolved drug/tool and parsed patient values directly.
+    function buildConfirmationMessage(label, cmd, params) {
+        params = params || {};
+        const lines = ['عملیات: ' + label];
+        const drugName = confirmationDrugName(params.drugId);
+        if (drugName) lines.push('دارو: ' + drugName);
+        const drug1 = confirmationDrugName(params.drug1);
+        const drug2 = confirmationDrugName(params.drug2);
+        if (drug1 && drug2) lines.push('داروها: ' + drug1 + ' + ' + drug2);
+        if (params.method === 'infusion') lines.push('روش: پمپ انفوزیون');
+        else if (params.method === 'syringe') lines.push('روش: پمپ سرنگ');
+        if (params.solution) lines.push('محلول: ' + params.solution);
+        if (params.weight) lines.push('وزن: ' + formatConfirmationNumber(params.weight) + ' کیلوگرم');
+        if (params.height) lines.push('قد: ' + formatConfirmationNumber(params.height) + ' سانتی‌متر');
+        if (params.age) lines.push('سن: ' + formatConfirmationNumber(params.age) + ' سال');
+        if (params.gender === 'female') lines.push('جنسیت: زن');
+        else if (params.gender === 'male') lines.push('جنسیت: مرد');
+        if (params.ampoules) lines.push('تعداد آمپول: ' + formatConfirmationNumber(params.ampoules));
+        if (params.customAmount && params.customUnit) {
+            lines.push('مقدار: ' + formatConfirmationNumber(params.customAmount) + ' ' + params.customUnit);
+        }
+        if (params.flow) lines.push('جریان: ' + formatConfirmationNumber(params.flow) + ' لیتر در دقیقه');
+        if (params.rassScore !== undefined) lines.push('امتیاز RASS: ' + formatConfirmationNumber(params.rassScore));
+        if (params.bradenScores) lines.push('امتیازهای Braden: ' + params.bradenScores.map(formatConfirmationNumber).join('، '));
+        if (params.morseScores) lines.push('امتیازهای Morse: ' + params.morseScores.map(formatConfirmationNumber).join('، '));
+        if (lines.length === 1) lines.push('برای باز کردن ابزار و ورود یا بررسی مقادیر، تأیید کنید.');
+        return lines.join('\n');
+    }
+
     function dispatchCommand(cmd, text, params) {
         if (!CLINICAL_CONFIRM_COMMANDS.has(cmd)) {
             executeCommand(cmd, text, params);
@@ -1135,9 +1201,8 @@
 
         const requestId = confirmationSequence;
         const label = CONFIRM_LABELS[cmd] || 'محاسبه بالینی';
-        const heard = normalizeTranscript((params && params._heard) || text).slice(0, 180);
         window.VoiceUI.showConfirmation(
-            'عملیات: ' + label + '\nشنیده شد: «' + heard + '»',
+            buildConfirmationMessage(label, cmd, params),
             function () {
                 if (requestId !== confirmationSequence) return;
                 revealCommandTarget(cmd);

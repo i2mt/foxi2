@@ -29,9 +29,16 @@ class MockWorker {
             queueMicrotask(() => this.onmessage({ data: { type: 'ready', model: message.model } }));
         } else if (message.type === 'transcribe') {
             const samples = new Float32Array(message.audio).length;
+            const rejected = Boolean(MockWorker.rejectNextTranscript);
             queueMicrotask(() => this.onmessage({
-                data: { type: 'result', requestId: message.requestId, text: samples ? 'محاسبه درصد سوختگی' : '' }
+                data: {
+                    type: 'result',
+                    requestId: message.requestId,
+                    text: rejected ? '' : (samples ? 'محاسبه درصد سوختگی' : ''),
+                    rejectedReason: rejected ? 'repeated-token' : ''
+                }
             }));
+            MockWorker.rejectNextTranscript = false;
         }
     }
 
@@ -76,6 +83,14 @@ class MockWorker {
     assert.strictEqual(engine.endpointDetected(), true, 'energy endpoint must stop after trailing silence');
     assert(engine.bufferedSeconds() >= 1.2, 'adapter must retain the captured utterance');
     assert.strictEqual(await engine.finalize(), 'محاسبه درصد سوختگی');
+    const stats = engine.audioStats();
+    assert(stats && stats.rms > 0 && stats.peak > 0,
+        'Whisper adapter must retain RMS/peak diagnostics for real-device accuracy reports');
+    engine.reset();
+    engine.feed(voice, 16000);
+    MockWorker.rejectNextTranscript = true;
+    assert.strictEqual(await engine.finalize(), '',
+        'adapter must return an empty transcript for worker-rejected background-noise hallucinations');
     engine.reset();
     assert.strictEqual(engine.bufferedSeconds(), 0, 'reset must retain the loaded model but clear audio');
 
