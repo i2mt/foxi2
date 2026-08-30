@@ -360,18 +360,18 @@ function testDeploymentWiring() {
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
     assert(serviceWorker.includes('koochik-worker.js?v=34'),
         'service worker must precache the v34 Rizeh worker URL');
-    assert(serviceWorker.includes('whisper-worker.js?v=37') && serviceWorker.includes('whisper-asr.js?v=37'),
+    assert(serviceWorker.includes('whisper-worker.js?v=38') && serviceWorker.includes('whisper-asr.js?v=38'),
         'service worker must precache the Whisper adapter and worker shell');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
         'voice adapter must instantiate the v34 Rizeh worker URL');
-    assert(read('whisper-asr.js').includes("whisper-worker.js?v=37"),
-        'Whisper adapter must instantiate the v37 module worker URL');
-    assert(index.includes('service-worker.js?v=37'),
-        'page must register the v37 service worker');
+    assert(read('whisper-asr.js').includes("whisper-worker.js?v=38"),
+        'Whisper adapter must instantiate the current module worker URL');
+    assert(index.includes('service-worker.js?v=38'),
+        'page must register the v38 service worker');
     assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
         'Settings must expose explicit Auto, Whisper and Rizeh choices');
-    assert(index.includes('voice-engine-policy.js?v=37') && serviceWorker.includes('voice-engine-policy.js?v=37'),
-        'the evidence-based v37 engine policy must be loaded and precached');
+    assert(index.includes('voice-engine-policy.js?v=38') && serviceWorker.includes('voice-engine-policy.js?v=38'),
+        'the evidence-based engine policy must be loaded and precached with the current app shell');
     assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
         'visiting the assistant tab must not start a large Whisper download');
     assert(!script.includes('VoiceEngine.releaseModel'),
@@ -402,10 +402,22 @@ function testDeploymentWiring() {
         voiceAssistantCss.includes('flex: 1 1 270px;') &&
         voiceAssistantCss.includes('.voice-orb-zone { flex: 0 0 auto; min-height: 0; }'),
         'assistant layout must use tall-screen space while preserving compact short-phone behavior');
-    assert(read('style.css').includes('width: 152px;') &&
+    assert(read('style.css').includes('width: 188px;') &&
         read('style.css').includes('.dark-mode .logo {\n    background: transparent;') &&
-        read('style.css').includes('.tutorial-control-map'),
-        'startup fox must be dominant, header fox unboxed, and settings tutorial visually mapped');
+        read('style.css').includes('.tutorial-fox-mark {') && read('style.css').includes('width: 112px;'),
+        'startup and tutorial foxes must be dominant while the header fox remains unboxed');
+    assert(index.includes('id="tutorialSpotlight"') && index.includes('id="tutorialCoachArrow"') &&
+        index.includes('data-tour-target=') && script.includes('function positionCoachMark()') &&
+        script.includes('function showTourTab(tabName)') && read('style.css').includes('0 0 0 9999px'),
+        'onboarding must spotlight and point to real controls instead of showing a static diagram');
+    assert(script.includes('without calling switchTab()') && script.includes('showTourTab(slides[current].dataset.tourTab'),
+        'previewing the assistant during onboarding must not preload its large offline model');
+    assert(voiceAssistantCss.includes('.voice-container.stage-locked .voice-orb-zone') &&
+        voiceAssistantCss.includes('max-height: min(30vh, 230px)') &&
+        voiceUi.includes('function stabilizeLayout()') && voiceUi.includes("'--voice-stable-stage-height'"),
+        'assistant replies must scroll below a fixed fox stage without moving the mascot');
+    assert(voiceCommands.includes('می‌تونم محاسبه‌گر دارو') && !voiceCommands.includes('می‌توانم محاسبه‌گر دارو'),
+        'assistant capability replies must use a natural colloquial Persian voice');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
         'a stale result timer must never reset an active microphone to idle');
     assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),
@@ -426,7 +438,7 @@ function testDeploymentWiring() {
         'Rizeh and the shared UI must report rounded whole-model progress');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
         'offline failures must expose an explicit online retry');
-    assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود'),
+    assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شه'),
         'online retry must disclose that speech leaves the device');
     assert(index.includes('voice-tap-hint') && index.includes('برای صحبت لمس کنید'),
         'voice mascot must visibly explain that it is the microphone control');

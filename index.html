@@ -26,8 +26,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="voice-assistant.css">
+    <link rel="stylesheet" href="style.css?v=38">
+    <link rel="stylesheet" href="voice-assistant.css?v=38">
 </head>
 <body>
 
@@ -45,7 +45,7 @@
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
             <div class="loading-meta">
-                <span>نسخه 5.0.35</span>
+                <span>نسخه 5.0.36</span>
                 <span class="loading-meta-dot" aria-hidden="true"></span>
                 <span>آماده برای کار آفلاین</span>
             </div>
@@ -1931,7 +1931,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.35</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.36</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -1982,6 +1982,8 @@
     <!-- Tutorial Overlay (slide-based) -->
     <div id="onboardingOverlay" class="onboarding-overlay" style="display:none;">
         <div class="onboarding-backdrop"></div>
+        <div class="tutorial-spotlight" id="tutorialSpotlight" aria-hidden="true"></div>
+        <div class="tutorial-coach-arrow" id="tutorialCoachArrow" aria-hidden="true"></div>
         <div class="onboarding-box tutorial-box">
             <!-- Slide indicators -->
             <div class="tutorial-dots" id="tutorialDots"></div>
@@ -1990,14 +1992,14 @@
             <div class="tutorial-slides" id="tutorialSlides">
 
                 <!-- Slide 1: Welcome -->
-                <div class="tutorial-slide active">
+                <div class="tutorial-slide active" data-tour-tab="calculator">
                     <div class="tutorial-icon tutorial-fox-icon" aria-hidden="true"><span class="tutorial-fox-mark"></span></div>
                     <h2 class="tutorial-title">به FoxiMed خوش آمدید</h2>
                     <p class="tutorial-body">دستیار هوشمند محاسبات دارویی برای پرستاران و پزشکان ICU — آفلاین، سریع و دقیق.</p>
                 </div>
 
                 <!-- Slide 2: Drug calculator -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target=".selected-drug-compact" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#f97316,#dc2626)"><i class="fas fa-calculator"></i></div>
                     <h2 class="tutorial-title">محاسبه‌گر دارویی</h2>
                     <p class="tutorial-body">از تب اول دارو را انتخاب کنید، روش تزریق و حجم محلول را تنظیم کنید، دوز پزشک را وارد کنید و دکمه محاسبه را بزنید — سرعت پمپ فوری نمایش داده می‌شود.</p>
@@ -2005,7 +2007,7 @@
                 </div>
 
                 <!-- Slide 3: Drug reference -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target=".tab-item[data-tab='drugs']" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"><i class="fas fa-book-medical"></i></div>
                     <h2 class="tutorial-title">مرجع سریع داروها</h2>
                     <p class="tutorial-body">تب دوم مرجع کامل هر دارو است — سازگاری، دوز معمول، نکات تهیه و اخطارها. روی هر دارو ضربه بزنید تا اطلاعات کامل را ببینید.</p>
@@ -2013,7 +2015,7 @@
                 </div>
 
                 <!-- Slide 4: Tools -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target=".tab-item[data-tab='tools']" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-toolbox"></i></div>
                     <h2 class="tutorial-title">ابزارهای بالینی</h2>
                     <p class="tutorial-body">تب سوم شامل ابزارهای کلینیکی است: GCS، RASS، Braden، Morse، محاسبه BMI و BSA، کپسول اکسیژن، مبدل‌های واحد و محاسبه‌گر دستی.</p>
@@ -2021,7 +2023,7 @@
                 </div>
 
                 <!-- Slide 5: History -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target="#historyBtn" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#8b5cf6,#d946ef)"><i class="fas fa-history"></i></div>
                     <h2 class="tutorial-title">تاریخچه محاسبات</h2>
                     <p class="tutorial-body">دکمه ساعت در نوار بالا تاریخچه تمام محاسبات شما را نشان می‌دهد. می‌توانید هر محاسبه قبلی را دوباره بارگذاری کنید.</p>
@@ -2029,20 +2031,15 @@
                 </div>
 
                 <!-- Slide 6: Settings & themes -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target="#settingsBtn" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-cog"></i></div>
                     <h2 class="tutorial-title">تنظیمات و تم</h2>
                     <p class="tutorial-body">دکمه چرخ‌دنده در بالا تنظیمات را باز می‌کند. می‌توانید نام خود را وارد کنید، حالت تاریک/روشن/خودکار را انتخاب کنید و از 5 تم رنگی مختلف استفاده کنید.</p>
-                    <div class="tutorial-control-map" aria-label="راهنمای دکمه‌های نوار بالا">
-                        <span><i class="fas fa-moon" aria-hidden="true"></i><b>تغییر سریع روشنایی</b></span>
-                        <i class="fas fa-arrow-left tutorial-map-arrow" aria-hidden="true"></i>
-                        <span><i class="fas fa-cog" aria-hidden="true"></i><b>همه تنظیمات</b></span>
-                    </div>
                     <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> دکمه نیمه‌ماه در نوار بالا هم تم را فوری تغییر می‌دهد.</div>
                 </div>
 
                 <!-- Slide 7: Voice assistant -->
-                <div class="tutorial-slide">
+                <div class="tutorial-slide" data-tour-target=".tab-item[data-tab='voice']" data-tour-tab="calculator">
                     <div class="tutorial-icon tutorial-assistant-icon" aria-hidden="true"><span class="tutorial-fox-mark"></span><i class="fas fa-microphone"></i></div>
                     <h2 class="tutorial-title">دستیار صوتی</h2>
                     <p class="tutorial-body">از تب «دستیار»، روباه بزرگ را لمس کنید و درخواستتان را طبیعی بگویید. می‌تواند محاسبه‌گر و داروی مرتبط را باز کند، مقدارهای گفته‌شده را وارد کند، تم را تغییر دهد و به گفت‌وگوهای کوتاه پاسخ دهد.</p>
@@ -2050,8 +2047,16 @@
                     <div class="tutorial-tip"><i class="fas fa-shield-heart"></i> دستورهای بالینی پیش از اجرا برای تأیید شما نمایش داده می‌شوند. بار اول ممکن است مدل آفلاین دانلود شود.</div>
                 </div>
 
-                <!-- Slide 8: Ready -->
-                <div class="tutorial-slide">
+                <!-- Slide 8: Assistant capabilities -->
+                <div class="tutorial-slide" data-tour-target="#voiceCapabilitiesBtn" data-tour-tab="voice">
+                    <div class="tutorial-icon" style="background:linear-gradient(135deg,#f97316,#f59e0b)"><i class="fas fa-circle-question"></i></div>
+                    <h2 class="tutorial-title">از فاکسی بپرسید چه بلد است</h2>
+                    <p class="tutorial-body">دکمه علامت سؤال، فهرست توانایی‌ها و نمونه جمله‌های قابل‌فهم را نشان می‌دهد. می‌توانید همان سؤال را با صدا یا متن هم بپرسید: «چه کارهایی بلدی؟»</p>
+                    <div class="tutorial-tip"><i class="fas fa-microphone"></i> برای شروع شنیدن، روباه بزرگ وسط صفحه را لمس کنید.</div>
+                </div>
+
+                <!-- Slide 9: Ready -->
+                <div class="tutorial-slide" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#22c55e,#0ea5e9)"><i class="fas fa-check-double"></i></div>
                     <h2 class="tutorial-title">آماده‌اید!</h2>
                     <p class="tutorial-body">FoxiMed کاملاً آفلاین کار می‌کند. می‌توانید آن را به صفحه اصلی گوشی خود اضافه کنید تا مثل یک اپلیکیشن باز شود.</p>
@@ -2087,17 +2092,17 @@
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
     <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=37"></script>
-    <script src="voice-engine-policy.js?v=37"></script>
+    <script src="script.js?v=38"></script>
+    <script src="voice-engine-policy.js?v=38"></script>
     <script src="koochik-asr.js?v=35"></script>
-    <script src="whisper-asr.js?v=37"></script>
-    <script src="voice-recognition.js?v=37"></script>
-    <script src="voice-commands.js?v=37"></script>
-    <script src="voice-ui.js?v=37"></script>
+    <script src="whisper-asr.js?v=38"></script>
+    <script src="voice-recognition.js?v=38"></script>
+    <script src="voice-commands.js?v=38"></script>
+    <script src="voice-ui.js?v=38"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=37', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=38', { updateViaCache: 'none' });
             });
         }
     </script>

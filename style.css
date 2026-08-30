@@ -699,9 +699,9 @@ select {
 .loading-fox {
     --loading-progress: 0%;
     position: relative;
-    width: 152px;
-    height: 152px;
-    margin-bottom: 14px;
+    width: 188px;
+    height: 188px;
+    margin-bottom: 16px;
     filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.22));
 }
 .loading-fox::after {
@@ -864,8 +864,8 @@ select {
 }
 
 .logo {
-    width: 38px;
-    height: 40px;
+    width: 48px;
+    height: 50px;
     background: transparent;
     border: 0;
     border-radius: 0;
@@ -876,8 +876,8 @@ select {
     flex-shrink: 0;
 }
 .header-fox-mark {
-    width: 36px;
-    height: 36px;
+    width: 46px;
+    height: 46px;
     display: block;
     background: linear-gradient(155deg, #fb923c 0%, #ea580c 58%, #9a3412 100%);
     -webkit-mask: url('icons/fox-mark-clean-mask.png') center / contain no-repeat;
@@ -2644,13 +2644,13 @@ body.low-power-mode .tab-item.active { animation: none; }
     }
 
     .logo {
-        width: 31px;
-        height: 32px;
+        width: 42px;
+        height: 44px;
     }
 
     .header-fox-mark {
-        width: 30px;
-        height: 30px;
+        width: 40px;
+        height: 40px;
     }
 
     .logo-text h1 {
@@ -8862,6 +8862,66 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
     gap: 0;
     max-height: 85vh;
     overflow: hidden;
+    transition: top 0.28s ease, left 0.28s ease, transform 0.28s ease;
+}
+
+.tutorial-spotlight {
+    display: none;
+    position: fixed;
+    z-index: 1;
+    border: 2px solid rgba(251, 146, 60, 0.95);
+    border-radius: 16px;
+    background: transparent;
+    box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.68), 0 0 0 6px rgba(251, 146, 60, 0.18);
+    pointer-events: none;
+    transition: top 0.28s ease, left 0.28s ease, width 0.28s ease, height 0.28s ease;
+    animation: tutorialSpotlightPulse 1.8s ease-in-out infinite;
+}
+.onboarding-overlay.is-coachmark .tutorial-spotlight { display: block; }
+.onboarding-overlay.is-coachmark .onboarding-backdrop {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.onboarding-overlay.is-coachmark .tutorial-box {
+    position: fixed;
+    z-index: 2;
+    max-height: min(62vh, 460px);
+    padding-top: 18px;
+    animation: tutorialCoachIn 0.25s ease both;
+    overflow-y: auto;
+}
+.onboarding-overlay.is-coachmark .tutorial-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    font-size: 1.35rem;
+}
+.onboarding-overlay.is-coachmark .tutorial-dots { margin-bottom: 10px; }
+.onboarding-overlay.is-coachmark .tutorial-nav { margin-top: 12px; }
+.tutorial-coach-arrow {
+    display: none;
+    position: fixed;
+    z-index: 3;
+    width: 0;
+    height: 0;
+    transform: translateX(-50%);
+    border: 13px solid transparent;
+}
+.onboarding-overlay.is-coachmark .tutorial-coach-arrow { display: block; }
+.tutorial-coach-arrow.arrow-down {
+    border-top-color: var(--surface);
+}
+.tutorial-coach-arrow.arrow-up {
+    border-bottom-color: var(--surface);
+}
+@keyframes tutorialSpotlightPulse {
+    0%, 100% { border-color: rgba(251, 146, 60, 0.78); }
+    50% { border-color: #fff7ed; }
+}
+@keyframes tutorialCoachIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .tutorial-dots {
@@ -8922,8 +8982,8 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
 }
 
 .tutorial-fox-icon {
-    width: 86px;
-    height: 82px;
+    width: 124px;
+    height: 116px;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
@@ -8931,8 +8991,8 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
 
 .tutorial-fox-mark {
     display: block;
-    width: 76px;
-    height: 76px;
+    width: 112px;
+    height: 112px;
     background: linear-gradient(155deg, #fb923c 0%, #ea580c 58%, #9a3412 100%);
     -webkit-mask: url('icons/fox-mark-clean-mask.png') center / contain no-repeat;
     mask: url('icons/fox-mark-clean-mask.png') center / contain no-repeat;
@@ -8959,27 +9019,6 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
     font-size: 12px;
 }
 
-.tutorial-control-map {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    direction: rtl;
-}
-.tutorial-control-map span {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 11px;
-    background: var(--surface-elevated);
-    color: var(--text-secondary);
-    font: 500 11px/1.3 var(--font-persian);
-}
-.tutorial-control-map span i { color: var(--primary); font-size: 13px; }
-.tutorial-map-arrow { color: var(--primary); animation: tutorialNudge 1.4s ease-in-out infinite; }
 .tutorial-ask-demo {
     display: flex;
     align-items: center;
@@ -8993,17 +9032,16 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
     direction: rtl;
 }
 .tutorial-ask-demo i { animation: tutorialNudgeDown 1.4s ease-in-out infinite; }
-@keyframes tutorialNudge { 50% { transform: translateX(-4px); } }
 @keyframes tutorialNudgeDown { 50% { transform: translateY(4px); } }
 
 @media (max-height: 720px) {
-    .loading-fox { width: 128px; height: 128px; margin-bottom: 8px; }
+    .loading-fox { width: 148px; height: 148px; margin-bottom: 8px; }
     .tutorial-box { padding-top: 18px; }
     .tutorial-dots { margin-bottom: 12px; }
     .tutorial-slide { gap: 8px; }
     .tutorial-icon { width: 62px; height: 62px; }
-    .tutorial-fox-icon { width: 74px; height: 66px; }
-    .tutorial-fox-mark { width: 64px; height: 64px; }
+    .tutorial-fox-icon { width: 94px; height: 86px; }
+    .tutorial-fox-mark { width: 84px; height: 84px; }
     .tutorial-body { line-height: 1.65; }
     .tutorial-nav { margin-top: 12px; }
 }
