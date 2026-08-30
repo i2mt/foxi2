@@ -618,6 +618,7 @@
             whisperEngine = engine;
             whisperEngineLoadPromise = null;
             whisperLoadAbortController = null;
+            console.log('[WhisperASR] engine retained and ready for capture:', model);
             emit('model-ready', { engine: 'whisper', model: model, awaitingMicrophone: koochikLoading });
             return engine;
         }).catch(function (error) {
@@ -810,6 +811,13 @@
             // model download can fail. This happens before the microphone is
             // opened, so switching to Rizeh is safe and loses no speech.
             if (requestedBackend.indexOf('whisper-') === 0 && !koochikCancelRequested) {
+                if (requestedBackend === 'whisper-base') {
+                    console.warn('[WhisperASR] Base unavailable; trying Tiny before Rizeh:', info);
+                    activeCaptureEngine = null;
+                    activeCaptureBackend = 'whisper-tiny';
+                    startKoochik('whisper-tiny');
+                    return;
+                }
                 console.warn('[WhisperASR] unavailable; falling back to Rizeh:', info);
                 activeCaptureEngine = null;
                 activeCaptureBackend = 'rizeh';
@@ -1056,7 +1064,11 @@
     // Stop listening if the app is backgrounded/locked — prevents a
     // recognition session (and an open mic) from lingering forever.
     document.addEventListener('visibilitychange', function () {
-        if (document.hidden && (active || koochikActive || koochikLoading)) stop();
+        // Close a real microphone session in the background, but do not tear
+        // down a first-use model download/initialization before getUserMedia
+        // has even opened. Mobile users commonly switch away while this long
+        // one-time step runs; aborting here made every return start over.
+        if (document.hidden && (active || koochikActive)) stop();
     });
 
     window.addEventListener('offline', function () {

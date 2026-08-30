@@ -14,6 +14,13 @@ class MockWorker {
 
     postMessage(message) {
         if (message.type === 'load') {
+            if (MockWorker.failNextLoad) {
+                MockWorker.failNextLoad = false;
+                queueMicrotask(() => this.onmessage({
+                    data: { type: 'error', requestId: 0, message: 'simulated-model-load-failure' }
+                }));
+                return;
+            }
             queueMicrotask(() => this.onmessage({ data: { type: 'ready', model: message.model } }));
         } else if (message.type === 'transcribe') {
             const samples = new Float32Array(message.audio).length;
@@ -66,6 +73,14 @@ class MockWorker {
     assert.strictEqual(await engine.finalize(), 'محاسبه درصد سوختگی');
     engine.reset();
     assert.strictEqual(engine.bufferedSeconds(), 0, 'reset must retain the loaded model but clear audio');
+
+    await engine.destroy();
+    MockWorker.failNextLoad = true;
+    await assert.rejects(
+        window.WhisperASR.load({ model: 'tiny' }),
+        /simulated-model-load-failure/,
+        'a worker load error must reject immediately instead of waiting for the 15-minute timeout'
+    );
 
     console.log('Whisper adapter tests passed');
 })().catch(error => {

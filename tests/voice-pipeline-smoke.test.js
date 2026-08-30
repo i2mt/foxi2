@@ -64,6 +64,26 @@ function testCommandRouting() {
             persianName: 'انسولین رگولار',
             englishName: 'Regular Insulin',
             alternativeNames: ['انسولین معمولی']
+        },
+        furosemide: {
+            persianName: 'فوروزماید',
+            englishName: 'Furosemide',
+            alternativeNames: ['لازیکس']
+        },
+        norepinephrine: {
+            persianName: 'نوراپی نفرین',
+            englishName: 'Norepinephrine',
+            alternativeNames: ['نورآدرنالین']
+        },
+        fentanyl: {
+            persianName: 'فنتانیل',
+            englishName: 'Fentanyl',
+            alternativeNames: []
+        },
+        midazolam: {
+            persianName: 'میدازولام',
+            englishName: 'Midazolam',
+            alternativeNames: []
         }
     };
 
@@ -119,6 +139,10 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
         'common Persian ASR spelling of spoken BMI should normalize');
 
+    result = run('محاسبه بی MI');
+    assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
+        'mixed Persian/Latin Rizeh transcript "بی MI" should route to BMI');
+
     result = run('شاخص توده بدنی وزن ۷۰ قد ۱۷۰');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('BMI')),
         'natural Persian BMI name should route to BMI');
@@ -172,6 +196,12 @@ function testCommandRouting() {
     result = run('امفزیان انسولین رگولایژ');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
         'latest observed regular-insulin substitutions should route to the drug calculator');
+
+    ['انفوزیون فروزماید', 'دوز نور اپی نفرین', 'تزریق فنتانل', 'انفوزیون میدازولم'].forEach(function (phrase) {
+        result = run(phrase);
+        assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو و دوز')),
+            'common medical ASR substitution should route safely: ' + phrase + ' :: ' + JSON.stringify(result));
+    });
 
     result = run('تنظیماتو باز کن');
     assert(result.some(e => e.kind === 'result' && e.message.includes('تنظیمات باز شد')),
@@ -290,14 +320,14 @@ function testDeploymentWiring() {
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
     assert(serviceWorker.includes('koochik-worker.js?v=34'),
         'service worker must precache the v34 Rizeh worker URL');
-    assert(serviceWorker.includes('whisper-worker.js?v=34') && serviceWorker.includes('whisper-asr.js?v=34'),
+    assert(serviceWorker.includes('whisper-worker.js?v=35') && serviceWorker.includes('whisper-asr.js?v=35'),
         'service worker must precache the Whisper adapter and worker shell');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
         'voice adapter must instantiate the v34 Rizeh worker URL');
-    assert(read('whisper-asr.js').includes("whisper-worker.js?v=34"),
-        'Whisper adapter must instantiate the v34 module worker URL');
-    assert(index.includes('service-worker.js?v=34'),
-        'page must register the v34 service worker');
+    assert(read('whisper-asr.js').includes("whisper-worker.js?v=35"),
+        'Whisper adapter must instantiate the v35 module worker URL');
+    assert(index.includes('service-worker.js?v=35'),
+        'page must register the v35 service worker');
     assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
         'Settings must expose explicit Auto, Whisper and Rizeh choices');
     assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
@@ -308,6 +338,10 @@ function testDeploymentWiring() {
         'engine and UI must expose the listening-to-decoding lifecycle transition');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
         'a stale result timer must never reset an active microphone to idle');
+    assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),
+        'Whisper must aggregate all files into one monotonic model percentage');
+    assert(read('koochik-asr.js').includes('overallPercent') && voiceUi.includes('دانلود کلی'),
+        'Rizeh and the shared UI must report rounded whole-model progress');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
         'offline failures must expose an explicit online retry');
     assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شود'),
