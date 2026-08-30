@@ -198,6 +198,11 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'result' && e.message.includes('تنظیمات باز شد')),
         'colloquial settings request should open Settings directly');
 
+    result = run('چه کارهایی بلدی؟');
+    assert(result.some(e => e.kind === 'result' && e.type === 'info' && e.message.includes('محاسبه‌گر دارو')) &&
+        !result.some(e => e.kind === 'confirmation'),
+        'capabilities prompt should return the assistant guide without clinical confirmation');
+
     result = run('یه مای برای مریضی که قدش صد و هفتاد و دو و وزنش پنجاه و شش کیلوه');
     const colloquialBmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
     assert(colloquialBmiConfirmation, 'observed BMI substitution should route with height and weight');
@@ -253,6 +258,41 @@ function testCommandRouting() {
     result = run('استرس دارم');
     assert(result.some(e => e.kind === 'result' && e.type === 'success') && !result.some(e => e.kind === 'confirmation'),
         'standalone stress chat should not be confused with nutrition');
+    ['گرسنه', 'گشنم', 'گرسنه ام'].forEach(phrase => {
+        const hungerReply = run(phrase);
+        assert(hungerReply.some(e => e.kind === 'result' && e.type === 'success' &&
+            (e.message.includes('بخوری') || e.message.includes('خوراکی'))) &&
+            !hungerReply.some(e => e.kind === 'confirmation'),
+            `common hunger phrase should receive a warm non-clinical reply: ${phrase}`);
+    });
+    ['تشنه', 'تشنم', 'تشنه ام'].forEach(phrase => {
+        const thirstReply = run(phrase);
+        assert(thirstReply.some(e => e.kind === 'result' && e.type === 'success' &&
+            (e.message.includes('آب بخوری') || e.message.includes('لیوان آب'))) &&
+            !thirstReply.some(e => e.kind === 'confirmation'),
+            `common thirst phrase should receive a warm non-clinical reply: ${phrase}`);
+    });
+    result = run('سرم خیلی شلوغه');
+    assert(result.some(e => e.kind === 'result' && e.type === 'success' &&
+        (e.message.includes('سرت شلوغه') || e.message.includes('واقعاً سنگینه'))) &&
+        !result.some(e => e.kind === 'confirmation'),
+        'busy-shift chat should receive an empathetic, useful reply instead of a bare acknowledgement');
+    ['سازندت کیه', 'کی تورو ساخته'].forEach(phrase => {
+        const creatorReply = run(phrase);
+        assert(creatorReply.some(e => e.kind === 'result' && e.type === 'success' &&
+            e.message.includes('محمدمهدی تقوی') && e.message.includes('ارتباط با سازنده')) &&
+            !creatorReply.some(e => e.kind === 'confirmation'),
+            `natural creator question should identify the nurse-developer warmly: ${phrase}`);
+    });
+    run('سازندت کیه');
+    result = run('آره');
+    assert(result.some(e => e.kind === 'settings-class' && e.value === 'active') &&
+        result.some(e => e.kind === 'result' && e.message.includes('تلگرام')),
+        'a short affirmative follow-up should reveal the creator contact in Settings');
+    result = run('ارتباط با سازنده');
+    assert(result.some(e => e.kind === 'settings-class' && e.value === 'active') &&
+        result.some(e => e.kind === 'result' && e.message.includes('تلگرام')),
+        'creator contact request should open the existing Telegram contact in Settings');
     result = run('خوبه محاسبه برادن');
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('Braden')),
         'social wording appended to a clinical request must not hijack it');
@@ -354,6 +394,18 @@ function testDeploymentWiring() {
         read('style.css').includes('.dark-mode .header-fox-mark') &&
         read('style.css').includes("fox-mark-clean-mask.png") && serviceWorker.includes('fox-mark-clean-mask.png'),
         'top bar must use a compact high-contrast fox mark instead of the generic syringe icon');
+    assert(index.includes('tutorial-fox-icon') && !index.includes('style="background:var(--gradient-primary)"><i class="fas fa-syringe"') &&
+        index.includes('id="voiceCapabilitiesBtn"') && index.includes('چه کارهایی بلدی؟') &&
+        voiceUi.includes("'capabilities'"),
+        'welcome, tutorial and assistant UI must introduce the fox and expose assistant capabilities');
+    assert(voiceAssistantCss.includes('min-height: 100%;') &&
+        voiceAssistantCss.includes('flex: 1 1 270px;') &&
+        voiceAssistantCss.includes('.voice-orb-zone { flex: 0 0 auto; min-height: 0; }'),
+        'assistant layout must use tall-screen space while preserving compact short-phone behavior');
+    assert(read('style.css').includes('width: 152px;') &&
+        read('style.css').includes('.dark-mode .logo {\n    background: transparent;') &&
+        read('style.css').includes('.tutorial-control-map'),
+        'startup fox must be dominant, header fox unboxed, and settings tutorial visually mapped');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
         'a stale result timer must never reset an active microphone to idle');
     assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),

@@ -45,7 +45,7 @@
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
             <div class="loading-meta">
-                <span>نسخه 5.0.34</span>
+                <span>نسخه 5.0.35</span>
                 <span class="loading-meta-dot" aria-hidden="true"></span>
                 <span>آماده برای کار آفلاین</span>
             </div>
@@ -1681,7 +1681,7 @@
 
         <!-- Header: flex row so the TTS toggle never overlaps the centered title -->
         <div class="voice-header">
-            <span class="voice-header-spacer" aria-hidden="true"></span>
+            <button type="button" class="voice-capabilities-btn" id="voiceCapabilitiesBtn" data-command="چه کارهایی بلدی؟" aria-label="نمایش توانایی‌های دستیار" title="توانایی‌های دستیار"><i class="fas fa-circle-question" aria-hidden="true"></i></button>
             <div class="voice-title">
                 <i class="fa-solid fa-wand-magic-sparkles voice-icon"></i>
                 <span>دستیار هوشمند</span>
@@ -1738,7 +1738,7 @@
                 <button type="button" class="voice-example-chip" data-command="تبدیل ۲۰ mEq سدیم به mg"><i class="fas fa-flask voice-chip-icon" aria-hidden="true"></i> تبدیل</button>
                 <button type="button" class="voice-example-chip" data-command="تاریک"><i class="fas fa-moon voice-chip-icon" aria-hidden="true"></i> تاریک</button>
                 <button type="button" class="voice-example-chip" data-command="سازگاری هپارین و وانکومایسین"><i class="fas fa-vials voice-chip-icon" aria-hidden="true"></i> سازگاری</button>
-                <button type="button" class="voice-example-chip" data-command="راهنما"><i class="fas fa-circle-question voice-chip-icon" aria-hidden="true"></i> راهنما</button>
+                <button type="button" class="voice-example-chip" data-command="چه کارهایی بلدی؟"><i class="fas fa-circle-question voice-chip-icon" aria-hidden="true"></i> چه کارهایی بلدی؟</button>
             </div>
         </div>
 
@@ -1884,7 +1884,7 @@
                 </div>
 
                 <!-- Contact -->
-                <div class="settings-group">
+                <div class="settings-group" id="creatorContact">
                     <h4><i class="fas fa-headset"></i> ارتباط با ما</h4>
                     <a class="setting-contact-btn" href="https://t.me/i_2mt" target="_blank" rel="noopener">
                         <i class="fab fa-telegram"></i>
@@ -1931,7 +1931,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.34</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.35</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -1991,7 +1991,7 @@
 
                 <!-- Slide 1: Welcome -->
                 <div class="tutorial-slide active">
-                    <div class="tutorial-icon" style="background:var(--gradient-primary)"><i class="fas fa-syringe"></i></div>
+                    <div class="tutorial-icon tutorial-fox-icon" aria-hidden="true"><span class="tutorial-fox-mark"></span></div>
                     <h2 class="tutorial-title">به FoxiMed خوش آمدید</h2>
                     <p class="tutorial-body">دستیار هوشمند محاسبات دارویی برای پرستاران و پزشکان ICU — آفلاین، سریع و دقیق.</p>
                 </div>
@@ -2033,10 +2033,24 @@
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-cog"></i></div>
                     <h2 class="tutorial-title">تنظیمات و تم</h2>
                     <p class="tutorial-body">دکمه چرخ‌دنده در بالا تنظیمات را باز می‌کند. می‌توانید نام خود را وارد کنید، حالت تاریک/روشن/خودکار را انتخاب کنید و از 5 تم رنگی مختلف استفاده کنید.</p>
+                    <div class="tutorial-control-map" aria-label="راهنمای دکمه‌های نوار بالا">
+                        <span><i class="fas fa-moon" aria-hidden="true"></i><b>تغییر سریع روشنایی</b></span>
+                        <i class="fas fa-arrow-left tutorial-map-arrow" aria-hidden="true"></i>
+                        <span><i class="fas fa-cog" aria-hidden="true"></i><b>همه تنظیمات</b></span>
+                    </div>
                     <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> دکمه نیمه‌ماه در نوار بالا هم تم را فوری تغییر می‌دهد.</div>
                 </div>
 
-                <!-- Slide 7: Ready -->
+                <!-- Slide 7: Voice assistant -->
+                <div class="tutorial-slide">
+                    <div class="tutorial-icon tutorial-assistant-icon" aria-hidden="true"><span class="tutorial-fox-mark"></span><i class="fas fa-microphone"></i></div>
+                    <h2 class="tutorial-title">دستیار صوتی</h2>
+                    <p class="tutorial-body">از تب «دستیار»، روباه بزرگ را لمس کنید و درخواستتان را طبیعی بگویید. می‌تواند محاسبه‌گر و داروی مرتبط را باز کند، مقدارهای گفته‌شده را وارد کند، تم را تغییر دهد و به گفت‌وگوهای کوتاه پاسخ دهد.</p>
+                    <div class="tutorial-ask-demo"><i class="fas fa-arrow-down" aria-hidden="true"></i><span>برای دیدن نمونه‌ها بپرسید: «چه کارهایی بلدی؟»</span></div>
+                    <div class="tutorial-tip"><i class="fas fa-shield-heart"></i> دستورهای بالینی پیش از اجرا برای تأیید شما نمایش داده می‌شوند. بار اول ممکن است مدل آفلاین دانلود شود.</div>
+                </div>
+
+                <!-- Slide 8: Ready -->
                 <div class="tutorial-slide">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#22c55e,#0ea5e9)"><i class="fas fa-check-double"></i></div>
                     <h2 class="tutorial-title">آماده‌اید!</h2>
