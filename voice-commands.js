@@ -200,7 +200,7 @@
     // the displayed drug names and clinical database remain unchanged.
     const DRUG_SPEECH_ALIASES = {
         heparin: ['هپار', 'هپاری'],
-        furosemide: ['فروزماید', 'فوروسماید', 'فورزماید', 'فزماید', 'لازیک'],
+        furosemide: ['فوروزماید', 'فروزماید', 'فوروزمید', 'فروسماید', 'فورسماید', 'فروزامید', 'فوروزمای', 'فورزماید', 'فزماید', 'لازیک', 'لازیکس'],
         insulin: ['انسولین', 'انسولین رگولر', 'انسولین رگولار'],
         fentanyl: ['فنتانل', 'فنتانی', 'فانیل'],
         pantoprazole: ['پنتاپرازول', 'پانتوپرازول', 'پ و پروزو', 'پتو پروراول'],
@@ -444,7 +444,7 @@
         else if (text.includes('d5w') || text.includes('دکستروز')) params.solution = 'D5W';
 
         if (text.includes('سرنگ')) params.method = 'syringe';
-        else if (text.includes('انفوزیون') || text.includes('پمپ')) params.method = 'infusion';
+        else if (text.includes('انفوزیون') || text.includes('پمپ') || text.includes('میکروست') || text.includes('ماکروست')) params.method = 'infusion';
 
         const ampMatch = text.match(/آمپول\s*(\d+)/i);
         if (ampMatch) params.ampoules = parseInt(ampMatch[1]);
@@ -940,6 +940,27 @@
         });
         if (hasClinicalIntent) return false;
 
+        const compactPhrase = lower.replace(/\s+/g, '');
+        function resemblesAny(targets, threshold) {
+            return targets.some(function (target) {
+                return fuzzySimilarity(compactPhrase, target.replace(/\s+/g, '')) >= threshold;
+            });
+        }
+        function replyFromSmallTalk(key) {
+            const replies = SMALL_TALK[key];
+            if (!replies || !replies.length) return false;
+            showVoiceResult(replies[Math.floor(Math.random() * replies.length)], 'success');
+            return true;
+        }
+
+        // Short Persian phrases are particularly vulnerable to one-character
+        // substitutions on phone microphones. Keep this recovery strictly in
+        // the non-clinical path above so it can never rewrite a drug or dose.
+        const hungerKey = 'گرسنه شدم|گرسنه ام|گرسنمه|گرسنه|گشنه ام|گشنمه|گشنم';
+        if (!/^تشن/.test(compactPhrase) && resemblesAny(['گرسنه ام', 'گرسنمه', 'گشنمه', 'گشنم'], 0.72)) {
+            return replyFromSmallTalk(hungerKey);
+        }
+
         function openCreatorContact() {
             creatorContactFollowupUntil = 0;
             if (DOM.settingsModal) {
@@ -959,7 +980,8 @@
             return true;
         }
 
-        const creatorQuestion = /^(?:سازنده|سازندت|سازندت کیه|سازنده ت کیه|سازنده ات کیه|کی تورو ساخت|کی تورو ساخته|کی تو رو ساخت|کی تو رو ساخته|تورو کی ساخت|تورو کی ساخته|تو رو کی ساخت|تو رو کی ساخته|کی ساختت|کی درستت کرده|سازنده کیه|سازنده فاکسی مد کیه|کی فاکسی مد رو ساخته|فاکسی مد رو کی ساخته|کی برنامه رو ساخته|برنامه رو کی ساخته|برنامه نویست کیه|برنامه نویسش کیه|خالقت کیه|خالق تو کیه|کی خلقت کرده|کی تورو خلق کرده)$/i.test(lower);
+        const creatorQuestion = /^(?:سازنده|سازندت|سازندت کیه|سازنده ت کیه|سازنده ات کیه|کی تورو ساخت|کی تورو ساخته|کی تو رو ساخت|کی تو رو ساخته|تورو کی ساخت|تورو کی ساخته|تو رو کی ساخت|تو رو کی ساخته|کی ساختت|کی درستت کرده|سازنده کیه|سازنده فاکسی مد کیه|کی فاکسی مد رو ساخته|فاکسی مد رو کی ساخته|کی برنامه رو ساخته|برنامه رو کی ساخته|برنامه نویست کیه|برنامه نویسش کیه|خالقت کیه|خالق تو کیه|کی خلقت کرده|کی تورو خلق کرده)$/i.test(lower) ||
+            resemblesAny(['سازندت کیه', 'سازنده ت کیه', 'کی تورو ساخت', 'کی تورو ساخته'], 0.72);
         if (creatorQuestion) {
             creatorContactFollowupUntil = Date.now() + 20000;
             showVoiceResult('من رو محمدمهدی تقوی ساخته؛ یک پرستار که فاکسی‌مد رو برای سبک‌تر کردن کارهای روزمره همکارها ساخته. اگر دوست داری باهاش در ارتباط باشی، بگو «ارتباط با سازنده» یا فقط بگو «آره».', 'success');
@@ -1693,17 +1715,37 @@
 
     function handleBMIVoice(params) {
         switchTab('tools');
-        setTimeout(function () { openAccordionById('bmiAccordionItem'); }, 300);
 
         const w = params.weight || 0;
         const h = params.height || 0;
         if (!w || !h) { showVoiceResult('وزن و قد رو هم بگو؛ مثلاً «BMI وزن ۷۵ قد ۱۷۵».', 'error'); return; }
-        document.getElementById('bmiWeight').value = w;
-        document.getElementById('bmiHeight').value = h;
-        calculateBMI();
-        const result = document.getElementById('bmiResult');
-        const msg = result ? 'BMI محاسبه شد: ' + (result.textContent || result.innerText) : 'BMI محاسبه شد';
-        showVoiceResult(msg, 'success');
+
+        function applyValuesAndCalculate() {
+            const weightInput = document.getElementById('bmiWeight');
+            const heightInput = document.getElementById('bmiHeight');
+            if (!weightInput || !heightInput) return;
+            weightInput.value = w;
+            heightInput.value = h;
+            ['input', 'change'].forEach(function (eventName) {
+                try {
+                    weightInput.dispatchEvent(new Event(eventName, { bubbles: true }));
+                    heightInput.dispatchEvent(new Event(eventName, { bubbles: true }));
+                } catch (e) {}
+            });
+            calculateBMI();
+        }
+
+        // Apply immediately, then once more after the accordion transition.
+        // Mobile Safari can finish the tab's default-field initialization a
+        // frame later, which previously restored 70/170 after voice parsing.
+        applyValuesAndCalculate();
+        setTimeout(function () {
+            openAccordionById('bmiAccordionItem');
+            applyValuesAndCalculate();
+            const result = document.getElementById('bmiResult');
+            const msg = result ? 'BMI محاسبه شد: ' + (result.textContent || result.innerText) : 'BMI محاسبه شد';
+            showVoiceResult(msg, 'success');
+        }, 300);
     }
 
     function handleBSAVoice(params) {
