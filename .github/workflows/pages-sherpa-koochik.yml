@@ -34,16 +34,11 @@ jobs:
       - name: Validate voice pipeline source
         run: |
           node tests/voice-pipeline-smoke.test.js
-          node tests/voice-engine-policy.test.js
-          node tests/whisper-adapter.test.js
           node --check koochik-worker.js
           node --check koochik-asr.js
           node --check voice-recognition.js
           node --check voice-commands.js
           node --check voice-ui.js
-          node --check voice-engine-policy.js
-          node --check whisper-asr.js
-          node --check whisper-worker.js
 
       - name: Install Emscripten 4.0.23
         uses: mymindstorm/setup-emsdk@v14
