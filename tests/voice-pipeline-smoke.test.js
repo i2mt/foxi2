@@ -414,8 +414,8 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=43'),
-        'page must register the v43 service worker');
+    assert(index.includes('service-worker.js?v=44'),
+        'page must register the v44 service worker');
     assert(script.includes("const APP_VERSION = '5.1.0'") &&
         index.includes('نسخه 5.1.0') && manifest.includes('"version": "5.1.0"') &&
         serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.1.0'"),
@@ -525,18 +525,38 @@ function testDeploymentWiring() {
         assert(index.includes(`id="${accordionId}"`) && read('voice-commands.js').includes(`accordion: '${accordionId}'`),
             `${accordionId} must have a voice navigation target`);
     });
-    assert(index.includes('id="namePrompt"') && script.includes("state.launches < 2"),
-        'name prompt must be delayed beyond the first launch');
-    assert(script.includes('14 * 24 * 60 * 60 * 1000') && script.includes('state.optedOut = true'),
-        'name prompt must support a long snooze and permanent dismissal');
-    assert(script.includes('7 * 24 * 60 * 60 * 1000'),
-        'an ignored name prompt must not reappear on every startup');
-    assert(script.includes("localStorage.setItem('userName', cleanName)"),
-        'profile name must remain device-local');
+    assert(index.includes('id="namePrompt"') && index.includes('لطفاً نامتان را دوباره وارد کنید') &&
+        !index.includes('id="namePromptLater"') && !index.includes('id="namePromptNever"') &&
+        script.includes("const USER_NAME_CAPTURE_VERSION = '5.1'") &&
+        script.includes("localStorage.removeItem('userName')") && script.includes('if (captureComplete()) return'),
+        'Version 5 must require one fresh name entry, including from users with an older stored name');
+    assert(script.includes("localStorage.setItem('userName', cleanName)") &&
+        script.includes('USER_NAME_CAPTURE_VERSION_KEY, USER_NAME_CAPTURE_VERSION'),
+        'profile name and its completed Version 5 consent marker must remain device-local');
+    assert(script.includes('function isHediyehName(name)') &&
+        script.includes('هدیه|هدی|هدو') && script.includes('hedi(?:e|eh|ye|yeh)?') &&
+        script.includes('ممنونم، چه اسم قشنگی، مطمئنم خودتم مثل اسمت جذابی!'),
+        'Persian and Latin Hediyeh variants must receive the requested personalized reply');
     assert(script.includes('سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است'),
         'Y-site matrix must disclose context dependence and require verification');
     assert(index.includes('calculation-core.js?v=34') && serviceWorker.includes('calculation-core.js?v=34'),
         'tested calculation core must be loaded and cached');
+}
+
+function testNamePersonalization() {
+    const script = read('script.js');
+    const start = script.indexOf('function normalizePersonalName(name)');
+    const end = script.indexOf('function saveUserNameValue(name)');
+    assert(start >= 0 && end > start, 'name matching helpers must be present');
+
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(script.slice(start, end), context, { filename: 'name-personalization.js' });
+
+    ['هدیه', 'هديه', 'هدی', 'هدو', 'Hedieh', 'Hediyeh', 'Hedie', 'Hediye', 'Hedy', 'Hedo', 'Hedoo', 'هدیه احمدی']
+        .forEach((name) => assert.strictEqual(context.isHediyehName(name), true, `${name} must match Hediyeh`));
+    ['هدایت', 'هادی', 'Hadieh', 'Hedwig']
+        .forEach((name) => assert.strictEqual(context.isHediyehName(name), false, `${name} must not match Hediyeh`));
 }
 
 function testReverseInfusionMath() {
@@ -736,6 +756,7 @@ async function testWorkerLifecycle() {
 (async function main() {
     testCommandRouting();
     testDeploymentWiring();
+    testNamePersonalization();
     testReverseInfusionMath();
     testWorkerSegmentationAndFrames();
     await testWorkerLifecycle();

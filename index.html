@@ -135,16 +135,12 @@
          so showing it never changes the calculator's height or alignment. -->
     <aside class="name-prompt" id="namePrompt" hidden aria-labelledby="namePromptTitle">
         <div class="name-prompt-copy">
-            <strong id="namePromptTitle"><i class="fas fa-user-nurse" aria-hidden="true"></i> دوست دارید با چه نامی صدایتان کنم؟</strong>
-            <span>نام فقط روی همین دستگاه ذخیره می‌شود.</span>
+            <strong id="namePromptTitle"><i class="fas fa-user-nurse" aria-hidden="true"></i> لطفاً نامتان را دوباره وارد کنید</strong>
+            <span>برای شخصی‌سازی نسخهٔ ۵ لازم است؛ نام فقط روی همین دستگاه ذخیره می‌شود.</span>
         </div>
         <div class="name-prompt-input-row">
             <input type="text" id="namePromptInput" maxlength="30" autocomplete="name" placeholder="نام شما">
             <button type="button" class="name-prompt-save" id="namePromptSave" disabled>ذخیره</button>
-        </div>
-        <div class="name-prompt-actions">
-            <button type="button" id="namePromptLater">بعداً یادآوری کن</button>
-            <button type="button" id="namePromptNever">دیگر نپرس</button>
         </div>
     </aside>
 
@@ -2119,7 +2115,7 @@
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
     <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=43"></script>
+    <script src="script.js?v=44"></script>
     <script src="koochik-asr.js?v=36"></script>
     <script src="voice-recognition.js?v=42"></script>
     <script src="voice-commands.js?v=42"></script>
@@ -2127,7 +2123,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=43', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=44', { updateViaCache: 'none' });
             });
         }
     </script>

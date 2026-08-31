@@ -129,6 +129,20 @@ const HAS_PRE_V5_INSTALL = [
     try { return localStorage.getItem(key) !== null; } catch (e) { return false; }
 });
 
+// Version 5 starts a fresh personalization cycle. The completion marker is
+// written only after the person actively enters a name, so a name inherited
+// from an earlier release cannot silently count as consent for this version.
+const USER_NAME_CAPTURE_VERSION = '5.1';
+const USER_NAME_CAPTURE_VERSION_KEY = 'foximed_user_name_version';
+(function resetLegacyUserNameForVersion5() {
+    try {
+        if (localStorage.getItem(USER_NAME_CAPTURE_VERSION_KEY) !== USER_NAME_CAPTURE_VERSION) {
+            localStorage.removeItem('userName');
+            localStorage.removeItem('foximed_name_prompt');
+        }
+    } catch (e) { /* local storage may be unavailable in private contexts */ }
+})();
+
 function getLastSeenVersion() {
     try { return localStorage.getItem('foximed_last_seen_version'); } catch (e) { return null; }
 }
@@ -4601,11 +4615,32 @@ function showGreetingBanner() {
     closeBtn.addEventListener('click', dismissBanner);
 }
 
+function normalizePersonalName(name) {
+    const firstPart = String(name || '').trim().split(/\s+/)[0] || '';
+    return firstPart
+        .normalize('NFKD')
+        .toLowerCase()
+        .replace(/[\u0300-\u036f\u064b-\u065f\u0670]/g, '')
+        .replace(/[يى]/g, 'ی')
+        .replace(/[ۀة]/g, 'ه')
+        .replace(/[^a-z\u0600-\u06ff]/g, '');
+}
+
+function isHediyehName(name) {
+    const normalized = normalizePersonalName(name);
+    return /^(?:هدیه|هدی|هدو)$/.test(normalized) ||
+        /^(?:hedi(?:e|eh|ye|yeh)?|hedy(?:e|eh)?|hedo{1,2}|hdo)$/.test(normalized);
+}
+
 function saveUserNameValue(name) {
     const cleanName = String(name || '').trim().slice(0, 30);
     if (!cleanName) return false;
     localStorage.setItem('userName', cleanName);
+    localStorage.setItem(USER_NAME_CAPTURE_VERSION_KEY, USER_NAME_CAPTURE_VERSION);
     window.dispatchEvent(new CustomEvent('foximed:user-name-changed', { detail: { name: cleanName } }));
+    if (isHediyehName(cleanName)) {
+        showToast('خوش اومدی', 'ممنونم، چه اسم قشنگی، مطمئنم خودتم مثل اسمت جذابی!', 'success');
+    }
     return true;
 }
 
@@ -4665,55 +4700,36 @@ function setupUserName() {
     });
 }
 
-// A gentle profile invitation: not on the first launch, at least a week
-// between appearances even if it is ignored, two weeks after "later", and
-// permanently dismissible. It is fixed-position, so it cannot make the main
-// calculator taller.
+// Version 5 requires one fresh, explicit name entry from everyone, including
+// people whose name was stored by an earlier version. The prompt stays out of
+// the way of onboarding and other modals, but it has no skip path and returns
+// on later launches until a name is saved.
 function setupNamePrompt() {
-    if ((localStorage.getItem('userName') || '').trim()) return;
+    const captureComplete = () =>
+        localStorage.getItem(USER_NAME_CAPTURE_VERSION_KEY) === USER_NAME_CAPTURE_VERSION &&
+        !!(localStorage.getItem('userName') || '').trim();
+    if (captureComplete()) return;
 
     const prompt = document.getElementById('namePrompt');
     const input = document.getElementById('namePromptInput');
     const save = document.getElementById('namePromptSave');
-    const later = document.getElementById('namePromptLater');
-    const never = document.getElementById('namePromptNever');
-    if (!prompt || !input || !save || !later || !never) return;
+    if (!prompt || !input || !save) return;
 
-    const storageKey = 'foximed_name_prompt';
-    let state = { launches: 0, remindAfter: 0, optedOut: false };
-    try {
-        state = Object.assign(state, JSON.parse(localStorage.getItem(storageKey) || '{}'));
-    } catch (e) { /* use safe defaults */ }
-    state.launches = Number(state.launches || 0) + 1;
-
-    function persist() {
-        try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch (e) {}
-    }
-    persist();
-
-    if (state.optedOut || state.launches < 2 || Number(state.remindAfter || 0) > Date.now()) return;
-
-    let retryCount = 0;
     function anotherOverlayIsOpen() {
         const onboarding = document.getElementById('onboardingOverlay');
         if (onboarding && (onboarding.classList.contains('visible') || onboarding.style.display === 'flex')) return true;
         return !!document.querySelector('.modal.active, .reverse-tooltip-overlay.visible');
     }
     function revealWhenClear() {
-        if (anotherOverlayIsOpen() && retryCount < 12) {
-            retryCount += 1;
-            setTimeout(revealWhenClear, 2000);
+        if (captureComplete()) return;
+        if (anotherOverlayIsOpen()) {
+            setTimeout(revealWhenClear, 1200);
             return;
         }
-        if (anotherOverlayIsOpen()) return;
-        // Record the appearance before showing it. If the app is backgrounded
-        // or killed without a tap, this still cannot recur on every startup.
-        state.remindAfter = Date.now() + 7 * 24 * 60 * 60 * 1000;
-        persist();
         prompt.hidden = false;
         requestAnimationFrame(() => prompt.classList.add('is-visible'));
     }
-    setTimeout(revealWhenClear, 8500);
+    setTimeout(revealWhenClear, 1800);
 
     function closePrompt() {
         prompt.classList.remove('is-visible');
@@ -4722,8 +4738,6 @@ function setupNamePrompt() {
     function saveFromPrompt() {
         const name = input.value.trim();
         if (!name || !saveUserNameValue(name)) return;
-        state.optedOut = true;
-        persist();
         closePrompt();
         haptic(20);
     }
@@ -4736,16 +4750,6 @@ function setupNamePrompt() {
         }
     });
     save.addEventListener('click', saveFromPrompt);
-    later.addEventListener('click', () => {
-        state.remindAfter = Date.now() + 14 * 24 * 60 * 60 * 1000;
-        persist();
-        closePrompt();
-    });
-    never.addEventListener('click', () => {
-        state.optedOut = true;
-        persist();
-        closePrompt();
-    });
 }
 
 // ============================================
