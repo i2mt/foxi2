@@ -72,12 +72,18 @@
         // Curated corrections from real FoxiMed transcripts. Keep these
         // exact-token and evidence-based: broad autocorrection of drug
         // fragments would be unsafe. Drug commands still require the user
-        // to confirm the original, unmodified transcript before execution.
+        // to confirm the canonical interpretation before execution.
         result = result
             .replace(/(^|\s)(?:امفزیون|انفوزیون)تی\s*انجی(?=\s|$)/g, '$1انفوزیون tng')
-            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان|امفزیان|امفزیون)(?=\s|$)/g, '$1انفوزیون')
+            .replace(/(^|\s)(?:چندفزیون|چندفزیان|انفزیون|انفوزن|هموزیان|امفزیان|امفزیون|امپوزیان|امپزیون|امپزیان|همپزیان)(?=\s|$)/g, '$1انفوزیون')
             .replace(/(^|\s)من\s+فزیون(?=\s|$)/g, '$1انفوزیون')
-            .replace(/(^|\s)(?:هپار|هپاری)(?=\s|$)/g, '$1هپارین');
+            .replace(/(^|\s)(?:هپار|هپاری)(?=\s|$)/g, '$1هپارین')
+            .replace(/(^|\s)(?:میادوللان|میادولان|میدازوللان)(?=\s|$)/g, '$1میدازولام')
+            .replace(/(^|\s)فانیل(?=\s|$)/g, '$1فنتانیل')
+            .replace(/(^|\s)فزماید(?=\s|$)/g, '$1فوروزماید')
+            .replace(/(^|\s)اکتوت\s+تاید(?=\s|$)/g, '$1اکترئوتاید')
+            .replace(/(^|\s)دوپامامی(?=\s|$)/g, '$1دوپامین')
+            .replace(/(^|\s)(?:آامیاد\s+داران|عامیه\s+دارون)(?=\s|$)/g, '$1آمیودارون');
 
         if (/(?:^|\s)یه\s+مای(?=\s|$)/.test(result) && /(?:قد|وزن)/.test(result)) {
             result = result.replace(/(^|\s)یه\s+مای(?=\s|$)/g, '$1bmi');
@@ -89,8 +95,8 @@
     }
 
     // Conservative recovery for short, non-clinical Persian phrases seen in
-    // real Whisper output. Base usually preserves the phonetics but may split
-    // a word or choose a common homophonic spelling. Keep this separate from
+    // real ASR output. A model may split a word or choose a common homophonic
+    // spelling. Keep this separate from
     // clinical-term recovery so these friendly phrases can never rewrite a
     // drug name, dose, number or confirmation transcript.
     function normalizeConversationalAsr(text) {
@@ -192,17 +198,17 @@
     // the displayed drug names and clinical database remain unchanged.
     const DRUG_SPEECH_ALIASES = {
         heparin: ['هپار', 'هپاری'],
-        furosemide: ['فروزماید', 'فوروسماید', 'فورزماید', 'لازیک'],
+        furosemide: ['فروزماید', 'فوروسماید', 'فورزماید', 'فزماید', 'لازیک'],
         insulin: ['انسولین', 'انسولین رگولر', 'انسولین رگولار'],
-        fentanyl: ['فنتانل', 'فنتانی'],
+        fentanyl: ['فنتانل', 'فنتانی', 'فانیل'],
         pantoprazole: ['پنتاپرازول', 'پانتوپرازول'],
         nitroglycerin: ['نیتروگلیسرین', 'نیترو گلیسیرین', 'تی ان جی'],
         norepinephrine: ['نوراپینفرین', 'نور اپی نفرین', 'نورآدرنالین', 'نور آدرنالین', 'لووفد'],
-        midazolam: ['میدازولم', 'میدازولان'],
-        octreotide: ['اکتروتاید', 'اکترئوتید', 'اکتروتید'],
+        midazolam: ['میدازولم', 'میدازولان', 'میادوللان', 'میادولان', 'میدازوللان'],
+        octreotide: ['اکتروتاید', 'اکترئوتید', 'اکتروتید', 'اکتوت تاید'],
         labetalol: ['لابیتالول', 'لابتول'],
-        dopamine: ['دپامین'],
-        amiodarone: ['آمیودارون', 'امیودارون'],
+        dopamine: ['دپامین', 'دوپامامی'],
+        amiodarone: ['آمیودارون', 'امیودارون', 'آامیاد داران', 'عامیه دارون'],
         lidocaine: ['لیدوکایین', 'لیدوکاین', 'لیگنوکایین'],
         dobutamine: ['دوبوتامین', 'دوبوتامن']
     };
@@ -403,6 +409,7 @@
                     params[p.key] = parseInt(match[2] || match[1]);
                 } else {
                     params[p.key] = parseFloat(match[1] !== undefined ? match[1] : match[2]);
+                    if (p.key === 'dose' && match[2]) params.doseUnit = String(match[2]).toLowerCase();
                     text = text.replace(match[0], '');
                 }
             }
@@ -448,6 +455,9 @@
 
         const flowMatch = text.match(/(\d+(?:\.\d+)?)\s*(L\/min|litre\/min|لیتر در دقیقه)/i);
         if (flowMatch) params.flow = parseFloat(flowMatch[1]);
+
+        if (/(?:در|بر|هر)\s*ساعت/i.test(text)) params.ratePeriod = 'hour';
+        else if (/(?:در|بر|هر)\s*دقیقه/i.test(text)) params.ratePeriod = 'minute';
 
         const electrolyte = matchElectrolyte(text);
         if (electrolyte) params.electrolyte = electrolyte;
@@ -620,8 +630,8 @@
     }
 
     const PERSIAN_UNIT_WORDS = {
-        'میلی گرم': 'mg',
-        'میکرو گرم': 'mcg', 'میکروگرم': 'mcg',
+        'میلی گرم': 'mg', 'میلیگرم': 'mg', 'می گرم': 'mg',
+        'میکرو گرم': 'mcg', 'میکروگرم': 'mcg', 'میترلو': 'mcg',
         'میلی لیتر': 'ml',
         'سی سی': 'cc',
         'گرم': 'g', 'واحد': 'units'
@@ -1196,6 +1206,56 @@
         return drug ? (drug.persianName || drug.englishName || id) : '';
     }
 
+    function formatDoseUnit(unit) {
+        const units = { mg: 'میلی‌گرم', mcg: 'میکروگرم', g: 'گرم', units: 'واحد' };
+        return units[String(unit || '').toLowerCase()] || String(unit || '');
+    }
+
+    function formatDosePhrase(params) {
+        if (!params || !Number.isFinite(Number(params.dose))) return '';
+        let phrase = formatConfirmationNumber(params.dose);
+        if (params.doseUnit) phrase += ' ' + formatDoseUnit(params.doseUnit);
+        if (params.ratePeriod === 'hour') phrase += ' در ساعت';
+        else if (params.ratePeriod === 'minute') phrase += ' در دقیقه';
+        return phrase;
+    }
+
+    function buildHistoryEntry(cmd, params) {
+        params = params || {};
+        const drugName = confirmationDrugName(params.drugId);
+        const dosePhrase = formatDosePhrase(params);
+        if (cmd === 'drug' && drugName) {
+            const prefix = params.method === 'infusion' ? 'انفوزیون ' : 'محاسبه داروی ';
+            const canonical = prefix + drugName + (dosePhrase ? ' — ' + dosePhrase : '');
+            const replay = (params.method === 'infusion' ? 'انفوزیون ' : 'محاسبه دارو ') + drugName +
+                (dosePhrase ? ' ' + dosePhrase : '');
+            return { label: canonical, replay: replay };
+        }
+
+        if ((cmd === 'ysite' || cmd === 'compat_tool') && params.drug1 && params.drug2) {
+            const first = confirmationDrugName(params.drug1);
+            const second = confirmationDrugName(params.drug2);
+            return { label: 'بررسی سازگاری ' + first + ' و ' + second, replay: 'سازگاری ' + first + ' و ' + second };
+        }
+
+        let label = CONFIRM_LABELS[cmd] || ({
+            history: 'باز کردن تاریخچه', settings: 'باز کردن تنظیمات',
+            tab_calculator: 'باز کردن ماشین‌حساب', tab_drugs: 'باز کردن مرجع داروها',
+            tab_tools: 'باز کردن ابزارهای بالینی', manual_calc: 'باز کردن محاسبه دستی'
+        })[cmd];
+        if (!label) return null;
+        if (cmd === 'bmi' && params.weight && params.height) {
+            label += ' — وزن ' + formatConfirmationNumber(params.weight) + '، قد ' + formatConfirmationNumber(params.height);
+        }
+        return { label: label, replay: label };
+    }
+
+    function recordCompletedAction(cmd, params) {
+        if (!window.VoiceUI || typeof window.VoiceUI.recordHistory !== 'function') return;
+        const entry = buildHistoryEntry(cmd, params);
+        if (entry) window.VoiceUI.recordHistory(entry.label, entry.replay);
+    }
+
     // Present the canonical action that FoxiMed will execute, not the fuzzy
     // raw decoder transcript. This is safer for confirmation: the nurse
     // reviews the resolved drug/tool and parsed patient values directly.
@@ -1219,6 +1279,8 @@
         if (params.customAmount && params.customUnit) {
             lines.push('مقدار: ' + formatConfirmationNumber(params.customAmount) + ' ' + params.customUnit);
         }
+        const dosePhrase = formatDosePhrase(params);
+        if (dosePhrase) lines.push('دوز/دستور: ' + dosePhrase);
         if (params.flow) lines.push('جریان: ' + formatConfirmationNumber(params.flow) + ' لیتر در دقیقه');
         if (params.rassScore !== undefined) lines.push('امتیاز RASS: ' + formatConfirmationNumber(params.rassScore));
         if (params.bradenScores) lines.push('امتیازهای Braden: ' + params.bradenScores.map(formatConfirmationNumber).join('، '));
@@ -1230,6 +1292,7 @@
     function dispatchCommand(cmd, text, params) {
         if (!CLINICAL_CONFIRM_COMMANDS.has(cmd)) {
             executeCommand(cmd, text, params);
+            recordCompletedAction(cmd, params);
             return;
         }
 
@@ -1246,6 +1309,7 @@
                 if (requestId !== confirmationSequence) return;
                 revealCommandTarget(cmd);
                 executeCommand(cmd, text, params);
+                recordCompletedAction(cmd, params);
             },
             function () {
                 if (requestId !== confirmationSequence) return;

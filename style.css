@@ -7499,23 +7499,27 @@ html {
     padding: 4px 0 10px;
 }
 
-.voice-engine-setting > label {
+.voice-engine-setting > span:first-child {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
 }
 
-.voice-engine-select {
-    width: 100%;
-    min-height: 42px;
+.voice-engine-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: fit-content;
     padding: 8px 11px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface-elevated);
     color: var(--text-primary);
-    font-family: var(--font-persian);
     font-size: 12px;
-    direction: rtl;
+}
+
+.voice-engine-current i {
+    color: var(--success);
 }
 
 .voice-privacy-hint {

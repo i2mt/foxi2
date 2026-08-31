@@ -21,7 +21,17 @@
     'use strict';
 
     let voiceHistory = [];
-    try { voiceHistory = JSON.parse(localStorage.getItem('voiceHistory') || '[]'); } catch (e) { voiceHistory = []; }
+    try {
+        const savedHistory = JSON.parse(localStorage.getItem('voiceHistory') || '[]');
+        // v5.0.37 stores canonical completed actions. Discard legacy string
+        // entries because those were raw, often fuzzy ASR transcripts.
+        voiceHistory = Array.isArray(savedHistory)
+            ? savedHistory.filter(function (entry) {
+                return entry && typeof entry.label === 'string' && typeof entry.replay === 'string';
+            })
+            : [];
+        localStorage.setItem('voiceHistory', JSON.stringify(voiceHistory));
+    } catch (e) { voiceHistory = []; }
 
     let els = {};
     let resultClearTimer = null;
@@ -367,9 +377,12 @@
     // ============================================
     // HISTORY
     // ============================================
-    function addToHistory(text) {
-        voiceHistory = voiceHistory.filter(function (c) { return c !== text; });
-        voiceHistory.unshift(text);
+    function recordHistory(label, replay) {
+        label = String(label || '').trim();
+        replay = String(replay || '').trim();
+        if (!label || !replay) return;
+        voiceHistory = voiceHistory.filter(function (entry) { return entry.label !== label; });
+        voiceHistory.unshift({ label: label, replay: replay, at: Date.now() });
         if (voiceHistory.length > 10) voiceHistory.pop();
         try { localStorage.setItem('voiceHistory', JSON.stringify(voiceHistory)); } catch (e) {}
         renderHistory();
@@ -383,9 +396,15 @@
             return;
         }
         if (els.historySection) els.historySection.style.display = 'block';
-        els.historyList.innerHTML = display.map(function (cmd) {
-            return '<button type="button" class="voice-history-chip" data-cmd="' + cmd.replace(/"/g, '&quot;') + '">' + cmd + '</button>';
-        }).join('');
+        els.historyList.innerHTML = '';
+        display.forEach(function (entry) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'voice-history-chip';
+            chip.dataset.cmd = entry.replay;
+            chip.textContent = entry.label;
+            els.historyList.appendChild(chip);
+        });
         els.historyList.querySelectorAll('.voice-history-chip').forEach(function (chip) {
             chip.addEventListener('click', function () { handleTranscript(this.dataset.cmd, 'history'); });
         });
@@ -455,7 +474,6 @@
 
     function handleTranscript(text, source) {
         if (!text) return;
-        addToHistory(text);
         setStatus('در حال پردازش...', 'processing');
         setOrbState('processing');
         if (els.result) els.result.style.display = 'none';
@@ -487,9 +505,7 @@
                     els.modelProgressFill.classList.add('is-indeterminate');
                 }
                 if (els.modelProgressLabel) {
-                    els.modelProgressLabel.textContent = loadingModelInfo.engine === 'whisper'
-                        ? 'در حال آماده‌سازی Whisper ' + (loadingModelInfo.model === 'base' ? 'Base (حدود ۲۱۰ مگابایت)' : 'Tiny (حدود ۱۰۰ مگابایت)') + '؛ بار اول چند دقیقه منتظر بمانید...'
-                        : 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
+                    els.modelProgressLabel.textContent = 'در حال شروع دانلود موتور Rizeh (حدود ۵۵ مگابایت)...';
                 }
             }
         });
@@ -734,6 +750,7 @@
         showResult: showResult,
         showConfirmation: showConfirmation,
         appendTip: appendTip,
+        recordHistory: recordHistory,
         stabilizeLayout: stabilizeLayout
     };
     window.initVoiceTab = init;

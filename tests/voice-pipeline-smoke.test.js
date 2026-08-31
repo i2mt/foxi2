@@ -45,6 +45,9 @@ function testCommandRouting() {
             showConfirmation(message, onConfirm, onCancel) {
                 events.push({ kind: 'confirmation', message, onConfirm, onCancel });
             },
+            recordHistory(label, replay) {
+                events.push({ kind: 'voice-history', label, replay });
+            },
             appendTip() {}
         }
     };
@@ -85,6 +88,7 @@ function testCommandRouting() {
         calculateBMI() {
             events.push({ kind: 'bmi-calculation', weight: Number(elements.bmiWeight.value), height: Number(elements.bmiHeight.value) });
         },
+        selectDrug(id) { events.push({ kind: 'drug-selected', id }); },
         switchTab(tab) { events.push({ kind: 'tab', tab }); },
         setTimeout(fn) { events.push({ kind: 'deferred', fn }); return events.length; },
         clearTimeout() {}
@@ -180,6 +184,28 @@ function testCommandRouting() {
     assert(result.some(e => e.kind === 'confirmation' && e.message.includes('دارو: نیتروگلیسیرین') &&
         e.message.includes('روش: پمپ انفوزیون') && !e.message.includes('امفزیونتی انجی')),
         'TNG recovery must confirm the canonical drug and method without fuzzy decoder text');
+
+    const observedRizehDrugCases = [
+        ['امپوزیان میادوللان دو می گرم در ساعت', 'میدازولام', '۲ میلی‌گرم در ساعت'],
+        ['امفزیون فانیل صد میکروگرم در ساعت', 'فنتانیل', '۱۰۰ میکروگرم در ساعت'],
+        ['امپزیون فزماید چهار میلیگرم در دقیقه', 'فوروزماید', '۴ میلی‌گرم در دقیقه'],
+        ['امپزیون اکتوت تاید پنجاه میترلو در ساعت', 'اکترئوتاید', '۵۰ میکروگرم در ساعت'],
+        ['همپزیان دوپامامی', 'دوپامین', null],
+        ['امپزیون آامیاد داران', 'آمیودارون', null],
+        ['امپزیون عامیه دارون', 'آمیودارون', null]
+    ];
+    observedRizehDrugCases.forEach(function ([phrase, drugName, dosePhrase]) {
+        result = run(phrase);
+        const confirmation = result.find(e => e.kind === 'confirmation');
+        assert(confirmation && confirmation.message.includes('دارو: ' + drugName) &&
+            confirmation.message.includes('روش: پمپ انفوزیون'),
+            'observed Rizeh substitution must resolve to canonical infusion drug: ' + phrase + ' :: ' + JSON.stringify(result));
+        if (dosePhrase) assert(confirmation.message.includes('دوز/دستور: ' + dosePhrase),
+            'observed dose and rate must survive canonical recovery: ' + phrase + ' :: ' + confirmation.message);
+        confirmation.onConfirm();
+        assert(events.some(e => e.kind === 'voice-history' && e.label.includes(drugName) && !e.label.includes(phrase)),
+            'history must store the canonical completed action, not fuzzy ASR text: ' + phrase);
+    });
 
     Object.entries(drugDatabase).forEach(function ([id, drug]) {
         if (id === 'vancomycin') return;
@@ -358,22 +384,19 @@ function testDeploymentWiring() {
         'the obsolete Vosk archive must not be shipped in the Pages site');
     assert(serviceWorker.includes('FoxiMed_Model_Rizeh_v1_nonstreaming_int8_f2b9251'),
         'service worker must use a cache namespace tied to the pinned Rizeh revision');
-    assert(serviceWorker.includes('koochik-worker.js?v=34'),
-        'service worker must precache the v34 Rizeh worker URL');
-    assert(serviceWorker.includes('whisper-worker.js?v=38') && serviceWorker.includes('whisper-asr.js?v=38'),
-        'service worker must precache the Whisper adapter and worker shell');
-    assert(read('koochik-asr.js').includes("koochik-worker.js?v=34"),
-        'voice adapter must instantiate the v34 Rizeh worker URL');
-    assert(read('whisper-asr.js').includes("whisper-worker.js?v=38"),
-        'Whisper adapter must instantiate the current module worker URL');
-    assert(index.includes('service-worker.js?v=38'),
-        'page must register the v38 service worker');
-    assert(index.includes('voiceRecognitionModeSelect') && index.includes('whisper-base'),
-        'Settings must expose explicit Auto, Whisper and Rizeh choices');
-    assert(index.includes('voice-engine-policy.js?v=38') && serviceWorker.includes('voice-engine-policy.js?v=38'),
-        'the evidence-based engine policy must be loaded and precached with the current app shell');
-    assert(voiceEngine.includes("if (pickBackend() !== 'rizeh') return Promise.resolve()"),
-        'visiting the assistant tab must not start a large Whisper download');
+    assert(serviceWorker.includes('koochik-worker.js?v=35'),
+        'service worker must precache the v35 Rizeh worker URL');
+    assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
+        'voice adapter must instantiate the v35 Rizeh worker URL');
+    assert(index.includes('service-worker.js?v=39'),
+        'page must register the v39 service worker');
+    assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
+        'Settings must present one clear Rizeh status instead of experimental model choices');
+    assert(!index.includes('whisper-asr.js') && !serviceWorker.includes('whisper-worker.js') &&
+        !serviceWorker.includes('voice-engine-policy.js'),
+        'the shipped app shell must not load or cache removed Whisper paths');
+    assert(voiceEngine.includes("return 'rizeh';") && !voiceEngine.includes('WhisperASR'),
+        'voice recognition must use the single Rizeh backend');
     assert(!script.includes('VoiceEngine.releaseModel'),
         'tab changes must keep the loaded voice model warm');
     assert(voiceEngine.includes("emit('decoding'") && voiceUi.includes("VoiceEngine.on('decoding'"),
@@ -420,22 +443,19 @@ function testDeploymentWiring() {
         'assistant capability replies must use a natural colloquial Persian voice');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
         'a stale result timer must never reset an active microphone to idle');
-    assert(read('whisper-worker.js').includes('createOverallProgress') && read('whisper-worker.js').includes('overallPercent'),
-        'Whisper must aggregate all files into one monotonic model percentage');
-    assert(read('whisper-worker.js').includes('retryingModelFetch') && read('whisper-worker.js').includes('retrying-model-load'),
-        'Whisper must retry interrupted model requests and body streams');
-    assert(read('whisper-worker.js').includes('degenerateTranscriptReason') && read('whisper-worker.js').includes('max_new_tokens: 96'),
-        'Whisper must cap decoding and reject repeated-token background-noise hallucinations');
-    assert(voiceEngine.includes("info.code === 'whisper-network-failed'"),
-        'a shared model-host network failure must skip the redundant Base-to-Tiny download');
     assert(voiceUi.includes("p.status === 'retrying-network'"),
         'the model dialog must explain connection retries instead of looking stalled');
-    assert(voiceEngine.includes("whisperProvider ? 'Whisper' : 'Rizeh'") && voiceEngine.includes("engine.audioStats ? engine.audioStats()"),
-        'voice diagnostics must name the active decoder and report available audio levels');
+    assert(voiceEngine.includes("console.log('[KoochikASR] FINAL decode result:'") && voiceEngine.includes("engine.audioStats ? engine.audioStats()"),
+        'voice diagnostics must name Rizeh and report available audio levels');
     assert(voiceCommands.includes('buildConfirmationMessage') && !voiceCommands.includes("'شنیده شد: «'"),
         'clinical confirmation must show canonical interpreted action and values rather than raw ASR text');
     assert(read('koochik-asr.js').includes('overallPercent') && voiceUi.includes('دانلود کلی'),
         'Rizeh and the shared UI must report rounded whole-model progress');
+    assert(!voiceUi.includes('addToHistory(text)') && voiceUi.includes('recordHistory: recordHistory') &&
+        voiceCommands.includes('recordCompletedAction(cmd, params)'),
+        'assistant history must store canonical completed actions instead of raw ASR text');
+    assert(index.includes('آماده‌سازی مدل صدا فقط هنگام استفاده'),
+        'low-power description must match its real on-demand model behavior');
     assert(voiceEngine.includes('onlineFallbackAvailable: true') && voiceEngine.includes('startOnline: startOnline'),
         'offline failures must expose an explicit online retry');
     assert(voiceUi.includes('صدا برای تشخیص به سرویس مرورگر فرستاده می‌شه'),
