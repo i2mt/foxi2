@@ -26,7 +26,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=38">
+    <link rel="stylesheet" href="style.css?v=39">
     <link rel="stylesheet" href="voice-assistant.css?v=38">
 </head>
 <body>
@@ -45,7 +45,7 @@
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
             <div class="loading-meta">
-                <span>نسخه 5.0.36</span>
+                <span>نسخه 5.0.37</span>
                 <span class="loading-meta-dot" aria-hidden="true"></span>
                 <span>آماده برای کار آفلاین</span>
             </div>
@@ -1814,7 +1814,7 @@
                     <div class="setting-item">
                         <div class="setting-label-stack">
                             <span>حالت کم‌مصرف <span id="lowPowerModeAutoNote" class="setting-badge" style="display:none;">خودکار</span></span>
-                            <span class="setting-sublabel">کاهش جلوه‌ها؛ موتور صدا پس از بارگذاری آماده می‌ماند</span>
+                            <span class="setting-sublabel">کاهش حرکت‌ها و جلوه‌های سنگین؛ آماده‌سازی مدل صدا فقط هنگام استفاده</span>
                         </div>
                         <label class="switch"><input type="checkbox" id="lowPowerModeToggle"><span class="slider"></span></label>
                     </div>
@@ -1897,16 +1897,11 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-wave-square"></i> تشخیص گفتار</h4>
                     <div class="voice-engine-setting">
-                        <label for="voiceRecognitionModeSelect">موتور تشخیص صدا</label>
-                        <select id="voiceRecognitionModeSelect" class="voice-engine-select">
-                            <option value="auto">خودکار — Rizeh (پیشنهادی)</option>
-                            <option value="whisper-base">Whisper Base — آزمایشی</option>
-                            <option value="whisper-tiny">Whisper Tiny — آزمایشی و سبک‌تر</option>
-                            <option value="rizeh">Rizeh — دقیق‌تر برای فرمان‌های فعلی</option>
-                        </select>
-                        <span class="setting-sublabel" id="voiceRecognitionModeNote">در حال بررسی توان دستگاه...</span>
+                        <span>موتور فعال</span>
+                        <strong class="voice-engine-current"><i class="fas fa-circle-check"></i> Rizeh — آفلاین</strong>
+                        <span class="setting-sublabel">گزینه پایدار فعلی برای فرمان‌های فارسی فاکسی‌مد</span>
                     </div>
-                    <p class="settings-hint voice-privacy-hint"><i class="fas fa-shield-halved"></i> در هر سه حالت، صدای شما برای تشخیص آفلاین از دستگاه خارج نمی‌شود. مدل Whisper فقط بار اول به اینترنت نیاز دارد.</p>
+                    <p class="settings-hint voice-privacy-hint"><i class="fas fa-shield-halved"></i> تشخیص صدا روی همین دستگاه انجام می‌شود و فایل صوتی از گوشی خارج نمی‌شود.</p>
                 </div>
 
                 <!-- Voice Assistant Learning Log -->
@@ -1931,7 +1926,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.36</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.37</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2092,17 +2087,15 @@
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
     <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=38"></script>
-    <script src="voice-engine-policy.js?v=38"></script>
-    <script src="koochik-asr.js?v=35"></script>
-    <script src="whisper-asr.js?v=38"></script>
-    <script src="voice-recognition.js?v=38"></script>
-    <script src="voice-commands.js?v=38"></script>
-    <script src="voice-ui.js?v=38"></script>
+    <script src="script.js?v=39"></script>
+    <script src="koochik-asr.js?v=36"></script>
+    <script src="voice-recognition.js?v=39"></script>
+    <script src="voice-commands.js?v=39"></script>
+    <script src="voice-ui.js?v=39"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=38', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=39', { updateViaCache: 'none' });
             });
         }
     </script>

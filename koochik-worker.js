@@ -10,7 +10,7 @@
  */
 'use strict';
 
-const BUILD_ID = 'v34-adaptive-whisper';
+const BUILD_ID = 'v34-rizeh-offline';
 const SAMPLE_RATE = 16000;
 const ASR_WRAPPER_FILE = 'sherpa-onnx-asr.js';
 const VAD_WRAPPER_FILE = 'sherpa-onnx-vad.js';

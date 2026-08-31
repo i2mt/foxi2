@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.36';
+const APP_VERSION = '5.0.37';
 
 const CHANGELOG = {
+    '5.0.37': [
+        'استفاده یکپارچه از Rizeh برای تشخیص آفلاین فارسی',
+        'حذف گزینه‌های آزمایشی Whisper که روی گوشی نتیجه ضعیف‌تری داشتند',
+        'تنظیمات ساده‌تر و توضیح روشن‌تر درباره حریم خصوصی صدا'
+    ],
     '5.0.36': [
         'راهنمای مرحله‌ای با اشاره مستقیم به بخش‌های واقعی برنامه',
         'ثابت ماندن جای روباه هنگام نمایش پاسخ‌های دستیار',
@@ -250,7 +255,6 @@ const AppState = {
         voiceOutput: false,
         lowPowerMode: false,
         lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
-        voiceRecognitionMode: 'auto',
         voiceLogAutoTelegram: false // off by default — see voice-commands.js: automatic sending is a different privacy posture than the manual-export design, so it only runs once explicitly turned on
     },
     reverseMode: false
@@ -1199,9 +1203,6 @@ function loadSettings() {
     if (DOM.hapticToggle) DOM.hapticToggle.checked = AppState.settings.hapticFeedback !== false;
     const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
     if (voiceLogAutoTelegramToggle) voiceLogAutoTelegramToggle.checked = !!AppState.settings.voiceLogAutoTelegram;
-    const voiceRecognitionModeSelect = document.getElementById('voiceRecognitionModeSelect');
-    if (voiceRecognitionModeSelect) voiceRecognitionModeSelect.value = AppState.settings.voiceRecognitionMode || 'auto';
-    updateVoiceRecognitionModeNote();
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
@@ -1209,29 +1210,6 @@ function loadSettings() {
 
 function saveSettings() {
     localStorage.setItem('appSettings', JSON.stringify(AppState.settings));
-}
-
-function updateVoiceRecognitionModeNote() {
-    const note = document.getElementById('voiceRecognitionModeNote');
-    if (!note) return;
-    const selected = (AppState.settings && AppState.settings.voiceRecognitionMode) || 'auto';
-    const hasWebGPU = !!(navigator.gpu && navigator.gpu.requestAdapter);
-    const memory = Number(navigator.deviceMemory);
-    if ((selected === 'whisper-base' || selected === 'whisper-tiny') && !hasWebGPU) {
-        note.textContent = 'WebGPU روی این مرورگر در دسترس نیست؛ Rizeh به‌طور خودکار استفاده می‌شود.';
-        return;
-    }
-    if (selected === 'auto') {
-        note.textContent = 'انتخاب خودکار: Rizeh؛ دقیق‌ترین نتیجه فعلی برای فرمان‌های فارسی فاکسی‌مد.';
-        return;
-    }
-    if (selected === 'whisper-base' && Number.isFinite(memory) && memory > 0 && memory < 6) {
-        note.textContent = 'Base آزمایشی است و روی این دستگاه ممکن است حافظه کافی نداشته باشد.';
-        return;
-    }
-    note.textContent = selected === 'rizeh'
-        ? 'گزینه پیشنهادی فعلی؛ سبک‌تر و در آزمون‌های فارسی فاکسی‌مد دقیق‌تر بوده است.'
-        : 'حالت آزمایشی؛ صدا روی گوشی پردازش می‌شود و بسته مدل فقط بار اول دانلود خواهد شد.';
 }
 
 function applySettings() {
@@ -2126,18 +2104,6 @@ function setupSettingsEventListeners() {
         voiceLogAutoTelegramToggle.addEventListener('change', function() {
             AppState.settings.voiceLogAutoTelegram = this.checked;
             saveSettings();
-        });
-    }
-
-    const voiceRecognitionModeSelect = document.getElementById('voiceRecognitionModeSelect');
-    if (voiceRecognitionModeSelect) {
-        voiceRecognitionModeSelect.addEventListener('change', function () {
-            AppState.settings.voiceRecognitionMode = this.value;
-            saveSettings();
-            if (window.VoiceEngine && typeof window.VoiceEngine.preferenceChanged === 'function') {
-                window.VoiceEngine.preferenceChanged();
-            }
-            updateVoiceRecognitionModeNote();
         });
     }
 

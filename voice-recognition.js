@@ -1,9 +1,8 @@
 /* ============================================
    FoxiMed — Voice Engine
    ============================================
-   Adaptive on-device backends: Whisper Base/Tiny through WebGPU on capable
-   devices, with Shenava Rizeh v1.0 INT8 through sherpa-onnx WebAssembly as
-   the lightweight and universal fallback.
+   Shenava Rizeh v1.0 INT8 through sherpa-onnx WebAssembly provides the
+   consistent offline Persian recognizer on every supported device.
 
    sherpa-onnx owns feature extraction, offline inference, CTC decoding,
    and Silero endpoint detection. Audio is fed
@@ -175,16 +174,6 @@
                 code: 'koochik-runtime',
                 title: 'خطا در تشخیص گفتار آفلاین',
                 message: 'مشکلی در پردازش صدا رخ داد. دوباره تلاش کنید یا دستور را تایپ کنید.'
-            },
-            'whisper-model-failed': {
-                code: 'whisper-model-failed',
-                title: 'مدل Whisper آماده نشد',
-                message: 'این دستگاه نتوانست مدل دقیق‌تر را اجرا کند. موتور سبک Rizeh به‌طور خودکار امتحان می‌شود.'
-            },
-            'whisper-runtime': {
-                code: 'whisper-runtime',
-                title: 'خطا در پردازش Whisper',
-                message: 'پردازش مدل دقیق‌تر کامل نشد. لطفاً دوباره تلاش کنید یا موتور Rizeh را از تنظیمات انتخاب کنید.'
             }
         };
         return map[rawCode] || {
@@ -230,10 +219,6 @@
     let triedKoochikFallback = false; // reset at the start of each fresh start() call
     let activeCaptureEngine = null;
     let activeCaptureBackend = 'rizeh';
-    let whisperEngine = null;
-    let whisperEngineModel = '';
-    let whisperEngineLoadPromise = null;
-    let whisperLoadAbortController = null;
 
     function on(event, handler) { listeners[event] = handler; return api; }
     function emit(event, payload) { if (typeof listeners[event] === 'function') listeners[event](payload); }
@@ -516,14 +501,6 @@
         const generation = ++koochikLoadGeneration;
         const controller = new AbortController();
         koochikLoadAbortController = controller;
-        // Never keep both large local runtimes resident. Switching engines is
-        // uncommon and explicit; ordinary tab changes keep the chosen model.
-        if (whisperEngine || whisperEngineLoadPromise) {
-            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
-            whisperEngine = null;
-            whisperEngineModel = '';
-            whisperEngineLoadPromise = null;
-        }
         emit('model-loading', { engine: 'rizeh', model: 'rizeh' });
 
         const loadChain = window.KoochikASR
@@ -583,55 +560,7 @@
         return promise;
     }
 
-    function ensureWhisperEngine(model) {
-        model = model === 'tiny' ? 'tiny' : 'base';
-        if (whisperEngine && whisperEngineModel === model) return Promise.resolve(whisperEngine);
-        if (whisperEngineLoadPromise && whisperEngineModel === model) return whisperEngineLoadPromise;
-
-        if (koochikEngine) {
-            try { koochikEngine.destroy && koochikEngine.destroy(); } catch (e) {}
-            koochikEngine = null;
-            koochikEngineLoadPromise = null;
-        }
-        if (whisperEngine || whisperEngineLoadPromise) {
-            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
-            whisperEngine = null;
-            whisperEngineLoadPromise = null;
-        }
-
-        whisperEngineModel = model;
-        const controller = new AbortController();
-        whisperLoadAbortController = controller;
-        emit('model-loading', { engine: 'whisper', model: model });
-
-        const promise = window.WhisperASR
-            ? window.WhisperASR.load({ model: model, signal: controller.signal }, function (progress) {
-                emit('model-progress', Object.assign({ engine: 'whisper', model: model }, progress || {}));
-            })
-            : Promise.reject(new Error('whisper-library-missing'));
-
-        whisperEngineLoadPromise = promise.then(function (engine) {
-            if (controller.signal.aborted) {
-                try { engine.destroy && engine.destroy(); } catch (e) {}
-                throw new DOMException('Whisper load cancelled', 'AbortError');
-            }
-            whisperEngine = engine;
-            whisperEngineLoadPromise = null;
-            whisperLoadAbortController = null;
-            console.log('[WhisperASR] engine retained and ready for capture:', model);
-            emit('model-ready', { engine: 'whisper', model: model, awaitingMicrophone: koochikLoading });
-            return engine;
-        }).catch(function (error) {
-            whisperEngineLoadPromise = null;
-            whisperLoadAbortController = null;
-            whisperEngine = null;
-            try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
-            throw error;
-        });
-        return whisperEngineLoadPromise;
-    }
-
-    function startKoochik(requestedBackend) {
+    function startKoochik() {
         if (koochikActive || koochikLoading) return;
         if (!koochikConfigured()) {
             // Silent — getSupportInfo() already steered the UI toward the
@@ -643,8 +572,6 @@
 
         koochikLoading = true;
         koochikCancelRequested = false;
-        requestedBackend = requestedBackend || 'rizeh';
-        const requestedWhisperModel = requestedBackend === 'whisper-tiny' ? 'tiny' : 'base';
 
         // Create/resume Web Audio while we are still inside the user's mic
         // button gesture. Safari/iOS can keep a context suspended if it is
@@ -671,14 +598,12 @@
             return;
         }
 
-        const enginePromise = requestedBackend.indexOf('whisper-') === 0
-            ? ensureWhisperEngine(requestedWhisperModel)
-            : ensureKoochikEngine();
+        const enginePromise = ensureKoochikEngine();
 
         enginePromise.then(function (engine) {
             if (koochikCancelRequested) { koochikLoading = false; return; }
             activeCaptureEngine = engine;
-            activeCaptureBackend = requestedBackend;
+            activeCaptureBackend = 'rizeh';
             engine.reset();
             koochikLastEmitted = '';
             koochikStopping = false;
@@ -774,9 +699,8 @@
                         // on a flood of error events, not a real hang).
                         // Log once, stop cleanly, and don't let it repeat.
                         if (!koochikStopping) {
-                            const whisperActive = activeCaptureBackend.indexOf('whisper-') === 0;
-                            console.error('[' + (whisperActive ? 'WhisperASR' : 'KoochikASR') + '] onaudioprocess failed:', e);
-                            emit('error', withOnlineFallback(classifyError(whisperActive ? 'whisper-runtime' : 'koochik-runtime')));
+                            console.error('[KoochikASR] onaudioprocess failed:', e);
+                            emit('error', withOnlineFallback(classifyError('koochik-runtime')));
                             stopKoochik();
                         }
                     }
@@ -791,10 +715,8 @@
                     schedulePartialDecode(engine);
                 } else {
                     const provider = engine.executionProvider ? engine.executionProvider() : 'offline backend';
-                    const whisperProvider = String(provider).indexOf('whisper') >= 0;
-                    console.log('[' + (whisperProvider ? 'WhisperASR' : 'KoochikASR') + '] live partials disabled on',
-                        provider,
-                        '— audio is captured first, then ' + (whisperProvider ? 'Whisper' : 'Rizeh') + ' decodes once after recording stops');
+                    console.log('[KoochikASR] live partials disabled on', provider,
+                        '— audio is captured first, then Rizeh decodes once after recording stops');
                 }
             }).catch(function (err) {
                 koochikLoading = false;
@@ -809,28 +731,6 @@
                 koochikAudioCtx = null;
             }
             if (koochikCancelRequested || (info && info.name === 'AbortError')) return;
-            // WebGPU availability, browser allocation limits, or a first-use
-            // model download can fail. This happens before the microphone is
-            // opened, so switching to Rizeh is safe and loses no speech.
-            if (requestedBackend.indexOf('whisper-') === 0 && !koochikCancelRequested) {
-                // Tiny is useful when Base fails because of memory/WebGPU
-                // limits. It is not useful when the shared model host is
-                // unreachable: starting another large download only keeps
-                // the person waiting longer on the same broken connection.
-                const networkFailed = info && (info.code === 'whisper-network-failed' || /whisper-network-failed/.test(String(info.message || info)));
-                if (requestedBackend === 'whisper-base' && !networkFailed) {
-                    console.warn('[WhisperASR] Base unavailable; trying Tiny before Rizeh:', info);
-                    activeCaptureEngine = null;
-                    activeCaptureBackend = 'whisper-tiny';
-                    startKoochik('whisper-tiny');
-                    return;
-                }
-                console.warn('[WhisperASR] ' + (networkFailed ? 'model host remained unreachable' : 'unavailable') + '; falling back to Rizeh:', info);
-                activeCaptureEngine = null;
-                activeCaptureBackend = 'rizeh';
-                startKoochik('rizeh');
-                return;
-            }
             emit('error', withOnlineFallback(info && info.code ? info : classifyError('koochik-model-failed')));
         });
     }
@@ -950,11 +850,6 @@
             }
             koochikLoadAbortController = null;
             koochikEngineLoadPromise = null;
-            if (whisperLoadAbortController) {
-                try { whisperLoadAbortController.abort(); } catch (e) {}
-            }
-            whisperLoadAbortController = null;
-            whisperEngineLoadPromise = null;
             koochikLoading = false;
             emit('model-ready', { cancelled: true });
             return;
@@ -994,7 +889,7 @@
                 const decodedFinal = (text || '').trim();
                 const finalText = decodedFinal || lastGoodPartial;
                 const audioStats = engine.audioStats ? engine.audioStats() : null;
-                console.log('[' + (activeCaptureBackend.indexOf('whisper-') === 0 ? 'WhisperASR' : 'KoochikASR') + '] FINAL decode result:', JSON.stringify(decodedFinal),
+                console.log('[KoochikASR] FINAL decode result:', JSON.stringify(decodedFinal),
                     '| fallback=', JSON.stringify(lastGoodPartial),
                     '| emitted=', JSON.stringify(finalText),
                     '| bufferedSeconds=', engine.bufferedSeconds().toFixed(2),
@@ -1005,7 +900,7 @@
             }).catch(function (err) {
                 console.error('[KoochikASR] final decode failed:', err);
                 if (koochikStopTimer) { clearTimeout(koochikStopTimer); koochikStopTimer = null; }
-                emit('error', withOnlineFallback(classifyError(activeCaptureBackend.indexOf('whisper-') === 0 ? 'whisper-runtime' : 'koochik-runtime')));
+                emit('error', withOnlineFallback(classifyError('koochik-runtime')));
                 finishKoochik();
             });
         } else {
@@ -1032,16 +927,7 @@
     // ============================================
     function pickBackend() {
         if (!koochikConfigured()) return 'webspeech';
-        let saved = {};
-        try { saved = JSON.parse(localStorage.getItem('appSettings') || '{}'); } catch (e) {}
-        const policy = window.VoiceEnginePolicy;
-        if (!policy || typeof policy.choose !== 'function') return 'rizeh';
-        return policy.choose({
-            mode: saved.voiceRecognitionMode || 'auto',
-            lowPower: !!saved.lowPowerMode,
-            hasWebGPU: !!(navigator.gpu && navigator.gpu.requestAdapter),
-            deviceMemory: navigator.deviceMemory
-        });
+        return 'rizeh';
     }
 
     function start() {
@@ -1141,9 +1027,6 @@
         // can await/race it directly.
         preload: function () {
             if (!koochikConfigured()) return Promise.resolve();
-            // Whisper downloads are intentionally never started merely by
-            // visiting the tab. They begin only after a microphone tap.
-            if (pickBackend() !== 'rizeh') return Promise.resolve();
             return ensureKoochikEngine().catch(function () { /* silent — this is opportunistic, not a user-initiated action */ });
         },
         // Abort an opportunistic model load/download. Cancellation stops FoxiMed from adopting the result. The large .data
@@ -1158,11 +1041,6 @@
             }
             koochikLoadAbortController = null;
             koochikEngineLoadPromise = null;
-            if (whisperLoadAbortController) {
-                try { whisperLoadAbortController.abort(); } catch (e) {}
-            }
-            whisperLoadAbortController = null;
-            whisperEngineLoadPromise = null;
         },
         // Cheap, fast check for whether the model FILE is already sitting
         // in the Cache API from a previous session — this is NOT the same
@@ -1181,24 +1059,7 @@
             // are not queryable from page JS. Keep startup warmup on-demand.
             return Promise.resolve(false);
         },
-        getSelectedBackend: pickBackend,
-        preferenceChanged: function () {
-            if (active || koochikActive || koochikLoading) return;
-            const next = pickBackend();
-            // A deliberate Settings change may release a now-unused model.
-            // Merely switching tabs never calls this, so the active choice
-            // remains warm when the user moves around the app.
-            if (next === 'rizeh' && (whisperEngine || whisperEngineLoadPromise)) {
-                try { window.WhisperASR && window.WhisperASR.release(); } catch (e) {}
-                whisperEngine = null;
-                whisperEngineModel = '';
-                whisperEngineLoadPromise = null;
-            } else if (next.indexOf('whisper-') === 0 && koochikEngine) {
-                try { koochikEngine.destroy && koochikEngine.destroy(); } catch (e) {}
-                koochikEngine = null;
-                koochikEngineLoadPromise = null;
-            }
-        }
+        getSelectedBackend: pickBackend
     };
 
     window.VoiceEngine = api;

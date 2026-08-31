@@ -9,9 +9,9 @@
   'use strict';
 
   const DEFAULT_BASE_URL = './sherpa-koochik/';
-  const BUILD_ID = 'v34-adaptive-whisper';
+  const BUILD_ID = 'v34-rizeh-offline';
   console.log('[KoochikASR] adapter build=' + BUILD_ID);
-  const WORKER_FILE = './koochik-worker.js?v=34';
+  const WORKER_FILE = './koochik-worker.js?v=35';
   const SAMPLE_RATE = 16000;
 
   let worker = null;
