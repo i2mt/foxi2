@@ -200,7 +200,7 @@
     // the displayed drug names and clinical database remain unchanged.
     const DRUG_SPEECH_ALIASES = {
         heparin: ['هپار', 'هپاری'],
-        furosemide: ['فروزماید', 'فوروسماید', 'فورزماید', 'فزماید', 'لازیک'],
+        furosemide: ['فوروزماید', 'فروزماید', 'فوروزمید', 'فروسماید', 'فورسماید', 'فروزامید', 'فوروزمای', 'فورزماید', 'فزماید', 'لازیک', 'لازیکس'],
         insulin: ['انسولین', 'انسولین رگولر', 'انسولین رگولار'],
         fentanyl: ['فنتانل', 'فنتانی', 'فانیل'],
         pantoprazole: ['پنتاپرازول', 'پانتوپرازول', 'پ و پروزو', 'پتو پروراول'],
@@ -444,7 +444,7 @@
         else if (text.includes('d5w') || text.includes('دکستروز')) params.solution = 'D5W';
 
         if (text.includes('سرنگ')) params.method = 'syringe';
-        else if (text.includes('انفوزیون') || text.includes('پمپ')) params.method = 'infusion';
+        else if (text.includes('انفوزیون') || text.includes('پمپ') || text.includes('میکروست') || text.includes('ماکروست')) params.method = 'infusion';
 
         const ampMatch = text.match(/آمپول\s*(\d+)/i);
         if (ampMatch) params.ampoules = parseInt(ampMatch[1]);

@@ -209,6 +209,14 @@ function testCommandRouting() {
             'history must store the canonical completed action, not fuzzy ASR text: ' + phrase);
     });
 
+    ['میکروست فوروزمید', 'میکروست فروسماید', 'ماکروست فوروزماید'].forEach(function (phrase) {
+        result = run(phrase);
+        const confirmation = result.find(e => e.kind === 'confirmation');
+        assert(confirmation && confirmation.message.includes('دارو: فوروزماید') &&
+            confirmation.message.includes('روش: پمپ انفوزیون'),
+            `micro/macro-set wording must recover Furosemide and explicitly select the infusion pump: ${phrase}`);
+    });
+
     Object.entries(drugDatabase).forEach(function ([id, drug]) {
         if (id === 'vancomycin') return;
         result = run('انفوزیون ' + drug.persianName);
