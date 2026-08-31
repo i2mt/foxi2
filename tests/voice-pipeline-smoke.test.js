@@ -189,6 +189,7 @@ function testCommandRouting() {
         ['امپوزیان میادوللان دو می گرم در ساعت', 'میدازولام', '۲ میلی‌گرم در ساعت'],
         ['امفزیون فانیل صد میکروگرم در ساعت', 'فنتانیل', '۱۰۰ میکروگرم در ساعت'],
         ['امپزیون فزماید چهار میلیگرم در دقیقه', 'فوروزماید', '۴ میلی‌گرم در دقیقه'],
+        ['امزیون فزماید چهار می میرم در دقیقا با میکروس', 'فوروزماید', '۴ میلی‌گرم در دقیقه'],
         ['امپزیون اکتوت تاید پنجاه میترلو در ساعت', 'اکترئوتاید', '۵۰ میکروگرم در ساعت'],
         ['همپزیان دوپامامی', 'دوپامین', null],
         ['امپزیون آامیاد داران', 'آمیودارون', null],
@@ -209,7 +210,7 @@ function testCommandRouting() {
             'history must store the canonical completed action, not fuzzy ASR text: ' + phrase);
     });
 
-    ['میکروست فوروزمید', 'میکروست فروسماید', 'ماکروست فوروزماید'].forEach(function (phrase) {
+    ['میکروست فوروزمید', 'میکروس فوروزمید', 'میکروست فروسماید', 'ماکروست فوروزماید'].forEach(function (phrase) {
         result = run(phrase);
         const confirmation = result.find(e => e.kind === 'confirmation');
         assert(confirmation && confirmation.message.includes('دارو: فوروزماید') &&
@@ -412,8 +413,8 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=41'),
-        'page must register the v41 service worker');
+    assert(index.includes('service-worker.js?v=42'),
+        'page must register the v42 service worker');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
     assert(index.includes('id="defaultInfusionMethodSelect"') &&
