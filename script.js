@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.37';
+const APP_VERSION = '5.0.38';
 
 const CHANGELOG = {
+    '5.0.38': [
+        'تشخیص بهتر پنتوپرازول در فرمان‌های صوتی Rizeh',
+        'کادر تأیید کوتاه‌تر و ورودی متنی ثابت در پایین دستیار',
+        'روباه بزرگ‌تر در صفحه شروع برنامه'
+    ],
     '5.0.37': [
         'استفاده یکپارچه از Rizeh برای تشخیص آفلاین فارسی',
         'حذف گزینه‌های آزمایشی Whisper که روی گوشی نتیجه ضعیف‌تری داشتند',

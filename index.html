@@ -26,8 +26,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=39">
-    <link rel="stylesheet" href="voice-assistant.css?v=38">
+    <link rel="stylesheet" href="style.css?v=40">
+    <link rel="stylesheet" href="voice-assistant.css?v=39">
 </head>
 <body>
 
@@ -45,7 +45,7 @@
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
             <div class="loading-meta">
-                <span>نسخه 5.0.37</span>
+                <span>نسخه 5.0.38</span>
                 <span class="loading-meta-dot" aria-hidden="true"></span>
                 <span>آماده برای کار آفلاین</span>
             </div>
@@ -1926,7 +1926,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.0.37</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.0.38</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2087,15 +2087,15 @@
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
     <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=39"></script>
+    <script src="script.js?v=40"></script>
     <script src="koochik-asr.js?v=36"></script>
-    <script src="voice-recognition.js?v=39"></script>
-    <script src="voice-commands.js?v=39"></script>
-    <script src="voice-ui.js?v=39"></script>
+    <script src="voice-recognition.js?v=40"></script>
+    <script src="voice-commands.js?v=40"></script>
+    <script src="voice-ui.js?v=40"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=39', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=40', { updateViaCache: 'none' });
             });
         }
     </script>

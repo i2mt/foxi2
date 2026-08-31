@@ -153,7 +153,7 @@
 
         const title = document.createElement('strong');
         title.className = 'voice-confirm-title';
-        title.textContent = 'تأیید دستور بالینی';
+        title.textContent = 'تأیید دستور';
 
         const text = document.createElement('span');
         text.className = 'voice-result-text voice-confirm-text';
@@ -175,7 +175,7 @@
         els.result.appendChild(title);
         els.result.appendChild(text);
         els.result.appendChild(actions);
-        setStatus('مقادیر را بررسی و تأیید کنید', 'processing');
+        setStatus('بررسی و تأیید کنید', 'processing');
         setOrbState('processing');
 
         let settled = false;

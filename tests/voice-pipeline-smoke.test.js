@@ -192,7 +192,9 @@ function testCommandRouting() {
         ['امپزیون اکتوت تاید پنجاه میترلو در ساعت', 'اکترئوتاید', '۵۰ میکروگرم در ساعت'],
         ['همپزیان دوپامامی', 'دوپامین', null],
         ['امپزیون آامیاد داران', 'آمیودارون', null],
-        ['امپزیون عامیه دارون', 'آمیودارون', null]
+        ['امپزیون عامیه دارون', 'آمیودارون', null],
+        ['من پزیون پ و پروزو', 'پنتوپرازول', null],
+        ['امفوزیان پتو پروراول', 'پنتوپرازول', null]
     ];
     observedRizehDrugCases.forEach(function ([phrase, drugName, dosePhrase]) {
         result = run(phrase);
@@ -388,8 +390,8 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=39'),
-        'page must register the v39 service worker');
+    assert(index.includes('service-worker.js?v=40'),
+        'page must register the v40 service worker');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
     assert(!index.includes('whisper-asr.js') && !serviceWorker.includes('whisper-worker.js') &&
@@ -411,8 +413,11 @@ function testDeploymentWiring() {
         'model download must fill the existing main fox from the real overall progress without duplicating the mascot');
     assert(index.includes('id="loadingFox"') && !index.includes('class="loading-logo-img"') &&
         !index.includes('class="loading-tip') && script.includes("setProperty('--loading-progress'") &&
-        read('style.css').includes('.loading-fox-fill'),
+        read('style.css').includes('.loading-fox-fill') && read('style.css').includes('width: 220px'),
         'startup must use the lightweight premium fox treatment without rotating emoji tips');
+    assert(voiceAssistantCss.includes('order: 20') && voiceAssistantCss.includes('bottom: calc(100% + 6px)') &&
+        voiceAssistantCss.includes('transform: translateY(-4px)') && voiceCommands.includes("return lines.join(' · ');"),
+        'voice input must stay at the bottom while compact confirmations keep the fox nearly stationary');
     assert(index.includes('class="header-fox-mark"') && !index.includes('<div class="logo"><i class="fas fa-syringe"') &&
         read('style.css').includes('.dark-mode .header-fox-mark') &&
         read('style.css').includes("fox-mark-clean-mask.png") && serviceWorker.includes('fox-mark-clean-mask.png'),
@@ -425,7 +430,7 @@ function testDeploymentWiring() {
         voiceAssistantCss.includes('flex: 1 1 270px;') &&
         voiceAssistantCss.includes('.voice-orb-zone { flex: 0 0 auto; min-height: 0; }'),
         'assistant layout must use tall-screen space while preserving compact short-phone behavior');
-    assert(read('style.css').includes('width: 188px;') &&
+    assert(read('style.css').includes('width: 220px;') &&
         read('style.css').includes('.dark-mode .logo {\n    background: transparent;') &&
         read('style.css').includes('.tutorial-fox-mark {') && read('style.css').includes('width: 112px;'),
         'startup and tutorial foxes must be dominant while the header fox remains unboxed');
@@ -436,9 +441,9 @@ function testDeploymentWiring() {
     assert(script.includes('without calling switchTab()') && script.includes('showTourTab(slides[current].dataset.tourTab'),
         'previewing the assistant during onboarding must not preload its large offline model');
     assert(voiceAssistantCss.includes('.voice-container.stage-locked .voice-orb-zone') &&
-        voiceAssistantCss.includes('max-height: min(30vh, 230px)') &&
+        voiceAssistantCss.includes('max-height: min(24vh, 176px)') &&
         voiceUi.includes('function stabilizeLayout()') && voiceUi.includes("'--voice-stable-stage-height'"),
-        'assistant replies must scroll below a fixed fox stage without moving the mascot');
+        'assistant replies must stay compact below a fixed fox stage without moving the mascot');
     assert(voiceCommands.includes('می‌تونم محاسبه‌گر دارو') && !voiceCommands.includes('می‌توانم محاسبه‌گر دارو'),
         'assistant capability replies must use a natural colloquial Persian voice');
     assert(voiceUi.includes('window.VoiceEngine.isActive()) return'),
