@@ -201,20 +201,26 @@
     -webkit-tap-highlight-color: transparent;
 }
 
-/* A real target surface keeps the thin fox artwork legible on light themes
-   and makes the mascot read as a button without consuming any extra height. */
+/* A warm, darker core behind the fox improves contrast on light themes, then
+   dissolves into the existing ambient halo so the mark never looks boxed in. */
 .voice-orb-container::before {
     content: '';
     position: absolute;
-    inset: 18px;
+    inset: 8px;
     border-radius: 50%;
-    background: var(--surface);
-    background: color-mix(in srgb, var(--surface) 92%, #fff 8%);
-    border: 1.5px solid rgba(234, 88, 12, 0.28);
+    background: radial-gradient(
+        circle at 50% 48%,
+        rgba(124, 45, 18, 0.20) 0%,
+        rgba(154, 52, 18, 0.15) 34%,
+        rgba(194, 65, 12, 0.09) 54%,
+        rgba(251, 146, 60, 0.035) 72%,
+        rgba(251, 146, 60, 0) 88%
+    );
+    border: none;
     box-shadow:
-        0 12px 38px rgba(124, 45, 18, 0.10),
-        inset 0 0 0 5px rgba(251, 146, 60, 0.06);
-    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+        0 14px 42px rgba(124, 45, 18, 0.08),
+        inset 0 0 34px rgba(251, 146, 60, 0.035);
+    transition: box-shadow 0.25s ease, transform 0.2s ease;
 }
 .voice-orb-container:focus-visible {
     outline: 3px solid rgba(234, 88, 12, 0.55);
@@ -224,8 +230,10 @@
 }
 .voice-orb-container:active::before { transform: scale(0.98); }
 .dark-mode .voice-orb-container::before {
+    inset: 18px;
     background: var(--surface);
     background: color-mix(in srgb, var(--surface) 88%, #111827 12%);
+    border: 1.5px solid rgba(251, 146, 60, 0.34);
     border-color: rgba(251, 146, 60, 0.34);
     box-shadow: 0 12px 42px rgba(0, 0, 0, 0.25), inset 0 0 0 5px rgba(251, 146, 60, 0.05);
 }

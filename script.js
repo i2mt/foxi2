@@ -19,9 +19,15 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.40';
+const APP_VERSION = '5.1.0';
 
 const CHANGELOG = {
+    '5.1.0': [
+        'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
+        'پوستهٔ رنگی جدید «DreamFire» و ظاهر تازه‌تر برنامه',
+        'پیش‌فرض‌های قابل تنظیم برای نوع پمپ و حجم محلول هر بخش',
+        'راهنمای کامل‌تر، حالت کم‌مصرف و بهبود گستردهٔ دقت و پایداری'
+    ],
     '5.0.40': [
         'تشخیص بهتر میکروست و فرمان کامل فوروزماید روی آیفون',
         'رنگ روشن و اصلی روباه در حالت آمادهٔ دستیار'
@@ -108,6 +114,21 @@ const CHANGELOG = {
     ]
 };
 
+// Version 4 did not record a What's New version. Capture its durable storage
+// footprint before startup creates any Version 5 defaults, so returning users
+// see the major-release summary once while genuinely new installs keep the
+// normal onboarding-only experience.
+const HAS_PRE_V5_INSTALL = [
+    'sw_first_install',
+    'theme',
+    'onboardingSeen',
+    'calculationHistory',
+    'pwaNeverShow',
+    'userName'
+].some(function (key) {
+    try { return localStorage.getItem(key) !== null; } catch (e) { return false; }
+});
+
 function getLastSeenVersion() {
     try { return localStorage.getItem('foximed_last_seen_version'); } catch (e) { return null; }
 }
@@ -146,7 +167,13 @@ function checkForWhatsNewOnLoad() {
     // without showing anything, so the FIRST time this feature ships it
     // doesn't retroactively show a changelog to existing users out of
     // nowhere, and new installs don't see it either (onboarding covers that).
-    if (!lastSeen) { setLastSeenVersion(APP_VERSION); return; }
+    if (!lastSeen) {
+        setLastSeenVersion(APP_VERSION);
+        if (HAS_PRE_V5_INSTALL) {
+            setTimeout(function () { showWhatsNewModal(false); }, 600);
+        }
+        return;
+    }
     if (lastSeen !== APP_VERSION) {
         setTimeout(function () { showWhatsNewModal(false); }, 600);
     }

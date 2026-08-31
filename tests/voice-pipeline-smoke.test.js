@@ -389,6 +389,7 @@ function testDeploymentWiring() {
     const workflow = read('.github/workflows/pages-sherpa-koochik.yml');
     const serviceWorker = read('service-worker.js');
     const index = read('index.html');
+    const manifest = read('manifest.json');
     const script = read('script.js');
     const voiceEngine = read('voice-recognition.js');
     const voiceUi = read('voice-ui.js');
@@ -413,8 +414,20 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=42'),
-        'page must register the v42 service worker');
+    assert(index.includes('service-worker.js?v=43'),
+        'page must register the v43 service worker');
+    assert(script.includes("const APP_VERSION = '5.1.0'") &&
+        index.includes('نسخه 5.1.0') && manifest.includes('"version": "5.1.0"') &&
+        serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.1.0'"),
+        'all public release surfaces must identify the Version 5.1 release consistently');
+    assert(script.includes("'5.1.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
+        script.includes("'sw_first_install'") && script.includes('if (HAS_PRE_V5_INSTALL)'),
+        'returning Version 4 users must see the Version 5 release summary once');
+    assert(voiceAssistantCss.includes('circle at 50% 48%') &&
+        voiceAssistantCss.includes('rgba(124, 45, 18, 0.20)') &&
+        voiceAssistantCss.includes('rgba(251, 146, 60, 0) 88%') &&
+        voiceAssistantCss.includes('.dark-mode .voice-orb-container::before'),
+        'light mode must use a darker warm core that fades into the fox halo without changing dark mode');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
     assert(index.includes('id="defaultInfusionMethodSelect"') &&
