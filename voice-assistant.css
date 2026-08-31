@@ -20,6 +20,7 @@
     flex-direction: column;
     align-items: center;
     min-height: 100%;
+    height: 100%;
     box-sizing: border-box;
     padding: 10px 16px 18px;
     max-width: 460px;
@@ -27,6 +28,10 @@
     gap: 10px;
     overflow-x: hidden;
     width: 100%;
+}
+
+#voiceTab {
+    overflow: hidden;
 }
 
 /* ============================================
@@ -168,6 +173,7 @@
     width: 100%;
     padding: 8px 0 4px;
     position: relative;
+    transform: translateY(-4px);
 }
 .voice-container.stage-locked .voice-orb-zone {
     flex: 0 0 var(--voice-stable-stage-height);
@@ -557,7 +563,7 @@
     border-inline-start: 4px solid var(--voice-c1);
     background: color-mix(in srgb, var(--voice-c1) 8%, var(--surface));
     animation: voiceFadeSlideIn 0.25s ease;
-    max-height: min(30vh, 230px);
+    max-height: min(24vh, 176px);
     overflow-y: auto;
     overscroll-behavior: contain;
     flex-shrink: 0;
@@ -575,16 +581,22 @@
 }
 .voice-confirmation {
     display: grid;
-    gap: 10px;
+    gap: 6px;
+    padding: 10px 14px;
+    line-height: 1.45;
+    max-height: none;
+    overflow: visible;
 }
 .voice-confirm-title {
     display: block;
     color: var(--text-primary);
+    font-size: 13px;
 }
 .voice-confirm-text {
     display: block;
-    white-space: pre-line;
+    white-space: normal;
     overflow-wrap: anywhere;
+    font-size: 13.5px;
 }
 .voice-confirm-actions {
     display: flex;
@@ -593,8 +605,8 @@
     margin-top: 2px;
 }
 .voice-confirm-button {
-    min-height: 42px;
-    padding: 8px 16px;
+    min-height: 36px;
+    padding: 6px 14px;
     border: 1px solid var(--border);
     border-radius: 12px;
     font: inherit;
@@ -702,10 +714,13 @@
     position: relative;
     width: 100%;
     margin-top: auto;
+    order: 20;
+    flex-shrink: 0;
 }
 .voice-autocomplete {
     position: absolute;
-    top: calc(100% + 6px);
+    top: auto;
+    bottom: calc(100% + 6px);
     left: 0;
     right: 0;
     background: var(--surface);

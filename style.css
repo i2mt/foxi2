@@ -699,9 +699,9 @@ select {
 .loading-fox {
     --loading-progress: 0%;
     position: relative;
-    width: 188px;
-    height: 188px;
-    margin-bottom: 16px;
+    width: 220px;
+    height: 220px;
+    margin-bottom: 12px;
     filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.22));
 }
 .loading-fox::after {
@@ -9039,7 +9039,7 @@ body.low-power-mode .name-prompt { backdrop-filter: none; -webkit-backdrop-filte
 @keyframes tutorialNudgeDown { 50% { transform: translateY(4px); } }
 
 @media (max-height: 720px) {
-    .loading-fox { width: 148px; height: 148px; margin-bottom: 8px; }
+    .loading-fox { width: 172px; height: 172px; margin-bottom: 6px; }
     .tutorial-box { padding-top: 18px; }
     .tutorial-dots { margin-bottom: 12px; }
     .tutorial-slide { gap: 8px; }
