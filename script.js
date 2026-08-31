@@ -19,9 +19,13 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.39';
+const APP_VERSION = '5.0.40';
 
 const CHANGELOG = {
+    '5.0.40': [
+        'تشخیص بهتر میکروست و فرمان کامل فوروزماید روی آیفون',
+        'رنگ روشن و اصلی روباه در حالت آمادهٔ دستیار'
+    ],
     '5.0.39': [
         'پیش‌فرض قابل تنظیم برای نوع پمپ و حجم محلول هر بخش',
         'ثبت مطمئن قد و وزن گفتاری داخل کارت BMI',
