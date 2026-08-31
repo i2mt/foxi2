@@ -19,9 +19,14 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.0.38';
+const APP_VERSION = '5.0.39';
 
 const CHANGELOG = {
+    '5.0.39': [
+        'پیش‌فرض قابل تنظیم برای نوع پمپ و حجم محلول هر بخش',
+        'ثبت مطمئن قد و وزن گفتاری داخل کارت BMI',
+        'درک بهتر پرسش سازنده و عبارت‌های کوتاه روی میکروفن گوشی'
+    ],
     '5.0.38': [
         'تشخیص بهتر پنتوپرازول در فرمان‌های صوتی Rizeh',
         'کادر تأیید کوتاه‌تر و ورودی متنی ثابت در پایین دستیار',
@@ -260,6 +265,9 @@ const AppState = {
         voiceOutput: false,
         lowPowerMode: false,
         lowPowerModeManual: false, // true once the person has touched the toggle themselves — from then on, auto-detection never overwrites their choice
+        defaultInfusionMethod: 'syringe',
+        defaultSyringeVolume: 'auto',
+        defaultInfusionVolume: 'auto',
         voiceLogAutoTelegram: false // off by default — see voice-commands.js: automatic sending is a different privacy posture than the manual-export design, so it only runs once explicitly turned on
     },
     reverseMode: false
@@ -1208,6 +1216,15 @@ function loadSettings() {
     if (DOM.hapticToggle) DOM.hapticToggle.checked = AppState.settings.hapticFeedback !== false;
     const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
     if (voiceLogAutoTelegramToggle) voiceLogAutoTelegramToggle.checked = !!AppState.settings.voiceLogAutoTelegram;
+    const defaultMethodSelect = document.getElementById('defaultInfusionMethodSelect');
+    const defaultSyringeVolumeSelect = document.getElementById('defaultSyringeVolumeSelect');
+    const defaultInfusionVolumeSelect = document.getElementById('defaultInfusionVolumeSelect');
+    const preferredMethod = AppState.settings.defaultInfusionMethod === 'infusion' ? 'infusion' : 'syringe';
+    AppState.infusionMethod = preferredMethod;
+    if (defaultMethodSelect) defaultMethodSelect.value = preferredMethod;
+    if (defaultSyringeVolumeSelect) defaultSyringeVolumeSelect.value = String(AppState.settings.defaultSyringeVolume || 'auto');
+    if (defaultInfusionVolumeSelect) defaultInfusionVolumeSelect.value = String(AppState.settings.defaultInfusionVolume || 'auto');
+    syncCalculatorMethodButtons();
     if (DOM.themeModeSelect) DOM.themeModeSelect.value = AppState.settings.themeMode || 'light';
     applySettings();
     syncThemeModeButtons();
@@ -1503,6 +1520,22 @@ function getEffectiveTotalDrug() {
     return AppState.ampouleCount * ampoule.strength;
 }
 
+function syncCalculatorMethodButtons() {
+    if (!DOM.methodBtns) return;
+    DOM.methodBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.method === AppState.infusionMethod);
+    });
+    fixMethodButtonTextColor();
+}
+
+function getPreferredSolutionVolume(method, availableVolumes, drugDefault) {
+    const settingKey = method === 'infusion' ? 'defaultInfusionVolume' : 'defaultSyringeVolume';
+    const configured = AppState.settings[settingKey];
+    if (configured === undefined || configured === null || configured === '' || configured === 'auto') return drugDefault;
+    const numeric = Number(configured);
+    return availableVolumes.includes(numeric) ? numeric : drugDefault;
+}
+
 function updateVolumeOptions() {
     const drug = drugDatabase[AppState.selectedDrug];
     let method = AppState.infusionMethod;
@@ -1515,7 +1548,7 @@ function updateVolumeOptions() {
         AppState.infusionMethod = method;
     }
     const volumes = drug.defaultSolutionVolumes[method];
-    const defaultVol = drug.defaultVolume[method];
+    const defaultVol = getPreferredSolutionVolume(method, volumes, drug.defaultVolume[method]);
     if (!DOM.volumeOptions) return;
     DOM.volumeOptions.innerHTML = '';
     volumes.forEach(volume => {
@@ -2047,6 +2080,34 @@ function setupSettingsEventListeners() {
             applySettings();
         });
     }
+
+    const defaultInfusionMethodSelect = document.getElementById('defaultInfusionMethodSelect');
+    const defaultSyringeVolumeSelect = document.getElementById('defaultSyringeVolumeSelect');
+    const defaultInfusionVolumeSelect = document.getElementById('defaultInfusionVolumeSelect');
+    if (defaultInfusionMethodSelect) {
+        defaultInfusionMethodSelect.addEventListener('change', function() {
+            AppState.settings.defaultInfusionMethod = this.value === 'infusion' ? 'infusion' : 'syringe';
+            AppState.infusionMethod = AppState.settings.defaultInfusionMethod;
+            saveSettings();
+            syncCalculatorMethodButtons();
+            updateVolumeOptions();
+            clearResults();
+        });
+    }
+    [defaultSyringeVolumeSelect, defaultInfusionVolumeSelect].forEach(function(select) {
+        if (!select) return;
+        select.addEventListener('change', function() {
+            const key = this.id === 'defaultInfusionVolumeSelect' ? 'defaultInfusionVolume' : 'defaultSyringeVolume';
+            AppState.settings[key] = this.value || 'auto';
+            saveSettings();
+            const appliesNow = (key === 'defaultInfusionVolume' && AppState.infusionMethod === 'infusion') ||
+                (key === 'defaultSyringeVolume' && AppState.infusionMethod === 'syringe');
+            if (appliesNow) {
+                updateVolumeOptions();
+                clearResults();
+            }
+        });
+    });
 
     // Dose alerts
     const doseAlertToggle = document.getElementById('doseAlertToggle');

@@ -7388,6 +7388,26 @@ html {
     border-color: var(--primary);
 }
 
+.settings-select {
+    min-width: 136px;
+    max-width: 52%;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text-primary);
+    font: 600 12.5px/1.4 var(--font-persian);
+    direction: rtl;
+    outline: none;
+}
+.settings-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+.setting-select-row { cursor: default; }
+.dark-mode .settings-select { background: var(--surface-elevated); }
+
 .dark-mode .theme-mode-select {
     background: var(--surface-elevated);
     color: var(--text-primary);

@@ -240,6 +240,8 @@ function testCommandRouting() {
     colloquialBmiConfirmation.onConfirm();
     assert(events.some(e => e.kind === 'bmi-calculation' && e.weight === 56 && e.height === 172),
         'colloquial BMI command must apply height 172 and weight 56');
+    assert(elements.bmiWeight.value === 56 && elements.bmiHeight.value === 172,
+        'confirmed BMI values must remain visible in the BMI card fields');
 
     result = run('شاخص توده بدنی');
     const bmiConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('BMI'));
@@ -293,6 +295,12 @@ function testCommandRouting() {
             !hungerReply.some(e => e.kind === 'confirmation'),
             `common hunger phrase should receive a warm non-clinical reply: ${phrase}`);
     });
+    ['گرشنه ام', 'گشنما'].forEach(phrase => {
+        const hungerReply = run(phrase);
+        assert(hungerReply.some(e => e.kind === 'result' && e.type === 'success') &&
+            !hungerReply.some(e => e.kind === 'confirmation'),
+            `one-character phone-ASR hunger distortion should stay in non-clinical chat: ${phrase}`);
+    });
     ['تشنه', 'تشنم', 'تشنه ام'].forEach(phrase => {
         const thirstReply = run(phrase);
         assert(thirstReply.some(e => e.kind === 'result' && e.type === 'success' &&
@@ -311,6 +319,12 @@ function testCommandRouting() {
             e.message.includes('محمدمهدی تقوی') && e.message.includes('ارتباط با سازنده')) &&
             !creatorReply.some(e => e.kind === 'confirmation'),
             `natural creator question should identify the nurse-developer warmly: ${phrase}`);
+    });
+    ['سازندت کبه', 'کی تورو سخته'].forEach(phrase => {
+        const creatorReply = run(phrase);
+        assert(creatorReply.some(e => e.kind === 'result' && e.message.includes('محمدمهدی تقوی')) &&
+            !creatorReply.some(e => e.kind === 'confirmation'),
+            `one-character phone-ASR creator distortion should identify the creator: ${phrase}`);
     });
     run('سازندت کیه');
     result = run('آره');
@@ -390,10 +404,15 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=40'),
-        'page must register the v40 service worker');
+    assert(index.includes('service-worker.js?v=41'),
+        'page must register the v41 service worker');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
+    assert(index.includes('id="defaultInfusionMethodSelect"') &&
+        index.includes('id="defaultSyringeVolumeSelect"') &&
+        index.includes('id="defaultInfusionVolumeSelect"') &&
+        script.includes('getPreferredSolutionVolume') && script.includes('syncCalculatorMethodButtons'),
+        'Settings must persist ward-specific pump and solution-volume defaults');
     assert(!index.includes('whisper-asr.js') && !serviceWorker.includes('whisper-worker.js') &&
         !serviceWorker.includes('voice-engine-policy.js'),
         'the shipped app shell must not load or cache removed Whisper paths');
