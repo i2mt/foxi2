@@ -395,6 +395,7 @@ function testDeploymentWiring() {
     const voiceUi = read('voice-ui.js');
     const voiceCommands = read('voice-commands.js');
     const voiceAssistantCss = read('voice-assistant.css');
+    const analytics = read('analytics.js');
 
     assert(workflow.includes('shenava-rizeh-v1.0-non-streaming-int8'),
         'deployment workflow must download Rizeh');
@@ -414,12 +415,12 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=44'),
-        'page must register the v44 service worker');
-    assert(script.includes("const APP_VERSION = '5.1.0'") &&
-        index.includes('نسخه 5.1.0') && manifest.includes('"version": "5.1.0"') &&
-        serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.1.0'"),
-        'all public release surfaces must identify the Version 5.1 release consistently');
+    assert(index.includes('service-worker.js?v=45'),
+        'page must register the v45 service worker');
+    assert(script.includes("const APP_VERSION = '5.1.1'") &&
+        index.includes('نسخه 5.1.1') && manifest.includes('"version": "5.1.1"') &&
+        serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.1.1'"),
+        'all public release surfaces must identify the Version 5.1.1 release consistently');
     assert(script.includes("'5.1.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
         script.includes("'sw_first_install'") && script.includes('if (HAS_PRE_V5_INSTALL)'),
         'returning Version 4 users must see the Version 5 release summary once');
@@ -430,6 +431,11 @@ function testDeploymentWiring() {
         'light mode must use a darker warm core that fades into the fox halo without changing dark mode');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
+    assert(index.includes('analytics.js?v=1') && serviceWorker.includes("'./analytics.js?v=1'") &&
+        index.includes('id="anonymousAnalyticsToggle"') && analytics.includes('calculator inputs/results'),
+        'anonymous analytics must be cached, disclosed, and explicitly exclude clinical values');
+    assert(!index.includes('برای پرستاران و پزشکان ICU'),
+        'product onboarding must not describe FoxiMed as ICU-specific');
     assert(index.includes('id="defaultInfusionMethodSelect"') &&
         index.includes('id="defaultSyringeVolumeSelect"') &&
         index.includes('id="defaultInfusionVolumeSelect"') &&

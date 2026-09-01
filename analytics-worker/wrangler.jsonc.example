@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "foximed-analytics",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-01",
+  "vars": {
+    "ALLOWED_ORIGINS": "https://YOUR_APP_HOSTNAME"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "foximed-analytics",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ]
+}
