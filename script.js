@@ -20,6 +20,10 @@
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
 const APP_VERSION = '5.2.0';
+// The first 5.2 deployment briefly used a maintenance-only note. Keep a
+// separate revision so anyone who already saw that note receives the restored
+// major Version 5 introduction once, without changing the public app version.
+const RELEASE_NOTES_REVISION = '5.2.0-major';
 
 const CHANGELOG = {
     // Keep the current release focused on the major Version 5 upgrade. A
@@ -182,7 +186,7 @@ function showWhatsNewModal(force) {
 
     modal.classList.add('active');
     document.body.classList.add('no-scroll');
-    setLastSeenVersion(APP_VERSION);
+    setLastSeenVersion(RELEASE_NOTES_REVISION);
 }
 
 function checkForWhatsNewOnLoad() {
@@ -192,13 +196,13 @@ function checkForWhatsNewOnLoad() {
     // doesn't retroactively show a changelog to existing users out of
     // nowhere, and new installs don't see it either (onboarding covers that).
     if (!lastSeen) {
-        setLastSeenVersion(APP_VERSION);
+        setLastSeenVersion(RELEASE_NOTES_REVISION);
         if (HAS_PRE_V5_INSTALL) {
             setTimeout(function () { showWhatsNewModal(false); }, 600);
         }
         return;
     }
-    if (lastSeen !== APP_VERSION) {
+    if (lastSeen !== RELEASE_NOTES_REVISION) {
         setTimeout(function () { showWhatsNewModal(false); }, 600);
     }
 }

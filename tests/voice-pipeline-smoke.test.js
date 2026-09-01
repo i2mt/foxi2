@@ -436,6 +436,10 @@ function testDeploymentWiring() {
     assert(script.includes("'5.2.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
         script.includes("'sw_first_install'") && script.includes('if (HAS_PRE_V5_INSTALL)'),
         'returning users must see the current Version 5 release summary once');
+    assert(script.includes("const RELEASE_NOTES_REVISION = '5.2.0-major'") &&
+        script.includes('setLastSeenVersion(RELEASE_NOTES_REVISION)') &&
+        script.includes('lastSeen !== RELEASE_NOTES_REVISION'),
+        'users who saw the brief 5.2 maintenance note must receive the restored major changelog once');
     const v52Changelog = script.slice(script.indexOf("'5.2.0': ["), script.indexOf("'5.1.0': ["));
     assert(v52Changelog.includes('دستیار هوشمند فارسی با فرمان صوتی آفلاین') &&
         v52Changelog.includes('پوستهٔ رنگی جدید «DreamFire»') &&
