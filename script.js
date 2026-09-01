@@ -22,11 +22,15 @@
 const APP_VERSION = '5.2.0';
 
 const CHANGELOG = {
+    // Keep the current release focused on the major Version 5 upgrade. A
+    // person coming directly from Version 4 should be introduced to the
+    // assistant, theme, ward defaults and stability work—not implementation
+    // details from the latest maintenance pass.
     '5.2.0': [
-        'افزودن مقیاس هامپی دامپی برای ارزیابی خطر سقوط اطفال',
-        'اتصال هامپی دامپی به دستیار صوتی فارسی و جستجوی ابزارها',
-        'معرفی عمومی‌تر FoxiMed برای پرستاران همه بخش‌ها',
-        'بهبود نمایش و دریافت بروزرسانی برای نسخه‌های نصب‌شده'
+        'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
+        'پوستهٔ رنگی جدید «DreamFire» و ظاهر تازه‌تر برنامه',
+        'پیش‌فرض‌های قابل تنظیم برای نوع پمپ و حجم محلول هر بخش',
+        'راهنمای کامل‌تر، حالت کم‌مصرف و بهبود گستردهٔ دقت و پایداری'
     ],
     '5.1.0': [
         'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',

@@ -436,6 +436,12 @@ function testDeploymentWiring() {
     assert(script.includes("'5.2.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
         script.includes("'sw_first_install'") && script.includes('if (HAS_PRE_V5_INSTALL)'),
         'returning users must see the current Version 5 release summary once');
+    const v52Changelog = script.slice(script.indexOf("'5.2.0': ["), script.indexOf("'5.1.0': ["));
+    assert(v52Changelog.includes('دستیار هوشمند فارسی با فرمان صوتی آفلاین') &&
+        v52Changelog.includes('پوستهٔ رنگی جدید «DreamFire»') &&
+        v52Changelog.includes('پیش‌فرض‌های قابل تنظیم برای نوع پمپ') &&
+        v52Changelog.includes('بهبود گستردهٔ دقت و پایداری'),
+        'Version 5.2 must present the major Version 5 assistant, theme, defaults and reliability upgrade');
     assert(voiceAssistantCss.includes('circle at 50% 48%') &&
         voiceAssistantCss.includes('rgba(124, 45, 18, 0.20)') &&
         voiceAssistantCss.includes('rgba(251, 146, 60, 0) 88%') &&
@@ -470,8 +476,8 @@ function testDeploymentWiring() {
         read('style.css').includes('.loading-fox-fill') && read('style.css').includes('width: 220px'),
         'startup must use the lightweight premium fox treatment without rotating emoji tips');
     const loadingMarkup = index.slice(index.indexOf('<!-- Loading Screen -->'), index.indexOf('<!-- PWA Install Guide Modal -->'));
-    assert(loadingMarkup.includes('پرستاران در همه بخش‌ها') && !/ICU/i.test(loadingMarkup),
-        'loading screen must introduce FoxiMed for nurses across all wards without ICU-specific wording');
+    assert(loadingMarkup.includes('دستیار بالینی هوشمند پرستاران') && !/ICU/i.test(loadingMarkup),
+        'loading screen must preserve the current all-nursing tagline without ICU-specific wording');
     assert(voiceAssistantCss.includes('order: 20') && voiceAssistantCss.includes('bottom: calc(100% + 6px)') &&
         voiceAssistantCss.includes('transform: translateY(-4px)') && voiceCommands.includes("return lines.join(' · ');"),
         'voice input must stay at the bottom while compact confirmations keep the fox nearly stationary');
@@ -545,7 +551,7 @@ function testDeploymentWiring() {
         script.includes('function setupHumptyDumpty()') && script.includes("result.level === 'high'") &&
         voiceCommands.includes('function handleHumptyVoice(params)') && voiceCommands.includes('params.humptyScores'),
         'Humpty Dumpty must expose the seven-domain pediatric calculator and voice workflow');
-    assert(index.includes('id="namePrompt"') && index.includes('لطفاً نامتان را دوباره وارد کنید') &&
+    assert(index.includes('id="namePrompt"') && index.includes('لطفاً نام خود را وارد کنید') &&
         !index.includes('id="namePromptLater"') && !index.includes('id="namePromptNever"') &&
         script.includes("const USER_NAME_CAPTURE_VERSION = '5.1'") &&
         script.includes("localStorage.removeItem('userName')") && script.includes('if (captureComplete()) return'),
