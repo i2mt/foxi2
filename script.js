@@ -19,9 +19,15 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.2.0';
 
 const CHANGELOG = {
+    '5.2.0': [
+        'افزودن مقیاس هامپی دامپی برای ارزیابی خطر سقوط اطفال',
+        'اتصال هامپی دامپی به دستیار صوتی فارسی و جستجوی ابزارها',
+        'معرفی عمومی‌تر FoxiMed برای پرستاران همه بخش‌ها',
+        'بهبود نمایش و دریافت بروزرسانی برای نسخه‌های نصب‌شده'
+    ],
     '5.1.0': [
         'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
         'پوستهٔ رنگی جدید «DreamFire» و ظاهر تازه‌تر برنامه',
@@ -1158,6 +1164,7 @@ function initializeApp() {
     setupRASS();
     setupBraden();
     setupMorse();
+    setupHumptyDumpty();
     setupOxygenCalculator();
     setupYSiteChecker();
     setupVentilatorCalc();
@@ -5020,6 +5027,112 @@ function resetMorse() {
     document.querySelectorAll('#morseAccordionBody .gcs-btn').forEach(b => b.classList.remove('active'));
     Object.values(MORSE_SCORE_IDS).forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
     const box = document.getElementById('morseResultBox');
+    if (box) box.style.display = 'none';
+    haptic(30);
+}
+
+// ============================================
+// HUMPTY DUMPTY PEDIATRIC FALL SCALE
+// Iranian clinical wording and thresholds were checked against the patient
+// safety tools published by Kermanshah University of Medical Sciences and
+// the patient-safety handbook of Gonabad University of Medical Sciences.
+// ============================================
+const HUMPTY_STATE = {
+    age: null,
+    gender: null,
+    diagnosis: null,
+    cognition: null,
+    environment: null,
+    sedation: null,
+    medication: null
+};
+const HUMPTY_SCORE_IDS = {
+    age: 'humptyAgeScore',
+    gender: 'humptyGenderScore',
+    diagnosis: 'humptyDiagnosisScore',
+    cognition: 'humptyCognitionScore',
+    environment: 'humptyEnvironmentScore',
+    sedation: 'humptySedationScore',
+    medication: 'humptyMedicationScore'
+};
+
+function setupHumptyDumpty() {
+    document.querySelectorAll('#humptyAccordionBody .gcs-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const domain = btn.dataset.humpty;
+            const score = parseInt(btn.dataset.score, 10);
+            if (!domain || !Number.isFinite(score)) return;
+
+            btn.closest('.gcs-btn-group').querySelectorAll('.gcs-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            HUMPTY_STATE[domain] = score;
+            const scoreEl = document.getElementById(HUMPTY_SCORE_IDS[domain]);
+            if (scoreEl) scoreEl.textContent = PersianNumbers.toPersian(score);
+            updateHumptyDumpty();
+            haptic(20);
+        });
+    });
+
+    const resetBtn = document.getElementById('humptyResetBtn');
+    if (resetBtn) resetBtn.addEventListener('click', resetHumptyDumpty);
+}
+
+function updateHumptyDumpty() {
+    const values = Object.values(HUMPTY_STATE);
+    if (values.some(value => value === null)) return;
+
+    let result;
+    try {
+        result = window.FoxiCalcCore.humptyDumptyRisk(values);
+    } catch (error) {
+        showToast('امتیازهای هامپی دامپی معتبر نیستند', 'error');
+        return;
+    }
+
+    const totalEl = document.getElementById('humptyTotalScore');
+    const badgeEl = document.getElementById('humptySeverityBadge');
+    const notesEl = document.getElementById('humptyNotes');
+    const box = document.getElementById('humptyResultBox');
+    const isHigh = result.level === 'high';
+    const severity = isHigh ? 'بالا' : 'پایین';
+    const badgeClass = isHigh ? 'gcs-badge-severe' : 'gcs-badge-mild';
+    const notes = isHigh
+        ? [
+            'امتیاز ۱۲ یا بیشتر: خطر بالای سقوط در کودک.',
+            'پروتکل پیشگیری از سقوط اطفال و نظارت متناسب با دستورالعمل مرکز اجرا شود.',
+            'نتیجه در گزارش پرستاری ثبت و با تغییر وضعیت بیمار دوباره ارزیابی شود.',
+            'اقدامات پایه پیشگیری از سقوط برای همه اطفال ادامه یابد.'
+        ]
+        : [
+            'امتیاز ۷ تا ۱۱: خطر پایین بر اساس مقیاس هامپی دامپی.',
+            'اقدامات پایه پیشگیری از سقوط برای همه اطفال ادامه یابد.',
+            'با تغییر وضعیت بالینی، داروها یا محیط بیمار دوباره ارزیابی شود.'
+        ];
+
+    if (totalEl) totalEl.textContent = PersianNumbers.toPersian(result.total);
+    if (badgeEl) {
+        badgeEl.textContent = `خطر: ${severity}`;
+        badgeEl.className = `gcs-severity-badge ${badgeClass}`;
+    }
+    if (notesEl) {
+        notesEl.innerHTML = notes.map(note => `<div class="gcs-note-item"><i class="fas fa-circle-info"></i><span>${note}</span></div>`).join('');
+    }
+    if (box) {
+        box.style.display = 'block';
+        refreshAccordion(box);
+        setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 150);
+    }
+    haptic(40);
+}
+
+function resetHumptyDumpty() {
+    Object.keys(HUMPTY_STATE).forEach(key => { HUMPTY_STATE[key] = null; });
+    document.querySelectorAll('#humptyAccordionBody .gcs-btn').forEach(btn => btn.classList.remove('active'));
+    Object.values(HUMPTY_SCORE_IDS).forEach(id => {
+        const scoreEl = document.getElementById(id);
+        if (scoreEl) scoreEl.textContent = '—';
+    });
+    const box = document.getElementById('humptyResultBox');
     if (box) box.style.display = 'none';
     haptic(30);
 }

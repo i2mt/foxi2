@@ -130,6 +130,7 @@
         rass: 'نکته: برای GCS بگویید «گلاسکو ۴ ۵ ۶».',
         braden: 'نکته: مقیاس برادن ۶ بخش دارد: حس، رطوبت، فعالیت، تحرک، تغذیه، اصطکاک.',
         morse: 'نکته: مقیاس مورس ۶ بخش دارد: سابقه سقوط، تشخیص ثانویه، وسیله کمکی، IV، راه رفتن، وضعیت ذهنی.',
+        humpty: 'نکته: هامپی دامپی ۷ بخش دارد و برای ارزیابی خطر سقوط اطفال طراحی شده است.',
         burns: 'نکته: روی نواحی سوختگی در تصویر کلیک کنید — بزرگسال یا کودک را انتخاب کنید.',
         oxygen: 'نکته: فرمول: حجم کپسول (لیتر) × فشار (بار) × ۰.۹ ÷ جریان (L/min) = مدت (دقیقه).',
         vbg: 'نکته: برای VBG می‌تونی Na، Cl و آلبومین رو هم برای آنیون گپ بگی.',
@@ -482,6 +483,9 @@
         const morseMatch = text.match(/مورس\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)/i);
         if (morseMatch) params.morseScores = morseMatch.slice(1, 7).map(Number);
 
+        const humptyMatch = text.match(/(?:هامپی\s*دامپی|هامپتی\s*دامپتی|humpty\s*dumpty)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)\s*(\d+)/i);
+        if (humptyMatch) params.humptyScores = humptyMatch.slice(1, 8).map(Number);
+
         params._original = originalText;
         return params;
     }
@@ -508,6 +512,7 @@
         rass: { triggers: ['rass', 'آر اس اس', 'آراس اس', 'ریچموند', 'مقیاس ریچموند', 'richmond', 'agitation', 'sedation', 'آرام بخشی', 'آژیتیشن', 'مقیاس آرام بخشی', 'میزان سدیشن', 'سدیشن ریچموند'], scoreWeight: 0.8 },
         braden: { triggers: ['braden', 'برادن', 'pressure ulcer', 'زخم فشاری', 'sensory', 'moisture', 'activity', 'mobility', 'nutrition', 'friction', 'حس', 'رطوبت', 'فعالیت', 'تحرک', 'تغذیه', 'اصطکاک', 'زخم بستر', 'ریسک زخم بستر', 'خطر زخم فشاری'], scoreWeight: 0.8 },
         morse: { triggers: ['morse', 'مورس', 'fall', 'سقوط', 'history', 'diagnosis', 'aid', 'gait', 'mental', 'افتادن', 'تشخیص', 'وسیله', 'راه رفتن', 'ذهنی', 'خطر سقوط', 'ریسک سقوط', 'احتمال افتادن'], scoreWeight: 0.8 },
+        humpty: { triggers: ['humpty dumpty', 'humpty', 'هامپی دامپی', 'هامپتی دامپتی', 'هامپی', 'هامپتی', 'خطر سقوط کودک', 'ریسک سقوط کودک', 'سقوط اطفال', 'خطر سقوط اطفال', 'پدیاتریک فال'], scoreWeight: 0.95 },
         burns: { triggers: ['burns', 'سوختگی', 'tbsa', 'درصد سوخت', 'درصد سطح سوخت', 'fire', 'آتش', 'پارکلند', 'parkland', 'قانون نُه', 'rule of nines', 'سطح سوختگی', 'درصد سوختگی', 'درصد سطح سوختگی', 'سوختگی پوست', 'وسعت سوختگی', 'سطح سوختگی بدن'], scoreWeight: 0.8 },
         oxygen: { triggers: ['oxygen', 'اکسیژن', 'کپسول', 'cylinder', 'اکسیژن درمانی', 'کپسول اکسیژن', 'مدت اکسیژن', 'زمان باقی مانده کپسول', 'کپسول چقدر میمونه'], scoreWeight: 0.8 },
         vbg: { triggers: ['vbg', 'abg', 'وی بی جی', 'ای بی جی', 'گاز خون', 'blood gas', 'ph', 'pco2', 'hco3', 'base excess', 'be', 'bicarbonate', 'بی کربنات', 'گازهای خون', 'تفسیر گاز خون', 'تفسیر وی بی جی', 'تفسیر ای بی جی', 'اسید باز', 'اسید و باز'], scoreWeight: 0.8 },
@@ -578,6 +583,9 @@
             if (cmd === 'rass' && params.rassScore !== undefined) score += 2;
             if (cmd === 'braden' && params.bradenScores) score += 2;
             if (cmd === 'morse' && params.morseScores) score += 2;
+            if (cmd === 'humpty' && params.humptyScores) score += 2;
+            if (cmd === 'humpty' && /(?:کودک|اطفال|pediatric)/i.test(text) && /(?:سقوط|افتادن|fall)/i.test(text)) score += 3;
+            if (cmd === 'morse' && /(?:کودک|اطفال|pediatric)/i.test(text) && /(?:سقوط|افتادن|fall)/i.test(text)) score = 0;
             const burnsPhrase = /درصد\s+(?:سطح\s+)?سوخت(?:گی)?/.test(text);
             if (cmd === 'burns' && (text.includes('سوختگی') || burnsPhrase)) score += 3;
             // "درصد" normally means solution concentration, but in
@@ -1161,7 +1169,7 @@
     const CLINICAL_CONFIRM_COMMANDS = new Set([
         'drug', 'bmi', 'bsa', 'ibw', 'crcl', 'drip', 'convert',
         'electrolyte', 'percentage', 'unit_convert', 'temp_convert',
-        'weight_convert', 'pressure_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse',
+        'weight_convert', 'pressure_convert', 'dose_calc', 'gcs', 'rass', 'braden', 'morse', 'humpty',
         'burns', 'oxygen', 'vbg', 'ventilator', 'nutrition', 'ysite',
         'compat_tool'
     ]);
@@ -1174,7 +1182,7 @@
         unit_convert: 'تبدیل واحد', temp_convert: 'تبدیل دما',
         weight_convert: 'تبدیل وزن', pressure_convert: 'تبدیل فشار', dose_calc: 'محاسبه دوز',
         gcs: 'محاسبه GCS', rass: 'ثبت RASS', braden: 'محاسبه Braden',
-        morse: 'محاسبه Morse', burns: 'محاسبه درصد سوختگی', oxygen: 'محاسبه مدت اکسیژن',
+        morse: 'محاسبه Morse', humpty: 'محاسبه Humpty Dumpty', burns: 'محاسبه درصد سوختگی', oxygen: 'محاسبه مدت اکسیژن',
         vbg: 'تفسیر گاز خون', ventilator: 'محاسبه ونتیلاتور',
         nutrition: 'محاسبه تغذیه', ysite: 'بررسی سازگاری Y-Site',
         compat_tool: 'بررسی سازگاری Y-Site'
@@ -1203,6 +1211,7 @@
         rass: { tab: 'tools', accordion: 'rassAccordionItem' },
         braden: { tab: 'tools', accordion: 'bradenAccordionItem' },
         morse: { tab: 'tools', accordion: 'morseAccordionItem' },
+        humpty: { tab: 'tools', accordion: 'humptyAccordionItem' },
         burns: { tab: 'tools', accordion: 'burnsAccordionItem' },
         oxygen: { tab: 'tools', accordion: 'oxygenAccordionItem' },
         vbg: { tab: 'tools', accordion: 'vbgAccordionItem' },
@@ -1312,6 +1321,7 @@
         if (params.rassScore !== undefined) lines.push('امتیاز RASS: ' + formatConfirmationNumber(params.rassScore));
         if (params.bradenScores) lines.push('امتیازهای Braden: ' + params.bradenScores.map(formatConfirmationNumber).join('، '));
         if (params.morseScores) lines.push('امتیازهای Morse: ' + params.morseScores.map(formatConfirmationNumber).join('، '));
+        if (params.humptyScores) lines.push('امتیازهای Humpty Dumpty: ' + params.humptyScores.map(formatConfirmationNumber).join('، '));
         if (lines.length === 1) lines.push('برای باز کردن ابزار و ورود یا بررسی مقادیر، تأیید کنید.');
         return lines.join(' · ');
     }
@@ -1372,7 +1382,7 @@
                 showVoiceResult('تنظیمات باز شد', 'success');
                 break;
             case 'help':
-                showVoiceResult('می‌تونم محاسبه‌گر دارو یا ابزار بالینی موردنظرت رو باز کنم، عددهایی که می‌گی رو وارد کنم، اطلاعات و سازگاری داروها رو پیدا کنم و تم یا اندازه نوشته رو تغییر بدم. مثلاً بگو: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «درصد سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی رو فقط بعد از تأییدت اجرا می‌کنم.', 'info');
+                showVoiceResult('می‌تونم محاسبه‌گر دارو یا ابزار بالینی موردنظرت رو باز کنم، عددهایی که می‌گی رو وارد کنم، اطلاعات و سازگاری داروها رو پیدا کنم و تم یا اندازه نوشته رو تغییر بدم. مثلاً بگو: «انفوزیون هپارین»، «BMI وزن ۷۵ قد ۱۷۵»، «قطره ۵۰۰ میلی‌لیتر در ۸ ساعت»، «هامپی دامپی»، «درصد سوختگی»، «اکسیژن ۵ لیتر فشار ۱۵۰ بار جریان ۴»، «گلاسکو ۴ ۵ ۶»، «سازگاری هپارین و وانکومایسین» یا «حالت تاریک». دستورهای بالینی رو فقط بعد از تأییدت اجرا می‌کنم.', 'info');
                 break;
             case 'reverse':
                 AppState.reverseMode = !AppState.reverseMode;
@@ -1389,6 +1399,7 @@
             case 'rass': handleRASSVoice(text, params); break;
             case 'braden': handleBradenVoice(params); break;
             case 'morse': handleMorseVoice(params); break;
+            case 'humpty': handleHumptyVoice(params); break;
             case 'burns': handleBurnsVoice(text); break;
             case 'oxygen': handleOxygenVoice(params); break;
             case 'vbg': handleVBGVoice(text, params); break;
@@ -1896,6 +1907,31 @@
             document.querySelectorAll('.gcs-btn[data-morse="' + d + '"]').forEach(function (btn) { if (parseInt(btn.dataset.score) === scores[i]) btn.click(); });
         });
         showVoiceResult('مقیاس مورس تنظیم شد', 'success');
+    }
+
+    function handleHumptyVoice(params) {
+        switchTab('tools');
+        setTimeout(function () { openAccordionById('humptyAccordionItem'); }, 300);
+
+        const scores = params.humptyScores;
+        if (!scores || scores.length !== 7) {
+            showVoiceResult('۷ عدد هامپی دامپی رو به‌ترتیب بگو: سن، جنس، تشخیص، شناخت، محیط، جراحی یا سدیشن و داروها.', 'info');
+            return;
+        }
+
+        const domains = ['age', 'gender', 'diagnosis', 'cognition', 'environment', 'sedation', 'medication'];
+        const allowed = [[1, 2, 3, 4], [1, 2], [1, 2, 3, 4], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3], [1, 2, 3]];
+        if (scores.some(function (score, index) { return !allowed[index].includes(score); })) {
+            showVoiceResult('یکی از امتیازهای هامپی دامپی خارج از محدوده معتبره؛ لطفاً گزینه‌ها رو داخل کارت انتخاب کن.', 'error');
+            return;
+        }
+
+        domains.forEach(function (domain, index) {
+            document.querySelectorAll('.gcs-btn[data-humpty="' + domain + '"]').forEach(function (btn) {
+                if (parseInt(btn.dataset.score) === scores[index]) btn.click();
+            });
+        });
+        showVoiceResult('مقیاس هامپی دامپی تنظیم شد', 'success');
     }
 
     function handleBurnsVoice(text) {

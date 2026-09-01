@@ -39,13 +39,13 @@
                 <span class="loading-fox-fill"></span>
             </div>
             <div class="loading-app-name"><span>Foxi</span><strong>Med</strong></div>
-            <div class="loading-tagline">همراه بالینی پرستار</div>
+            <div class="loading-tagline">همراه بالینی پرستاران در همه بخش‌ها</div>
             <div class="loading-bar-wrap">
                 <div class="loading-bar" id="loadingBar"></div>
             </div>
             <div class="loading-status" id="loadingStatus">در حال بارگذاری پایگاه داده دارویی...</div>
             <div class="loading-meta">
-                <span>نسخه 5.1.0</span>
+                <span>نسخه 5.2.0</span>
                 <span class="loading-meta-dot" aria-hidden="true"></span>
                 <span>آماده برای کار آفلاین</span>
             </div>
@@ -819,6 +819,146 @@
                                     <div class="gcs-severity-badge" id="morseSeverityBadge"></div>
                                     <div class="gcs-notes" id="morseNotes"></div>
                                     <button class="gcs-reset-btn" id="morseResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Humpty Dumpty Pediatric Fall Scale -->
+                        <div class="accordion-item" id="humptyAccordionItem">
+                            <button class="accordion-header" onclick="toggleAccordion(this)">
+                                <div class="accordion-icon-wrap" style="background:linear-gradient(135deg,#ec4899,#8b5cf6)"><i class="fas fa-child-reaching"></i></div>
+                                <div class="accordion-title-wrap">
+                                    <span class="accordion-title">مقیاس هامپی دامپی</span>
+                                    <span class="accordion-sub">Humpty Dumpty — خطر سقوط اطفال</span>
+                                </div>
+                                <i class="fas fa-chevron-down accordion-chevron"></i>
+                            </button>
+                            <div class="accordion-body" id="humptyAccordionBody">
+                                <div class="vbg-disclaimer">
+                                    <i class="fas fa-circle-info"></i>
+                                    <span>این ابزار برای ارزیابی خطر سقوط در اطفال است. همه کودکان به اقدامات پایه پیشگیری از سقوط نیاز دارند و نتیجه باید همراه با قضاوت بالینی و دستورالعمل مرکز استفاده شود.</span>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#ec4899,#f97316)"><i class="fas fa-cake-candles"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">سن — Age</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyAgeScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="age" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">کمتر از ۳ سال</span></button>
+                                        <button class="gcs-btn" data-humpty="age" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">۳ تا کمتر از ۷ سال</span></button>
+                                        <button class="gcs-btn" data-humpty="age" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">۷ تا ۱۳ سال</span></button>
+                                        <button class="gcs-btn" data-humpty="age" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">بیشتر از ۱۳ سال</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"><i class="fas fa-venus-mars"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">جنس — Gender</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyGenderScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="gender" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">پسر</span></button>
+                                        <button class="gcs-btn" data-humpty="gender" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">دختر</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#8b5cf6,#6366f1)"><i class="fas fa-stethoscope"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">تشخیص — Diagnosis</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyDiagnosisScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="diagnosis" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">تشخیص نورولوژیک</span></button>
+                                        <button class="gcs-btn" data-humpty="diagnosis" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">تغییر اکسیژناسیون یا همودینامیک مؤثر بر اکسیژناسیون؛ مانند بیماری تنفسی، دهیدراتاسیون، آنمی، بی‌اشتهایی، سنکوپ یا سرگیجه</span></button>
+                                        <button class="gcs-btn" data-humpty="diagnosis" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">اختلال عصبی یا رفتاری</span></button>
+                                        <button class="gcs-btn" data-humpty="diagnosis" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">سایر تشخیص‌ها</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-brain"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">اختلال شناختی — Cognitive Impairment</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyCognitionScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="cognition" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">از محدودیت‌های خود آگاه نیست</span></button>
+                                        <button class="gcs-btn" data-humpty="cognition" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">محدودیت‌های خود را فراموش می‌کند</span></button>
+                                        <button class="gcs-btn" data-humpty="cognition" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">از توانایی‌ها و محدودیت‌های خود آگاه است</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-bed"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">عوامل محیطی — Environmental Factors</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyEnvironmentScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="environment" data-score="4"><span class="gcs-score-badge">4</span><span class="gcs-btn-label">سابقه افتادن در نوزادی یا نوپایی از تخت</span></button>
+                                        <button class="gcs-btn" data-humpty="environment" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">استفاده از وسیله کمک‌حرکتی، یا نوزاد/نوپا در گهواره، ننو یا مبل تخت‌خواب‌شو کنار والدین</span></button>
+                                        <button class="gcs-btn" data-humpty="environment" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">کودک در تخت بستری است</span></button>
+                                        <button class="gcs-btn" data-humpty="environment" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">کودک سرپایی است</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#ef4444,#ec4899)"><i class="fas fa-user-doctor"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">جراحی، سدیشن یا بیهوشی — Surgery / Sedation / Anesthesia</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptySedationScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="sedation" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">در ۲۴ ساعت گذشته</span></button>
+                                        <button class="gcs-btn" data-humpty="sedation" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">در ۴۸ ساعت گذشته</span></button>
+                                        <button class="gcs-btn" data-humpty="sedation" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">بیش از ۴۸ ساعت گذشته یا سابقه ندارد</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-domain">
+                                    <div class="gcs-domain-header">
+                                        <div class="gcs-domain-icon" style="background:linear-gradient(135deg,#64748b,#475569)"><i class="fas fa-pills"></i></div>
+                                        <div>
+                                            <div class="gcs-domain-title">داروها — Medication Usage</div>
+                                            <div class="gcs-domain-score">امتیاز: <span id="humptyMedicationScore">—</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="gcs-btn-group">
+                                        <button class="gcs-btn" data-humpty="medication" data-score="3"><span class="gcs-score-badge">3</span><span class="gcs-btn-label">بیش از ۳ دارو از گروه‌های آرام‌بخش، خواب‌آور، مخدر، باربیتورات، فنوتیازین، ضدافسردگی، ملین یا دیورتیک</span></button>
+                                        <button class="gcs-btn" data-humpty="medication" data-score="2"><span class="gcs-score-badge">2</span><span class="gcs-btn-label">یک دارو از گروه‌های بالا</span></button>
+                                        <button class="gcs-btn" data-humpty="medication" data-score="1"><span class="gcs-score-badge">1</span><span class="gcs-btn-label">سایر داروها یا بدون دارو</span></button>
+                                    </div>
+                                </div>
+
+                                <div class="gcs-result-box" id="humptyResultBox" style="display:none;">
+                                    <div class="gcs-total-row">
+                                        <div class="gcs-total-label">امتیاز کل Humpty Dumpty</div>
+                                        <div class="gcs-total-score" id="humptyTotalScore">—</div>
+                                    </div>
+                                    <div class="gcs-severity-badge" id="humptySeverityBadge"></div>
+                                    <div class="gcs-notes" id="humptyNotes"></div>
+                                    <button class="gcs-reset-btn" id="humptyResetBtn"><i class="fas fa-rotate-right"></i> شروع مجدد</button>
+                                </div>
+
+                                <div class="vbg-disclaimer">
+                                    <i class="fas fa-book-medical"></i>
+                                    <span>منابع ایرانی: ابزار ایمنی بیمار مجتمع بیمارستانی امام رضا(ع) دانشگاه علوم پزشکی کرمانشاه و کتابچه ایمنی بیمار بیمارستان علامه بهلول دانشگاه علوم پزشکی گناباد.</span>
                                 </div>
                             </div>
                         </div>
@@ -1954,7 +2094,7 @@
                 <div class="settings-group">
                     <h4><i class="fas fa-info-circle"></i> درباره</h4>
                     <div class="about-info">
-                        <div class="about-row"><span>نسخه</span><span>5.1.0</span></div>
+                        <div class="about-row"><span>نسخه</span><span>5.2.0</span></div>
                         <div class="about-row"><span>تعداد داروها</span><span id="drugCount">12</span></div>
                         <div class="about-row"><span>آخرین به‌روزرسانی</span><span id="lastUpdate">—</span></div>
                     </div>
@@ -2018,7 +2158,7 @@
                 <div class="tutorial-slide active" data-tour-tab="calculator">
                     <div class="tutorial-icon tutorial-fox-icon" aria-hidden="true"><span class="tutorial-fox-mark"></span></div>
                     <h2 class="tutorial-title">به FoxiMed خوش آمدید</h2>
-                    <p class="tutorial-body">دستیار هوشمند محاسبات دارویی برای پرستاران و پزشکان ICU — آفلاین، سریع و دقیق.</p>
+                    <p class="tutorial-body">دستیار هوشمند محاسبات بالینی برای پرستاران همه بخش‌ها — آفلاین، سریع و دقیق.</p>
                 </div>
 
                 <!-- Slide 2: Drug calculator -->
@@ -2041,7 +2181,7 @@
                 <div class="tutorial-slide" data-tour-target=".tab-item[data-tab='tools']" data-tour-tab="calculator">
                     <div class="tutorial-icon" style="background:linear-gradient(135deg,#10b981,#0d9488)"><i class="fas fa-toolbox"></i></div>
                     <h2 class="tutorial-title">ابزارهای بالینی</h2>
-                    <p class="tutorial-body">تب سوم شامل ابزارهای کلینیکی است: GCS، RASS، Braden، Morse، محاسبه BMI و BSA، کپسول اکسیژن، مبدل‌های واحد و محاسبه‌گر دستی.</p>
+                    <p class="tutorial-body">تب سوم شامل ابزارهای کلینیکی است: GCS، RASS، Braden، Morse، Humpty Dumpty، محاسبه BMI و BSA، کپسول اکسیژن، مبدل‌های واحد و محاسبه‌گر دستی.</p>
                     <div class="tutorial-tip"><i class="fas fa-lightbulb"></i> روی هر آکاردئون ضربه بزنید تا باز شود — برای بستن دوباره ضربه بزنید یا از دکمه بستن استفاده کنید.</div>
                 </div>
 
@@ -2114,16 +2254,16 @@
 
     <script src="drugDatabase.js"></script>
     <script src="converters.js"></script>
-    <script src="calculation-core.js?v=34"></script>
-    <script src="script.js?v=44"></script>
+    <script src="calculation-core.js?v=35"></script>
+    <script src="script.js?v=45"></script>
     <script src="koochik-asr.js?v=36"></script>
     <script src="voice-recognition.js?v=42"></script>
-    <script src="voice-commands.js?v=42"></script>
+    <script src="voice-commands.js?v=43"></script>
     <script src="voice-ui.js?v=42"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js?v=44', { updateViaCache: 'none' });
+                navigator.serviceWorker.register('service-worker.js?v=45', { updateViaCache: 'none' });
             });
         }
     </script>

@@ -268,11 +268,24 @@ function testCommandRouting() {
     assert(events.some(e => e.kind === 'deferred'),
         'confirmed Braden command must schedule its calculator accordion to open');
 
+    result = run('خطر سقوط کودک');
+    const humptyConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('Humpty Dumpty'));
+    assert(humptyConfirmation && !humptyConfirmation.message.includes('Morse'),
+        'pediatric fall-risk wording must route to Humpty Dumpty instead of adult Morse');
+    humptyConfirmation.onConfirm();
+    assert(events.some(e => e.kind === 'tab' && e.tab === 'tools') && events.some(e => e.kind === 'deferred'),
+        'confirmed Humpty Dumpty command must open its tools accordion');
+
+    result = run('هامپی دامپی ۴ ۲ ۴ ۳ ۴ ۳ ۳');
+    const scoredHumptyConfirmation = result.find(e => e.kind === 'confirmation' && e.message.includes('Humpty Dumpty'));
+    assert(scoredHumptyConfirmation && scoredHumptyConfirmation.message.includes('امتیازهای Humpty Dumpty'),
+        'seven spoken Humpty Dumpty scores must appear in the clinical confirmation');
+
     const naturalCommandCases = [
         ['مساحت سطح بدن', 'BSA'], ['وزن مطلوب بیمار', 'وزن ایده‌آل'],
         ['کلیرنس کراتینین', 'کلیرانس کراتینین'], ['سرم چند قطره در دقیقه', 'سرعت قطره'],
         ['سطح هوشیاری گلاسکو', 'GCS'], ['میزان سدیشن ریچموند', 'RASS'],
-        ['ریسک زخم بستر', 'Braden'], ['ریسک سقوط بیمار', 'Morse'],
+        ['ریسک زخم بستر', 'Braden'], ['ریسک سقوط بیمار', 'Morse'], ['هامپتی دامپتی', 'Humpty Dumpty'],
         ['وسعت سوختگی', 'درصد سوختگی'], ['کپسول اکسیژن چقدر میمونه', 'مدت اکسیژن'],
         ['تفسیر ای بی جی', 'گاز خون'], ['حجم جاری ونتیلاتور', 'ونتیلاتور'],
         ['نیاز کالری بیمار', 'تغذیه'], ['تبدیل الکترولیت', 'تبدیل الکترولیت'],
@@ -414,15 +427,15 @@ function testDeploymentWiring() {
         'service worker must precache the v35 Rizeh worker URL');
     assert(read('koochik-asr.js').includes("koochik-worker.js?v=35"),
         'voice adapter must instantiate the v35 Rizeh worker URL');
-    assert(index.includes('service-worker.js?v=44'),
-        'page must register the v44 service worker');
-    assert(script.includes("const APP_VERSION = '5.1.0'") &&
-        index.includes('نسخه 5.1.0') && manifest.includes('"version": "5.1.0"') &&
-        serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.1.0'"),
-        'all public release surfaces must identify the Version 5.1 release consistently');
-    assert(script.includes("'5.1.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
+    assert(index.includes('service-worker.js?v=45'),
+        'page must register the v45 service worker');
+    assert(script.includes("const APP_VERSION = '5.2.0'") &&
+        index.includes('نسخه 5.2.0') && manifest.includes('"version": "5.2.0"') &&
+        serviceWorker.includes("const CACHE_NAME = 'FoxiMed_v5.2.0'"),
+        'all public release surfaces must identify the Version 5.2 release consistently');
+    assert(script.includes("'5.2.0': [") && script.includes('HAS_PRE_V5_INSTALL') &&
         script.includes("'sw_first_install'") && script.includes('if (HAS_PRE_V5_INSTALL)'),
-        'returning Version 4 users must see the Version 5 release summary once');
+        'returning users must see the current Version 5 release summary once');
     assert(voiceAssistantCss.includes('circle at 50% 48%') &&
         voiceAssistantCss.includes('rgba(124, 45, 18, 0.20)') &&
         voiceAssistantCss.includes('rgba(251, 146, 60, 0) 88%') &&
@@ -456,6 +469,9 @@ function testDeploymentWiring() {
         !index.includes('class="loading-tip') && script.includes("setProperty('--loading-progress'") &&
         read('style.css').includes('.loading-fox-fill') && read('style.css').includes('width: 220px'),
         'startup must use the lightweight premium fox treatment without rotating emoji tips');
+    const loadingMarkup = index.slice(index.indexOf('<!-- Loading Screen -->'), index.indexOf('<!-- PWA Install Guide Modal -->'));
+    assert(loadingMarkup.includes('پرستاران در همه بخش‌ها') && !/ICU/i.test(loadingMarkup),
+        'loading screen must introduce FoxiMed for nurses across all wards without ICU-specific wording');
     assert(voiceAssistantCss.includes('order: 20') && voiceAssistantCss.includes('bottom: calc(100% + 6px)') &&
         voiceAssistantCss.includes('transform: translateY(-4px)') && voiceCommands.includes("return lines.join(' · ');"),
         'voice input must stay at the bottom while compact confirmations keep the fox nearly stationary');
@@ -515,7 +531,7 @@ function testDeploymentWiring() {
     assert(!index.includes('voice-embers') && !voiceUi.includes('spawnEmbers'),
         'assistant must avoid decorative ember work');
     [
-        'gcsAccordionItem', 'rassAccordionItem', 'bradenAccordionItem', 'morseAccordionItem',
+        'gcsAccordionItem', 'rassAccordionItem', 'bradenAccordionItem', 'morseAccordionItem', 'humptyAccordionItem',
         'oxygenAccordionItem', 'burnsAccordionItem', 'bmiAccordionItem', 'ysiteAccordionItem',
         'bsaAccordionItem', 'ibwAccordionItem', 'ventilatorAccordionItem', 'nutritionAccordionItem',
         'vbgAccordionItem', 'crclAccordionItem', 'dripAccordionItem', 'unitAccordionItem',
@@ -525,6 +541,10 @@ function testDeploymentWiring() {
         assert(index.includes(`id="${accordionId}"`) && read('voice-commands.js').includes(`accordion: '${accordionId}'`),
             `${accordionId} must have a voice navigation target`);
     });
+    assert(index.includes('id="humptyAccordionBody"') && index.includes('خطر سقوط اطفال') &&
+        script.includes('function setupHumptyDumpty()') && script.includes("result.level === 'high'") &&
+        voiceCommands.includes('function handleHumptyVoice(params)') && voiceCommands.includes('params.humptyScores'),
+        'Humpty Dumpty must expose the seven-domain pediatric calculator and voice workflow');
     assert(index.includes('id="namePrompt"') && index.includes('لطفاً نامتان را دوباره وارد کنید') &&
         !index.includes('id="namePromptLater"') && !index.includes('id="namePromptNever"') &&
         script.includes("const USER_NAME_CAPTURE_VERSION = '5.1'") &&
@@ -539,7 +559,7 @@ function testDeploymentWiring() {
         'Persian and Latin Hediyeh variants must receive the requested personalized reply');
     assert(script.includes('سازگاری به غلظت، حلال، فرمولاسیون و زمان تماس وابسته است'),
         'Y-site matrix must disclose context dependence and require verification');
-    assert(index.includes('calculation-core.js?v=34') && serviceWorker.includes('calculation-core.js?v=34'),
+    assert(index.includes('calculation-core.js?v=35') && serviceWorker.includes('calculation-core.js?v=35'),
         'tested calculation core must be loaded and cached');
 }
 
@@ -595,6 +615,22 @@ function testReverseInfusionMath() {
         drugUnit: 'mg',
         doseUnit: 'mcg/kg/min'
     }), /weight-required/, 'weight-based reverse math must reject a missing weight');
+}
+
+function testHumptyDumptyMath() {
+    const context = { window: {} };
+    vm.createContext(context);
+    vm.runInContext(read('calculation-core.js'), context, { filename: 'calculation-core.js' });
+    const risk = context.window.FoxiCalcCore.humptyDumptyRisk;
+
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(risk([1, 1, 1, 1, 1, 1, 1]))),
+        { total: 7, level: 'low' }, 'minimum score 7 must be low risk');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(risk([1, 1, 1, 1, 3, 2, 3]))),
+        { total: 12, level: 'high' }, 'score 12 must be the high-risk boundary');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(risk([4, 2, 4, 3, 4, 3, 3]))),
+        { total: 23, level: 'high' }, 'maximum score 23 must remain valid and high risk');
+    assert.throws(() => risk([4, 2, 4]), /invalid-humpty-dumpty-scores/,
+        'incomplete pediatric fall scores must be rejected');
 }
 
 function makeWorkerLogicContext() {
@@ -758,6 +794,7 @@ async function testWorkerLifecycle() {
     testDeploymentWiring();
     testNamePersonalization();
     testReverseInfusionMath();
+    testHumptyDumptyMath();
     testWorkerSegmentationAndFrames();
     await testWorkerLifecycle();
     console.log('voice pipeline smoke tests: PASS');

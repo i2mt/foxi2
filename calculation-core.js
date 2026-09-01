@@ -37,5 +37,19 @@
         return dose;
     }
 
-    window.FoxiCalcCore = Object.freeze({ reverseInfusionDose });
+    function humptyDumptyRisk(scores) {
+        const values = Array.isArray(scores) ? scores.map(Number) : [];
+        if (values.length !== 7 || values.some(value => !Number.isInteger(value) || value < 1 || value > 4)) {
+            throw new Error('invalid-humpty-dumpty-scores');
+        }
+
+        const total = values.reduce((sum, value) => sum + value, 0);
+        if (total < 7 || total > 23) throw new Error('invalid-humpty-dumpty-total');
+        return Object.freeze({
+            total,
+            level: total >= 12 ? 'high' : 'low'
+        });
+    }
+
+    window.FoxiCalcCore = Object.freeze({ reverseInfusionDose, humptyDumptyRisk });
 })(window);
