@@ -34,6 +34,10 @@ jobs:
       - name: Validate voice pipeline source
         run: |
           node tests/voice-pipeline-smoke.test.js
+          node tests/analytics-privacy.test.js
+          node tests/analytics-worker.test.mjs
+          node --check analytics.js
+          node --check analytics-worker/worker.mjs
           node --check koochik-worker.js
           node --check koochik-asr.js
           node --check voice-recognition.js

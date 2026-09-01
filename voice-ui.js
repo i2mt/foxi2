@@ -474,6 +474,10 @@
 
     function handleTranscript(text, source) {
         if (!text) return;
+        if (window.FoxiAnalytics) {
+            if (source === 'voice') window.FoxiAnalytics.trackFeature('voice_spoken');
+            else if (source === 'text') window.FoxiAnalytics.trackFeature('voice_typed');
+        }
         setStatus('در حال پردازش...', 'processing');
         setOrbState('processing');
         if (els.result) els.result.style.display = 'none';

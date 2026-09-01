@@ -19,9 +19,13 @@
 // manifest.json, service-worker.js's CACHE_NAME) on every release, and add
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.1.1';
 
 const CHANGELOG = {
+    '5.1.1': [
+        'آمار ناشناس استفاده با امکان غیرفعال‌سازی از تنظیمات',
+        'توضیح دقیق‌تر اینکه FoxiMed برای همه پرستاران طراحی شده است'
+    ],
     '5.1.0': [
         'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
         'پوستهٔ رنگی جدید «DreamFire» و ظاهر تازه‌تر برنامه',
@@ -313,6 +317,7 @@ const AppState = {
         defaultInfusionMethod: 'syringe',
         defaultSyringeVolume: 'auto',
         defaultInfusionVolume: 'auto',
+        anonymousAnalytics: true,
         voiceLogAutoTelegram: false // off by default — see voice-commands.js: automatic sending is a different privacy posture than the manual-export design, so it only runs once explicitly turned on
     },
     reverseMode: false
@@ -602,6 +607,7 @@ const AppState = {
     window.addEventListener('appinstalled', () => {
         hideModal();
         localStorage.setItem('pwaNeverShow', 'true');
+        if (window.FoxiAnalytics) window.FoxiAnalytics.track('pwa_installed');
     });
 })();
 
@@ -1259,6 +1265,8 @@ function loadSettings() {
     if (DOM.compatAlertToggle) DOM.compatAlertToggle.checked = AppState.settings.compatAlerts;
     if (DOM.saveHistoryToggle) DOM.saveHistoryToggle.checked = AppState.settings.saveHistory;
     if (DOM.hapticToggle) DOM.hapticToggle.checked = AppState.settings.hapticFeedback !== false;
+    const anonymousAnalyticsToggle = document.getElementById('anonymousAnalyticsToggle');
+    if (anonymousAnalyticsToggle) anonymousAnalyticsToggle.checked = AppState.settings.anonymousAnalytics !== false;
     const voiceLogAutoTelegramToggle = document.getElementById('voiceLogAutoTelegramToggle');
     if (voiceLogAutoTelegramToggle) voiceLogAutoTelegramToggle.checked = !!AppState.settings.voiceLogAutoTelegram;
     const defaultMethodSelect = document.getElementById('defaultInfusionMethodSelect');
@@ -1753,6 +1761,7 @@ function calculateInfusion() {
 
     if (AppState.settings.saveHistory) saveCalculation(totalDrug, concentration, pumpRate, duration);
     updateCalculationStats();
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('infusion_calculation');
     showToast('موفق', 'محاسبه با موفقیت انجام شد', 'success');
 }
 
@@ -2178,6 +2187,15 @@ function setupSettingsEventListeners() {
         saveHistoryToggle.addEventListener('change', function() {
             AppState.settings.saveHistory = this.checked;
             saveSettings();
+        });
+    }
+
+    const anonymousAnalyticsToggle = document.getElementById('anonymousAnalyticsToggle');
+    if (anonymousAnalyticsToggle) {
+        anonymousAnalyticsToggle.addEventListener('change', function() {
+            AppState.settings.anonymousAnalytics = this.checked;
+            saveSettings();
+            if (window.FoxiAnalytics) window.FoxiAnalytics.setEnabled(this.checked);
         });
     }
 
@@ -2611,6 +2629,7 @@ function calculateManualInfusion() {
     if (durationEl) durationEl.textContent = PersianNumbers.formatNumber(duration, 1) + ' ساعت';
 
     document.getElementById('manualResults').style.display = 'block';
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('manual_infusion');
     haptic(40);
     showToast('موفق', 'محاسبه با موفقیت انجام شد', 'success');
     setTimeout(() => document.getElementById('manualResults')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
@@ -2632,6 +2651,15 @@ function switchTab(tabName) {
         pane.style.display = isActive ? 'block' : 'none';
     });
     AppState.currentTab = tabName;
+    if (window.FoxiAnalytics && tabName !== previousTab) {
+        const analyticsTab = {
+            calculator: 'calculator',
+            drugs: 'drug_reference',
+            tools: 'clinical_tools',
+            voice: 'voice_assistant'
+        }[tabName];
+        if (analyticsTab) window.FoxiAnalytics.trackTab(analyticsTab);
+    }
     if (tabName === 'drugs') loadDrugLibrary();
     if (tabName === 'tools') {
         initializeTools();
@@ -2946,6 +2974,7 @@ function calculateBMI() {
     resultDiv.innerHTML = html;
     resultDiv.style.display = 'block';
     refreshAccordion(resultDiv);
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('bmi');
 }
 
 function calculateBSA() {
@@ -2964,6 +2993,7 @@ function calculateBSA() {
     ]);
     resultDiv.style.display = 'block';
     refreshAccordion(resultDiv);
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('bsa');
 }
 
 function calculateIBW() {
@@ -2983,6 +3013,7 @@ function calculateIBW() {
     ]);
     resultDiv.style.display = 'block';
     refreshAccordion(resultDiv);
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('ibw');
 }
 
 function calculateCrCl() {
@@ -3007,6 +3038,7 @@ function calculateCrCl() {
     ]);
     resultDiv.style.display = 'block';
     refreshAccordion(resultDiv);
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('crcl');
 }
 
 function checkCompatibility() {
@@ -3074,6 +3106,7 @@ function checkCompatibility() {
     }
     resultDiv.innerHTML = html + solNote;
     resultDiv.style.display = 'block';
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('compatibility');
 }
 
 function calculateDose() {
@@ -3095,6 +3128,7 @@ function calculateDose() {
             <div class="dose-calc-row"><span>سرنگ پیشنهادی:</span><strong>${bestSyringe} mL</strong></div>
         </div>`;
     resultDiv.style.display = 'block';
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('dose_calculator');
 }
 
 function populateDoseCalcFromDrug() {
@@ -3417,6 +3451,7 @@ function calculateReverse() {
     displayWarnings(drug);
     displayCompatibility(drug);
     if (AppState.settings.saveHistory) saveCalculation(totalDrug, concentration, pumpRateVal, duration);
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('reverse_infusion');
 }
 
 function displayResultsReverse(totalDrug, concentration, pumpRate, derivedDose, duration, ampUnit, doseUnit) {
@@ -6023,6 +6058,7 @@ window.interpretVBG = function() {
 
     resultEl.innerHTML = vbgBuildHTML(pH, pco2, hco3, be, disorders, agResult, severity, hints, isVBG);
     resultEl.style.display = 'block';
+    if (window.FoxiAnalytics) window.FoxiAnalytics.trackFeature('vbg');
     haptic(40);
     setTimeout(() => resultEl.scrollIntoView({ behavior:'smooth', block:'nearest' }), 100);
 };
