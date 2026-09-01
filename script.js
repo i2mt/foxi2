@@ -20,21 +20,21 @@
 // a matching entry to CHANGELOG. Keep entries short — 2-4 real bullet
 // points people would actually notice, not an engineering changelog.
 const APP_VERSION = '5.2.0';
-// The first 5.2 deployment briefly used a maintenance-only note. Keep a
-// separate revision so anyone who already saw that note receives the restored
-// major Version 5 introduction once, without changing the public app version.
-const RELEASE_NOTES_REVISION = '5.2.0-major';
+// Keep the major Version 5 introduction featured while maintenance work
+// continues. A separate revision lets people who saw an earlier 5.2 note see
+// this complete feature summary once, without changing the public app version.
+const RELEASE_NOTES_REVISION = '5.2.0-major-humpty';
 
 const CHANGELOG = {
     // Keep the current release focused on the major Version 5 upgrade. A
     // person coming directly from Version 4 should be introduced to the
-    // assistant, theme, ward defaults and stability work—not implementation
-    // details from the latest maintenance pass.
+    // assistant, theme, Humpty Dumpty scale and major usability work—not
+    // implementation details from the latest maintenance pass.
     '5.2.0': [
         'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
         'پوستهٔ رنگی جدید «DreamFire» و ظاهر تازه‌تر برنامه',
-        'پیش‌فرض‌های قابل تنظیم برای نوع پمپ و حجم محلول هر بخش',
-        'راهنمای کامل‌تر، حالت کم‌مصرف و بهبود گستردهٔ دقت و پایداری'
+        'مقیاس هامپی دامپی برای ارزیابی خطر سقوط اطفال، همراه با پشتیبانی دستیار صوتی',
+        'پیش‌فرض‌های قابل تنظیم برای پمپ و حجم محلول، حالت کم‌مصرف و بهبود دقت و پایداری'
     ],
     '5.1.0': [
         'دستیار هوشمند فارسی با فرمان صوتی آفلاین برای محاسبات و ابزارهای بالینی',
