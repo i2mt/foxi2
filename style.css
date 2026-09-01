@@ -864,8 +864,8 @@ select {
 }
 
 .logo {
-    width: 48px;
-    height: 50px;
+    width: 60px;
+    height: 60px;
     background: transparent;
     border: 0;
     border-radius: 0;
@@ -876,8 +876,8 @@ select {
     flex-shrink: 0;
 }
 .header-fox-mark {
-    width: 46px;
-    height: 46px;
+    width: 58px;
+    height: 58px;
     display: block;
     background: linear-gradient(155deg, #fb923c 0%, #ea580c 58%, #9a3412 100%);
     -webkit-mask: url('icons/fox-mark-clean-mask.png') center / contain no-repeat;
@@ -2644,13 +2644,13 @@ body.low-power-mode .tab-item.active { animation: none; }
     }
 
     .logo {
-        width: 42px;
-        height: 44px;
+        width: 52px;
+        height: 50px;
     }
 
     .header-fox-mark {
-        width: 40px;
-        height: 40px;
+        width: 50px;
+        height: 50px;
     }
 
     .logo-text h1 {

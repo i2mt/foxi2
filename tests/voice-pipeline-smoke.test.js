@@ -458,6 +458,9 @@ function testDeploymentWiring() {
         desktopCss.includes('.drug-quick-select') && desktopCss.includes('min-height: 0') &&
         desktopCss.includes('.drug-scroll-container') && desktopCss.includes('overflow-y: auto'),
         'desktop drug cards must have one bounded scroll owner so the mouse wheel works over the full list');
+    assert(styleCss.includes('.header-fox-mark {\n    width: 58px;\n    height: 58px;') &&
+        styleCss.includes('.header-fox-mark {\n        width: 50px;\n        height: 50px;'),
+        'the header fox must remain prominent within the existing desktop and mobile header heights');
     assert(index.includes('Rizeh — آفلاین') && !index.includes('voiceRecognitionModeSelect') && !index.includes('whisper-base'),
         'Settings must present one clear Rizeh status instead of experimental model choices');
     assert(index.includes('id="defaultInfusionMethodSelect"') &&
